@@ -1,0 +1,12 @@
+# Test artifacts: regenerated completely on every RUN_TESTS.bat run
+# (Nastran .f06/.op2 included). They are NOT part of the skill; never
+# commit them. Artifact count and size live in scripts/tests/README.md only.
+scripts/tests/parts/
+scripts/__pycache__/
+__pycache__/
+*.pyc
+
+# RUN_TESTS.bat gate logs (written next to the tests, deleted on both
+# pass and fail; ignore them in case a run is interrupted mid-case).
+scripts/tests/_gate_*.log
+

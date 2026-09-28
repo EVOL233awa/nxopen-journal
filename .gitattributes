@@ -1,0 +1,5 @@
+# Normalize line endings: LF for everything text, CRLF only where the
+# target program requires it (cmd batch files choke on LF labels).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary

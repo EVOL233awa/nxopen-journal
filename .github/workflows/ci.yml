@@ -1,0 +1,34 @@
+name: checks
+
+# Cloud CI covers what does not need NX. The regression suite itself drives a
+# real NX 12 install (run_journal.exe), so it cannot run here; it stays a local
+# step documented in scripts/tests/README.md.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Repo self-check (Py3.6 syntax, case list, docs, file list)
+        run: python scripts/check_repo.py
+
+      - name: Static check every journal
+        shell: bash
+        run: |
+          set -e
+          n=0
+          for f in scripts/tests/[0-9][0-9]_*.py; do
+            python scripts/check_journal.py "$f"
+            n=$((n + 1))
+          done
+          echo "static check passed for $n journals"
