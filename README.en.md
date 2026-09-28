@@ -31,41 +31,39 @@ from STL outside NX and drawing PDFs are rasterised on the host).
 
 ## Figures from real runs
 
-Every image below comes from a batch run on a real NX 12 install, not from a mock-up. The modelling
-and assembly images are offline renders of STL files written by the same run (a batch session
-cannot capture an image, see limitations), the drawings are PDFs the run wrote directly, and the
-two charts plot solve results. Each figure names the regression case it came from.
+Every image below was produced by a batch replay on this machine, not a mock-up. Six cold-start
+agents, each with no memory, ran the six modules independently: each received only the skill
+documents and one task sentence, then designed its own part, wrote the journal, passed static
+checks, replayed in batch and verified itself; the coordinator only accepted the final figure.
+Solids and assemblies are rendered outside NX from STL exported by the same run (a batch session
+cannot capture an image, see limitations), the drawings are PDFs the run wrote directly, and both
+charts plot real solve data written to disk.
 
-| Modeling: extrude, hole pattern, blend (case 01) | Modeling: revolve (case 02) |
+| Modeling: bearing pedestal, ribs, hole pattern (trimetric render) | Assembly: plate, pins, bushing and cap, mates colour-coded |
 | --- | --- |
-| <img src="images/modeling-bracket.png" width="400"> | <img src="images/modeling-flange.png" width="400"> |
+| <img src="images/modeling.png" width="400"> | <img src="images/assembly.png" width="400"> |
 
-| Assembly: plate and pin after mating (case 10) | Assembly: two solids overlapping by 5 mm (case 29) |
+The assembly figure colour-codes the four red pins, the gold bushing and the dark cap on the grey
+base plate. 13 persistent constraints hold the seven components and every pose was read back and
+verified against its design value.
+
+| Drafting: three views, section A-A, dimensions, centrelines | GB drawing: A4 sheet, frame, title block, notes |
 | --- | --- |
-| <img src="images/assembly-pin.png" width="400"> | <img src="images/interference-overlap.png" width="400"> |
+| <img src="images/drafting-annotation.png" width="400"> | <img src="images/gb-drawing.png" width="400"> |
 
-The pin in the assembly image sits at the component origin `(40, 30, 10)` the assembly file records
-itself, not at a staged position. The same run of case 29 also produces two negative controls, one
-fully outside and one touching faces only. In the interference figure the solid red body is the
-boolean intersection of the two cubes, solved and exported separately by NX; it sits exactly in the
-overlap region behind the two translucent solids.
+All nine dimensions in the drafting figure are UF-related objects attached to geometry, and the PDF
+text layer was token-checked with pymupdf. The GB figure's sheet, frame, title block and general
+notes come from the skill's gb_drawing module in one pass.
 
-| Drafting: base, projected and detail views (case 20) | Drafting: dimensions, centrelines, table (case 19) |
+| FEA: SOL101 cantilever vs beam theory (two panels) | Motion: rocker angle and angular velocity vs analytic (720 steps) |
 | --- | --- |
-| <img src="images/drafting-views.png" width="400"> | <img src="images/drafting-annotations.png" width="400"> |
+| <img src="images/fea.png" width="900"> | <img src="images/motion.png" width="900"> |
 
-| FEA: SOL101 static vs beam theory (case 25) |
-| --- |
-| <img src="images/fea-calibration.png" width="900"> |
-
-| Motion: rocker angle and velocity ratio of a four-bar (case 18, 360 steps) |
-| --- |
-| <img src="images/motion-curves.png" width="900"> |
-
-The FEA chart compares the NX solve against beam theory at shell thickness 5 mm, then repeats the
-run with a 2.5 mm shell while the theory still assumes 5 mm: the ratios move to 8 and 4, the powers
-of the thickness, which is what makes the calibration meaningful. The motion chart plots the
-per-frame data the solve wrote out.
+The FEA figure overlays the real 14998-node displacement field on beam theory (free-end ratio 0.982)
+and samples bottom-fibre stress against the analytic distribution (ratio 1.000 mid-span; the
+Saint-Venant corner region is shaded and not used as a criterion). The motion figure plots per-frame
+data of a 720-step solve: the rocker swing span differs from the closed form by 0.0014 degrees and
+the reversal count matches.
 
 ## Requirements
 
