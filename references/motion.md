@@ -331,4 +331,4 @@ scripts\run_journal_batch.bat C:\abs\...\scripts\tests\23_motion_connectors.py C
 | `BushingBuilder.Commit()` 只给连接与系数，报 `A NULL value was encountered` | 缺 `BushingDefine.Orientation`，且它要 **NXMatrix**（取 `csys.Orientation`，给 Direction 会报 `Expecting NXOpen.NXMatrix type`）（§M.5a） |
 | 衬套用旧族 `BushingCoefficients`，或通用型与圆柱·球形型混填 | 分别报 deprecated 与 `mixed usage is not supported`；统一走 `BushingStiffness/DampingCoefficients` 子容器（§M.5a） |
 | 在 builder 实例上 0 参调用枚举访问器（`b.Types()` / `d.AttachmentType()` / `b.HoleDepthOptions()`） | 抛 `NXException: instances of NX enums can not be created`，**当场中断整个 journal**（后续诊断全丢）；枚举一律用模块级类（§M.5a 末） |
-| 把 `AskLinkTransfromForGivenFrame` 的返回当 12 值或纯 3×3 读 | 返回 16 值=完整 4×4 行主序，平移在索引 3/7/11；取前 12 即 R 三行+平移，R22（索引 10）恒 1.0 可作布局自检（§M.7） |
+| 取连杆位姿（角度+平移分量） | 返回 16 值=完整 4×4 行主序，平移在索引 3/7/11；取前 12 即 R 三行+平移，R22（索引 10）恒 1.0 可作布局自检（§M.7） |

@@ -30,12 +30,11 @@ fem.GetSolverAndAnalysisType()                      # 读回 ('NX NASTRAN', 'Str
 # ⚠ 幂等清理须连理想化件一起删：model.fem、model_i.prt（及关联 .prt）
 ```
 
-⚠ **同目录下 CAD 件与 FEM 件的基名必须错开**（2026-09-28 冷启动实测）：目录里已有
-`cantilever.prt` 再 FileNew `cantilever.fem`，`fn.Commit()` 抛
-`NXException: A part file with the same base name already exists.`——这是 SKILL.md §3 坑位 2
-（"同一进程内不要对同一路径 FileNew 两次"）的扩展面：**不同扩展名、同基名同样被拒**。
-命名约定如 `cantilever_cad.prt` / `cantilever.fem` / `cantilever_i.prt` / `cantilever_sim.sim`
-（改名后同一链路全部通过）。
+**CAD → FEM → 理想化 → SIM 全链路按角色错开基名**（2026-09-28 冷启动实测，改名后同一
+链路全部通过）：`cantilever_cad.prt` / `cantilever.fem` / `cantilever_i.prt` /
+`cantilever_sim.sim`。判据：FileNew 的 Commit 要求**基名**（不含扩展名）全目录唯一，
+不同扩展名同基名同样被拒（`A part file with the same base name already exists.`，
+SKILL.md §3 坑位 2 的扩展面）——按上面约定命名即天然满足。
 
 ## 2. 材料 + PSOLID + 实体网格收集器
 

@@ -100,7 +100,7 @@ assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
 ### 通用坑位（会话/部件层，check_journal.py 已静态拦截大部分）
 
 1. **builder 创建不能传 `None`**：必须传封装层空对象 `NXOpen.Features.Feature.Null`（Block/Cylinder/Chamfer/Hole/EdgeBlend/Extrude/Revolve/Mirror/Pattern 等）、`NXOpen.Features.BooleanFeature.Null`（Boolean）。`.Null` 是 Python 封装层属性，.NET 反射中不存在，不要用 MCP 查。
-2. **FileNew 不覆盖**：重复运行报 `File already exists` → 生成类 journal 启动时清理本工程旧 .prt 保证幂等；幂等清理须连 `_i.prt` 理想化件一起删（FEA 场景，见 fea.md §1）。**同一进程内也不要对同一路径 FileNew 两次**（2026-09-15 实测：第二个部件必须换文件名；2026-09-28 追加：**不同扩展名、同基名同样被拒**——同目录 CAD 件与 .fem/.sim 基名错开，见 fea.md §1）→ 多部件脚本给每个部件独立路径。
+2. **FileNew 不覆盖**：重复运行报 `File already exists` → 生成类 journal 启动时清理本工程旧 .prt 保证幂等；幂等清理须连 `_i.prt` 理想化件一起删（FEA 场景，见 fea.md §1）。**同一进程内也不要对同一路径 FileNew 两次**（2026-09-15 实测：第二个部件必须换文件名）→ 多部件脚本给每个部件独立路径，多件链路各角色基名也错开（`xxx_cad.prt` / `xxx.fem` / `xxx_i.prt` / `xxx_sim.sim`，2026-09-28 实测全链一次通过，见 fea.md §1）。
 3. **`Part.FullPath` 批处理中可能只显示文件名**（FileNew 刚创建时）；以磁盘实际落盘位置为准。
 4. **集合无 `ToArray()`**：`part.Bodies`、`DrawingSheets`、`DraftingViews` 等直接 `for x in ...` 迭代。
 5. **`ScCollector.ReplaceRules(rules, False)` 第二参数必须 `False`** 立即求值；`True` 规则不求值 → 选中 0 条边 → 倒角/特征创建失败。
