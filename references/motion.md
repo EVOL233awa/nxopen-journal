@@ -244,6 +244,7 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 ```
 
 - ⚠ **`AskLinkTransfromForGivenFrame` 优先用 2 参数形式**；3 参数 `(tag, frame, [0.0]*12)` 仅作回退（实测 2 参可用，写成 try/except 两条兜底最稳）。
+- ⚠ **返回 16 值 = 完整 4×4 行主序矩阵，平移在索引 3/7/11**（2026-09-28 冷启动实测，逐帧 CSV 核对）：取前 12 即 `R00,R01,R02,Tx | R10,R11,R12,Ty | R20,R21,R22,Tz`——R22 在索引 10（恒 1.0）、Tz 在索引 11，这两位就是最省事的布局自检。只取角度仍用 `atan2(r[4], r[0])`（M.4 矩阵口径），要平移分量就取索引 3/7/11（冷启动四杆：曲柄首帧 Tx=0.00012、R22=1.0000，与解析 0.5° 旋转矩阵逐位吻合）。
 - ⚠⚠ **`AskVelocityResults` / `AskAccelerationResults` 实测全返回 `0.0`**（静默失败，不可用）。签名形如 `(tag, MotionType.ROTATION, VC.MAGNITUDE, RF.ABSOLUTE)`，调用不报错但值是零——**不要用它**。
 - **自己算 ω/α（推荐）**：对整周帧的连杆方位角做中心差分。平面机构取 `atan2(R[1,0], R[0,0])`（R 为变换左上 3×3）。**必须 `np.gradient(..., edge_order=2)`**，默认一阶边缘处理会在终段产生伪 α 跳变。
 - ⚠ **尾部帧不可直接用**：末帧会**重复前一帧**（2026-09-16 四杆实测：361 帧的末帧步长 ~8e-6° vs 常规 1.00000°；长工况表现为末 3 帧位姿回零伪影，ω 从 −4.7 跳到 +350、α 达 10⁵ 量级）。**剔除判据**：从尾部往前，只要相邻帧增量 < 10% 的标称增量就判为重复帧丢弃（标称增量 = 指令速率 × dt）。
@@ -330,3 +331,4 @@ scripts\run_journal_batch.bat C:\abs\...\scripts\tests\23_motion_connectors.py C
 | `BushingBuilder.Commit()` 只给连接与系数，报 `A NULL value was encountered` | 缺 `BushingDefine.Orientation`，且它要 **NXMatrix**（取 `csys.Orientation`，给 Direction 会报 `Expecting NXOpen.NXMatrix type`）（§M.5a） |
 | 衬套用旧族 `BushingCoefficients`，或通用型与圆柱·球形型混填 | 分别报 deprecated 与 `mixed usage is not supported`；统一走 `BushingStiffness/DampingCoefficients` 子容器（§M.5a） |
 | 在 builder 实例上 0 参调用枚举访问器（`b.Types()` / `d.AttachmentType()` / `b.HoleDepthOptions()`） | 抛 `NXException: instances of NX enums can not be created`，**当场中断整个 journal**（后续诊断全丢）；枚举一律用模块级类（§M.5a 末） |
+| 把 `AskLinkTransfromForGivenFrame` 的返回当 12 值或纯 3×3 读 | 返回 16 值=完整 4×4 行主序，平移在索引 3/7/11；取前 12 即 R 三行+平移，R22（索引 10）恒 1.0 可作布局自检（§M.7） |
