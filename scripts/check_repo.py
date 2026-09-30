@@ -16,7 +16,7 @@
   5) NOLIB      标准层独占：非探针用例的顶层函数不得与 nxlib 公开 API 同名
                 （同名=配方被复制进用例，正是"越滚越大的史山"的形态；应 import）。
                 探针/死路用例的自包含是设计决策，名单在 SELF_CONTAINED，新增同类
-                必须显式登记。nxlib/*.py 同样过 PY36 语法。
+                必须显式登记。nxlib/*.py 与 scripts/gb_drawing.py 同样过 PY36 语法。
 
 用法：python scripts/check_repo.py [仓库根]
 退出码 0 = 全部通过，1 = 有问题（逐条打印在 stdout）。
@@ -77,18 +77,29 @@ def md_files():
 
 def check_py36():
     print("== 1. Python 3.6 语法（NX 12 内嵌解释器）==")
-    n = 0
+    py_files = []
     for name in sorted(os.listdir(TESTS)):
-        if not CASE_RE.match(name):
-            continue
+        if CASE_RE.match(name):
+            py_files.append(os.path.join(TESTS, name))
+    # NX 解释器下运行的模块代码与用例同权：一处语法错 = 批处理全链路挂
+    shipped = os.path.join(ROOT, "scripts", "gb_drawing.py")
+    if os.path.exists(shipped):
+        py_files.append(shipped)
+    if os.path.isdir(NXLIB):
+        py_files += [os.path.join(NXLIB, f)
+                     for f in sorted(os.listdir(NXLIB))
+                     if f.endswith(".py")]
+    n = 0
+    for path in py_files:
+        name = os.path.relpath(path, ROOT)
         n += 1
-        src = read(os.path.join(TESTS, name))
+        src = read(path)
         try:
             ast.parse(src, filename=name, feature_version=(3, 6))
         except SyntaxError as exc:
             problems.append("PY36 %s:%s %s" % (name, exc.lineno, exc.msg))
             print("  FAIL %s:%s %s" % (name, exc.lineno, exc.msg))
-    print("  解析 %d 个用例文件，问题 %d 处" % (n, len(problems)))
+    print("  解析 %d 个 py 文件（用例+随包模块），问题 %d 处" % (n, len(problems)))
 
 
 def check_coverage():

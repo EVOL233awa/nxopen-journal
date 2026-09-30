@@ -47,7 +47,8 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 `standard_views` → `title_block`/`tech_note` → 尺寸/中心线 → `export_pdf`。
 尺寸道位一律从 `content_bbox` 推导（`LANE_FIRST=10`、`LANE_STEP=7`），
 不要从 `view_bbox` 推导（它被标签余量撑大，实测 TOP 视图边框 141mm 而
-内容 60mm）。
+内容 60mm）。同向多道**按数值升序外推**：小尺寸在内道（贴轮廓）、大尺寸
+在外道，否则小尺寸的界线会被大尺寸的尺寸线穿过。
 
 ## 国标条款与本技能实现口径
 
@@ -56,7 +57,7 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 | GB/T 14689.1 | 幅面与边距 | A4/A3；装订边 a=25，非装订边 c=5（A0/A1 应为 10，未覆盖）；图框单格表格 + 0.7 双线宽边框 |
 | GB/T 14689.1 | 投影角 | 第一角（`ProjectionAngleType.FirstAngle`） |
 | GB/T 10609.1 | 标题栏字段 | 设计/校核/日期/图号/比例/材料/图名齐全；**版式取自真实工程图纸实测**（105×21，3 行 7mm，六列），标准全文的 180×56 大格式未实现 |
-| GB/T 4458.4 | 尺寸注法 | 道位 LANE_FIRST=10、LANE_STEP=7（通行做法）；直径/线性尺寸走 UF 关联对象，随几何更新 |
+| GB/T 4458.4 | 尺寸注法 | 道位 LANE_FIRST=10、LANE_STEP=7（通行做法）；同向多道小内大外（数值升序外推）；成组等径孔只标一条数量引线（2xØ10 走 quantity_label）；直径/线性尺寸走 UF 关联对象，随几何更新 |
 | GB/T 14691 | 字体 | 字高 3.5（尺寸/技术要求）与 2.5（标题栏字段）两档；中文由 NX 默认字体渲染 |
 | GB/T 1804-m / GB/T 1184-K | 未注公差 | `tech_note` 默认条款，可传 `lines=` 覆盖 |
 
@@ -95,6 +96,11 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 
 - `model_bbox` 主路线 = `ufs.ModlGeneral.AskBoundingBox`（NX12 UF 把 UF_MODL 包盒函数封装在 **ModlGeneral** 组，不是 `ufs.Modeling`——旧写法属性名错误，静默落入直边回退，纯回转体无直边即抛 "body has no edges"；已修正，34 号用例以纯回转齿轮覆盖）。
 
+## 标注配方（2026-09-30 按 GB/T 4458.4-2003 内化）
+
+- **同向多道尺寸按数值升序外推**：小尺寸在内道（贴轮廓）、大尺寸在外道，否则小尺寸的界线必然穿过大尺寸的尺寸线（与 drafting-annotation.md 道位算法同源）。33 号用例以 `AnnotationOrigin` 回读断言内/外道次序（`LANE_ORDER_OK`）。
+- **成组等径孔只标一条数量引线**：`2x<O>10`（GB/T 4458.4-2003"尺寸相同的成组要素，可仅在一个要素上注出其尺寸和数量"；圆周/线性均布才加 EQS）。`dim_diameter` 写不进数量前缀（drafting-annotation.md §4b 实测死路），数量形态走 `quantity_label` 引线配方（字高压 3.5），PDF 文本层 token 为 `2x`。
+
 ## API 速查
 
 | 函数 | 作用 |
@@ -112,7 +118,8 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 | `part_note(sheet, lines, origin)` | 左上角锚定的多行注释 |
 | `hole_circles(body, radius)` | 孔口整圆边（逐 (x,y) 取最高 z） |
 | `linear_edges(body)` / `extreme_edge(...)` | 直边与包络边挑选 |
-| `dim_between(...)` / `dim_diameter(...)` | UF 关联尺寸（道位自定） |
+| `dim_between(...)` / `dim_diameter(...)` | UF 关联尺寸（道位自定，多道小内大外） |
+| `quantity_label(part, view, edge, centre, org, text)` | 成组要素数量引线（如 2x\<O\>10） |
 | `centermark` / `centerline_by_points` | 中心标记 / 两点中心线 |
 | `export_pdf(part, sheet, path)` | 单图幅 PDF（BlackOnWhite 1:1） |
 | `scale_text(s)` | 1.0→"1:1"、2.5→"2.5:1"、0.5→"1:2" |

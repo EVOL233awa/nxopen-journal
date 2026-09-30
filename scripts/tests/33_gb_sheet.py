@@ -19,13 +19,17 @@
 #   standard_views pinned FRONT/TOP/RIGHT at 1:1 with content assertions
 #   title_block read-backs + tech_note
 #   UF dimensions between edge/arc attachments on lanes derived from
-#     view_bbox (LANE_FIRST/LANE_STEP), diameter callouts
+#     view_bbox (LANE_FIRST/LANE_STEP); same-direction lanes ordered by
+#     value ascending outward (small inner / large outer, GB/T 4458.4),
+#     lane order asserted via AnnotationOrigin readback
+#   quantity label 2x<O>10 on ONE hole (group elements get a single
+#     callout, GB/T 4458.4) via gb.quantity_label
 #   center marks + ByPoints centerline, PDF export + byte sanity
 #
-# The layout mirrors the module's reference sheet: overall
-# and pitch dimensions on the lanes below the top view, height on the right
-# of the top view, thickness on the left of the front view, diameter leaders
-# landing in the band between front and top views.
+# The layout mirrors the module's reference sheet: pitch (44) on the inner
+# lane and overall (100) on the outer lane below the top view, height on the
+# right of the top view, thickness on the left of the front view, one
+# quantity label leader landing in the band between front and top views.
 import os
 import sys
 
@@ -77,8 +81,8 @@ HOLE_D = 10.0
 SCALE = 1.0
 
 VIEW_VISIBLE_MIN = 4
-DIM_WANT = 6                 # 100 overall, 44 pitch, 60 height, 10 thickness,
-                             # 2x D10
+DIM_WANT = 4                 # 100 overall, 44 pitch, 60 height, 10 thickness
+                             # (the 2x D10 callout is a label, not a dimension)
 PDF_MIN_BYTES = 2000         # blank A4 sheet plots to 917 bytes (measured)
 
 
@@ -209,19 +213,24 @@ def main():
         cf = gb.content_bbox(front, *state["mbbox"])
         fr_left = cf[0]
 
-        # 100 overall: lanes below the TOP view (GB/T 4458.4 lane discipline)
+        # 44 pitch between the hole centres: FIRST (inner) lane — GB/T 4458.4
+        # orders same-direction lanes by value ascending outward, so the
+        # smaller dimension never has its extension lines crossed by the
+        # larger one's dimension line
+        holes_sorted = sorted(holes, key=lambda h: h[1][0])
+        pitch_tag = gb.dim_between(
+            part, top,
+            (holes_sorted[0][0], "ARC_CENTER", holes_sorted[0][1]),
+            (holes_sorted[1][0], "ARC_CENTER", holes_sorted[1][1]),
+            lane_y=tb_bottom - gb.LANE_FIRST)
+        # 100 overall: second (outer) lane
         e_left = gb.extreme_edge(edges, along="y", key="x", side="min")
         e_right = gb.extreme_edge(edges, along="y", key="x", side="max")
-        gb.dim_between(part, top,
-                       (e_left[0], "END_POINT", endpoint_at(e_left[0])),
-                       (e_right[0], "END_POINT", endpoint_at(e_right[0])),
-                       lane_y=tb_bottom - gb.LANE_FIRST)
-        # 44 pitch between the hole centres, second lane
-        holes_sorted = sorted(holes, key=lambda h: h[1][0])
-        gb.dim_between(part, top,
-                       (holes_sorted[0][0], "ARC_CENTER", holes_sorted[0][1]),
-                       (holes_sorted[1][0], "ARC_CENTER", holes_sorted[1][1]),
-                       lane_y=tb_bottom - gb.LANE_FIRST - gb.LANE_STEP)
+        overall_tag = gb.dim_between(
+            part, top,
+            (e_left[0], "END_POINT", endpoint_at(e_left[0])),
+            (e_right[0], "END_POINT", endpoint_at(e_right[0])),
+            lane_y=tb_bottom - gb.LANE_FIRST - gb.LANE_STEP)
         # 60 height: right of the TOP view
         e_low = gb.extreme_edge(edges, along="x", key="y", side="min")
         e_high = gb.extreme_edge(edges, along="x", key="y", side="max")
@@ -240,19 +249,40 @@ def main():
                        (e_top[0], "END_POINT",
                         endpoint_at(e_top[0], pick_x=-1e9)),
                        lane_x=fr_left - gb.LANE_FIRST, horizontal=False)
-        # 2x D10: diameter leaders landing in the band between views
+        # 2x D10: ONE quantity label on the first hole (GB/T 4458.4 group
+        # elements carry size AND count in a single callout); the landing
+        # point is a sheet position in the band between views
         hx = (ct[0] + ct[2]) / 2.0
         hy = ct[3] + 12.0
-        gb.dim_diameter(part, top, holes_sorted[0][0], holes_sorted[0][1],
-                        (hx - 35.0, hy))
-        gb.dim_diameter(part, top, holes_sorted[1][0], holes_sorted[1][1],
-                        (hx + 35.0, hy))
+        label = gb.quantity_label(part, top, holes_sorted[0][0],
+                                  holes_sorted[0][1], (hx - 35.0, hy),
+                                  u"2x<O>10")
+        if label is None:
+            raise RuntimeError("quantity label not created")
+        print("QTY_LABEL_OK tag=%s" % label.Tag)
 
         after = len(list(part.Dimensions))
         print("DIMS=%d" % (after - before))
         if after - before != DIM_WANT:
             raise RuntimeError("expected %d dimensions, got %d"
                                % (DIM_WANT, after - before))
+
+        # lane order readback: below the view the inner lane has the larger
+        # sheet y, and the smaller (pitch) dimension must sit there
+        def _dim_origin_y(tag):
+            for d in part.Dimensions:
+                if int(d.Tag) == int(tag):
+                    return d.AnnotationOrigin.Y
+            raise RuntimeError("dimension tag %s not found for readback"
+                               % (tag,))
+        pitch_y = _dim_origin_y(pitch_tag)
+        overall_y = _dim_origin_y(overall_tag)
+        if not pitch_y > overall_y:
+            raise RuntimeError("lane order wrong: pitch y %.2f must sit above "
+                               "overall y %.2f (small inner / large outer)"
+                               % (pitch_y, overall_y))
+        print("LANE_ORDER_OK pitch_y=%.2f overall_y=%.2f"
+              % (pitch_y, overall_y))
     stage("dimensions", s_dims)
 
     def s_centers():

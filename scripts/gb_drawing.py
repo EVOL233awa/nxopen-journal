@@ -11,7 +11,10 @@ standard_views -> title_block/tech_note -> 标注 -> export_pdf" 的顺序调用
   * GB/T 14689.1  幅面与边距：装订边 a=25，非装订边 c：A0/A1=10、A2-A4=5
   * GB/T 10609.1  标题栏字段（设计/校核/日期/图号/比例/材料/图名）；本模块
     默认版式 = 一张真实工程图纸实测（105x21，3 行 7mm，6 列），字段齐全
-  * GB/T 4458.4   尺寸道位：第一道距轮廓约 10mm、相邻道约 7mm（通行做法）
+  * GB/T 4458.4   尺寸道位：第一道距轮廓约 10mm、相邻道约 7mm（通行做法）；
+                同向多道按数值升序外推（小尺寸在内道、大尺寸在外道）。
+                成组等径孔只标一条数量引线（2x<O>10，quantity_label），
+                不逐孔 dim_diameter（UF 直径尺寸写不进数量前缀）
   * 投影角        第一角（GB）
   * 字高          3.5 / 2.5（GB/T 14691 常用两档）
 
@@ -34,7 +37,7 @@ LANE_STEP = 7.0                           # 相邻尺寸线道距
 VIEW_GAP = 22.0                           # 三视图间距（内容区留白）
 VIEW_MARGIN = 18.0                        # 视图组离图框
 # 标题栏：105x21，3 行 7mm，列宽 [label,value]x3（2026-09-24 从一张真实
-工程图纸实测：总宽约 105mm、行高约 7mm、三行结构 = 图名/设计校核日期/
+# 工程图纸实测：总宽约 105mm、行高约 7mm、三行结构 = 图名/设计校核日期/
 # 图号比例材料）。原图列宽 14/21 在 NX 表格字体下放不下 10 字符的日期
 # （2.5 字高时 ASCII 字宽约 2.1mm，21mm 只容 10 字符，溢出画成 #），实测
 # 后改为 10/25，总宽 105 不变。
@@ -604,6 +607,39 @@ def dim_diameter(part, view, edge, center_model, org_xy, text=None):
     r = ufs.Drf.CreateDiameterDim(o, txt, [float(org_xy[0]),
                                            float(org_xy[1]), 0.0])
     return _norm(r)
+
+
+def quantity_label(part, view, edge, center_model, org_xy, text):
+    """Quantity callout for a group of identical features (GB/T 4458.4-2003
+    group elements): one leader label "2x<O>10" instead of one dim_diameter
+    per hole — UF diameter dims cannot carry a count prefix
+    (drafting-annotation.md §4b, measured dead end).
+
+    edge = the real circle edge in `view`, center_model = its centre in
+    model mm (the leader lands there, mapped to sheet mm), org_xy = text
+    position in sheet mm.  Lettering forced to TEXT_DIM (UF CreateLabel is
+    6.5 uncontrolled).  Returns the label object."""
+    _o, xy = _assoc_obj(edge, view, "ARC_CENTER", center_model)
+    bundle = part.Annotations.NewLeaderBundle()
+    try:
+        bundle.NumberOfLeaders = 1   # must precede SetLeaderData (§5 ⚠)
+    except Exception:
+        pass
+    bundle.SetLeaderData(0, NXOpen.Annotations.LeaderAttachment.Screen,
+                         edge, view, NXOpen.Point3d(float(xy[0]),
+                                                    float(xy[1]), 0.0),
+                         0.0, [])
+    label = part.Annotations.CreateLabel(
+        [text], NXOpen.Point3d(float(org_xy[0]), float(org_xy[1]), 0.0),
+        None, None, None, bundle)
+    if label is None:
+        raise RuntimeError("gb_drawing: CreateLabel returned None")
+    lp = label.GetLetteringPreferences()
+    g = lp.GetGeneralText()
+    g.Size = TEXT_DIM
+    lp.SetGeneralText(g)
+    label.SetLetteringPreferences(lp)
+    return label
 
 
 # ---------------------------------------------------------------- centerlines
