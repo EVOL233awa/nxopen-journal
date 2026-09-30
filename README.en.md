@@ -31,7 +31,7 @@ from STL outside NX and drawing PDFs are rasterised on the host).
 
 ## Figures from real runs
 
-Every image below was produced by a batch replay on this machine, not a mock-up. Six cold-start
+The six module images below were produced by a batch replay on this machine, not mock-ups. Six cold-start
 agents, each with no memory, ran the six modules independently: each received only the skill
 documents and one task sentence, then designed its own part, wrote the journal, passed static
 checks, replayed in batch and verified itself; the coordinator only accepted the final figure.
@@ -64,6 +64,35 @@ and samples bottom-fibre stress against the analytic distribution (ratio 1.000 m
 Saint-Venant corner region is shaded and not used as a criterion). The motion figure plots per-frame
 data of a 720-step solve: the rocker swing span differs from the closed form by 0.0014 degrees and
 the reversal count matches.
+
+### Advanced cold start: the ZA crank-rocker assembly
+
+Beyond the six modules the same cold-start discipline ran an advanced round: a crank-rocker
+assembly of 7 part types / 18 instances, modelled, mated and drafted into a complete assembly
+drawing in one pass, then two kinematics charts derived from the assembly parameters. The assembly
+drawing is written directly by an NX 12 batch Drafting session; the two kinematics charts come from
+a verification script that cross-checks an analytic solution against a numeric sweep and plots with
+matplotlib (not NX output). All three figures went through the same acceptance: independent
+recomputation plus a visual gate.
+
+| Assembly drawing: three views + balloons + BOM + title block (A3) | Kinematic diagram: GB symbols, limit positions |
+| --- | --- |
+| <img src="images/za-assembly.png" width="450"> | <img src="images/kin-mechanism.png" width="450"> |
+
+Every one of the 7 balloons attaches to real geometry and the 7 BOM rows map one-to-one onto the
+parts; the three views fill the frame with the notes placed right above the BOM. Vertical dimension
+text is forced parallel to its dimension line through the .NET preferences API (the UF default is
+unstable and stacks digits at random under the same code path). The za10→za40 script chain carries
+its own audit gate, and the sheet passed after three visual-review iterations.
+
+| Sweep envelope & interference check: envelope arc, coupler curve, clearance callouts |
+| --- |
+| <img src="images/kin-envelope.png" width="900"> |
+
+The kinematics numbers were recomputed independently: Grashof holds, γmin=55.77°, rocker swing
+49.58°, limit positions 91.79°/141.38°, minimum envelope-to-plate clearance 39.91 mm, with the
+analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path circle projects
+10 mm past the plate edge while the minimum Z clearance is 2 mm, so nothing collides in space.
 
 ## Requirements
 
