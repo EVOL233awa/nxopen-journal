@@ -141,6 +141,14 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 - **线性尺寸的两个关联对象挂两条不同的边**（2026-09-28 冷启动+探针实测：9 尺寸两两异边
   全部测出真值）：END_POINT 关联不选"哪一端"，`AssocDwgPos` 只定图纸引出位置。同一条边
   挂两个 END_POINT 时 `ComputedSize` 测 0.0（两条平行边对照 120.0），换异边即恢复真值。
+- **竖直尺寸字向必须显式设 `TextOrientation.Aligned`**（2026-09-30 装配图冷启动实测）：
+  UF `CreateVerticalDim` 的字向默认**不可控**——同一会话、同一调用路径，70 渲染成整体
+  旋转、30/66 渲染成直立逐字堆叠且界线穿字（触发条件未定位，所以配方 = 线性尺寸一律
+  显式设置）。Get→改→Set（与 AppendedText 同型）：
+  `prefs = dim.GetDimensionPreferences(); prefs.TextOrientation = NXOpen.Annotations.TextOrientation.Aligned; dim.SetDimensionPreferences(prefs)`。
+  Aligned = 文字与尺寸线平行（竖直尺寸即旋转 90°、字头朝左，GB 合规）；UF tag → .NET
+  对象用 `for d in part.Dimensions: if int(d.Tag) == int(tag)` 遍历包装。**角度尺寸例外**：
+  GB 要求角度数字水平，勿设 Aligned（150° 默认渲染正常）。
 - `ufs.Drf.Text()` 无参 = 自动关联值文本；**公差代号后缀不走 UF 追加字段**，
   走 part.Dimensions + Get/改/Set AppendedText（实测配方见 §5"公差带代号"）。
 - **UF DRF Create\* 全集**（`dir(ufs.Drf)`，NX12 实测存在）：
@@ -272,7 +280,8 @@ ufs.Tabnot.Update(tn)
 - **一项经用户定稿的版式口径**（2026-09-18；出同类正式图纸时优先于上方 GB 通用值）：
   1. 技术要求写在图样右下方空白区、**紧贴标题栏正上方**（总成图放明细表正上方），全套图纸**统一同一相对位置**，不得与图形、尺寸重叠（GB/T 14689 系列约定 + 机械制图通行做法）；
   2. 明细表收紧到 **150mm 宽、6.5mm 行高**、9 行（表头 + 8 项）；
-  3. 标题栏与明细表**等宽对齐**（150×36 简化标题栏，图名/设计/校核/日期/图号/比例/材料重排）。
+  3. 标题栏与明细表**等宽对齐**（150×36 简化标题栏，图名/设计/校核/日期/图号/比例/材料重排）；
+  4. **装配图三视图版式**（2026-09-30 用户按参考样图成图定稿）：主视图大面居图框**左下**（平面机构取运动平面视图为主视）、长条辅助视图居上方偏左、右视图居上方偏右，三视图铺满图框不挤半边；技术要求落明细栏正上方空档（与本条 1 同源）；球标随主视图布置。ZA 总成图 za30 按此重排后目检通过。
 - **标题栏规范**（GB/T 10609.1）：180×56mm 右下角，图名/图号/材料/比例/设计/校核/日期。
   简化标题栏用画线+note 方案完全可控（7 张图纸实测，见 assembly-drafting.md §B.2）；
   UFTabnot 方案胜在自动边框/合并，定位靠 origin。

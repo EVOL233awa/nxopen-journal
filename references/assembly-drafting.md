@@ -13,7 +13,11 @@ comp, status = assy.ComponentAssembly.AddComponent(
 children = assy.ComponentAssembly.RootComponent.GetChildren() # ⚠ 没有 .Components 属性
 ```
 
-⚠ `Matrix3x3` 的**列向量 = 组件局部轴**（2026-08-22 实测）；姿态角（如 TH1）经表达式驱动后按列向量构造矩阵。
+⚠ `Matrix3x3` 字段组的轴向读法**两笔实测符号相反，复用必须以 GetPosition 位姿+姿态断言兜底**：
+  表达式驱动姿态场景（2026-08-22 实测）记录为"列向量 = 组件局部轴"；AddComponent 显式矩阵
+  场景（2026-09-30 装配图冷启动 za20，18 组件位姿+姿态逐项断言过）+θ 的实测配方是
+  `m.Xx=ca; m.Xy=sa; m.Yx=-sa; m.Yy=ca`（X 字段组 = 局部 X 轴分量）。按行组读、按列读差一个
+  θ 变号；写错的表现 = 组件装到镜像角位且**无报错**，只有含姿态的位姿断言能暴露。
 ⚠ `ComponentAssembly.MoveComponent` 语义不可靠（2026-08-22 实测）→ 重定位组件用 Remove + `AddComponent` 按新位姿重加；重加后组件 `Name` 变 "MODEL"，取显示名用 `DisplayName`。
 ⚠ 验证后才保存；NX GUI 不热重载，批处理改过的装配需重开文件（见 modeling.md §1.8）。
 
@@ -534,3 +538,32 @@ GUI 直启（`ugraf.exe -journal`）、startup 钩子、SendKeys/SetForegroundWi
 钩子内 spawn 的线程在钩子返回时被杀，钩子线程的 `SetTimer(NULL,…)` 永不触发（该线程不泵消息）；
 ② 锁屏（`LogonUI.exe` 在跑）下 `WScript.Shell.AppActivate` 无限挂起、`SetForegroundWindow` 返 False、
 键击落入安全桌面。遇到"无人值守出图"需求，**先确认有没有踩 `View.Drawing` 这个坑**，再谈 GUI。
+
+## ZA 装配图冷启动实测补充（2026-09-30，7 种 18 件曲柄摇杆总成，全链路 za10→za40）
+
+- **持久约束必须一次性建全 + 单一网络 Solve/ApplyToModel**：逐约束建网络求解时，求解器
+  会重排它"看不见"的组件——销 B 曾被拖到 −y（|AB| 平移跳分支，za20 实测）。
+- **`DraftingCurve.GetVertices()` 在装配视图曲线上全灭**（0 条）→ 曲线端点/圆心改查 UF：
+  `ufs.Curve.AskArcData / AskLineData`。**UF 曲线 struct 属性是 PascalCase 且圆心叫
+  `ArcCenter`**（CurveArc_Struct = {ArcCenter, StartAngle, EndAngle, Radius, MatrixTag}；
+  CurveLine_Struct = {StartPoint, EndPoint}），snake_case 直接 AttributeError。
+- **UF 曲线查询返回模型空间坐标**（非图纸坐标）——曲线匹配一律用模型坐标对比；图纸坐标
+  只用于 `AssocDwgPos`/球标原点（球标 model_pos 传图纸坐标实测可用）。
+- **同一曲线两个 END_POINT 建尺寸**：第二关联被解析到同一点、读数 0（与 drafting-annotation.md
+  §"两条不同的边"同源）→ 换两条不同边；线两端点含义不同（销母线 28..66）时 END_POINT 解析
+  不可控，改挂**顶圆弧 ARC_CENTER**，并以"创建→读数→不对即删重试"兜底（za30 `make_dim_retry`）。
+- **视图曲线被其他轮廓截断成多段**（曲柄臂边线与 hub 圆相交）：整线端点匹配落空，需共线
+  匹配取最长段（za30 `find_line_collinear`）。
+- **`SetDrawingReferencePoint` 后 `AskViewScale` 回读 0**：比例断言改用内容包盒实测反推
+  （za30 SCALE_OK 实测 0.5000；右视图内容宽 = 模型 Y 跨度而非 X，比例分母按投影平面选）。
+- **重跑同图页必须先 `ufs.Draw.DeleteDrawing(旧图页)`**：否则 `InsertSheet` 报
+  "specified name already exists"（za30 幂等重跑配方）。
+- **图框必须显式调 `gb.frame(sheet, size)`**：自拟同值几何 dict 传给标题栏不会画图框
+  （第一版 PNG 目检抓出）。
+- **球标避让规则**（`CreateIdSymbol` 的 origin 只被图框钳位、无任何碰撞检查）：球标圆圈必须
+  落在空白口袋——圆圈压零件轮廓（球标 2 案：曲柄臂旋转矩形内无口袋）、引线穿尺寸线/箭头
+  （球标 7 案：竖直尺寸右道）都是实伤；**本视图内无口袋时换视图锚定**（球标 2 最终挂主视
+  长条视图曲柄顶棱左端、圆圈落视图左侧空白）；尺寸道位与球标口袋分区布置（70 挪左道、
+  右缘留给球标）。
+- 表格文本里的 em dash（"—"）在 NX 表格字体下渲染成豆腐块 → 跨栏通配格写中文短语
+  （ZA 总成材料格实测"按明细栏"）。

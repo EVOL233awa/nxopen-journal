@@ -182,7 +182,7 @@ Writing NX scripts is not hard because of syntax: it is hard because you cannot 
 documentation which call actually works in NX 12 batch mode and which one takes the process down.
 That is where an agent falls flat. This skill turns those judgements into instructions:
 
-- Every conclusion comes from a real run. The six domain files and the suite notes carry 277
+- Every conclusion comes from a real run. The six domain files and the suite notes carry 286
   measured annotations across 18 dates, the earliest 2026-08-05. The bar for adding one is explicit:
   first confirm the API exists through nxopen MCP, then pass a minimal real run in NX 12 batch mode.
 - Every conclusion has a case guarding it. `scripts/tests/` holds 35 cases, 32 of them gated. If a
