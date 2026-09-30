@@ -200,7 +200,7 @@ PASS pdf value check - test 19 annotation values
 nxopen-journal/
 ├── SKILL.md                        ← 入口层：铁律 / 环境 / 脚本骨架 / 通用部件操作 / 日志导出 / 工作流 / 域路由
 ├── references/                     ← 六个域文件：modeling / assembly-drafting / drafting-annotation / fea / motion / gb-drawing
-├── images/                         ← 实跑产物图（上面八张）
+├── images/                         ← 实跑产物图（上面六张）
 ├── scripts/
 │   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）
 │   ├── nxlib/                      ← 用例标准层（测试框架 + 建模/装配/制图等五域配方，用例 import 用）
