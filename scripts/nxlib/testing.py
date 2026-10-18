@@ -12,13 +12,21 @@ import traceback
 
 RESULTS = []
 FAILED_STAGES = []
+LOG_LINES = []
 
 
 def say(msg):
     """批处理 stdout 全缓冲：逐行 flush，崩溃时也能看到断到哪一行（铁律 5）。"""
     line = str(msg)
+    LOG_LINES.append(line)
     sys.stdout.write(line + "\n")
     sys.stdout.flush()
+
+
+def write_log(path):
+    """把本进程 say 过的所有行落盘（用例 finally 收尾用）。"""
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(LOG_LINES) + "\n")
 
 
 def stage(name, fn):
@@ -64,3 +72,4 @@ def reset():
     """清空本轮状态（一个进程串多个用例时用）。"""
     del RESULTS[:]
     del FAILED_STAGES[:]
+    del LOG_LINES[:]

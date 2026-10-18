@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """check_journal.py 规则自检（host 端运行，不进 NX）。
 
-每条 2026-09-25 新增规则配一个会命中的反例（任务书 §7 步骤 2 的要求：
-规则必须配会命中的样本，防规则本身是死的），外加一个干净样本做阴性对照。
+每条新增规则配一个会命中的反例（任务书 §7 步骤 2 的要求：规则必须配会命中的
+样本，防规则本身是死的），外加一个干净样本做阴性对照。
 RUN_TESTS.bat 末尾以 host 解释器调用（同 verify_anno_pdf 模式）。
 判定出口：`PASS check_journal rule selftest` / `FAIL check_journal rule selftest ...`
 """
@@ -35,6 +35,23 @@ COUNTER_EXAMPLES = [
      "    cb = part.Features.CreateCylinderBuilder(NXOpen.Features.Feature.Null)\n"
      "    cb.Type = NXOpen.Features.CylinderBuilder.Types.AxisAndHeight\n"
      "    cb.Commit()\n"),
+    ("5.19 UFDrf 伪容器",
+     "UFDrf",
+     "import NXOpen\n"
+     "import NXOpen.UF\n"
+     "\n"
+     "\n"
+     "def main():\n"
+     "    bad = NXOpen.UF.UFDrf\n"
+     "    print(bad)\n"),
+    ("5.16 from math import dist",
+     "3.6.1",
+     "from math import dist\n"
+     "import NXOpen\n"
+     "\n"
+     "\n"
+     "def main():\n"
+     "    print(dist((0.0, 0.0), (3.0, 4.0)))\n"),
 ]
 
 CLEAN_SAMPLE = (

@@ -117,4 +117,25 @@ names = [e.Name for e in wp.Expressions]
 check("EXPR", all(n in names for n in ("p_gear_m", "p_gear_z", "p_rp", "p_rb", "p_smax")),
       "参数链 p_gear_*/p_rp/ra/rf/rb/p_smax 齐全")
 
+# ---- 轮毂分支（2026-10-19 减速器冷启动沉淀）：独立部件，避免表达式重名 ----
+NO_HUB = os.path.join(OUT_DIR, "t34_gear_nohub.prt")
+HUB_PART = os.path.join(OUT_DIR, "t34_gear_hub.prt")
+for p in (NO_HUB, HUB_PART):
+    if os.path.exists(p):
+        os.remove(p)
+
+wp0 = set_work(new_part(path=NO_HUB))
+r0 = involute_gear(wp0, 1.0, 12, 20.0, 10.0, 5.0)
+wp1 = set_work(new_part(path=HUB_PART))
+r1 = involute_gear(wp1, 1.0, 12, 20.0, 10.0, 5.0,
+                   hub_d=9.0, hub_len=14.0)
+# 轮毂 r4.5 < 齿根圆 rf4.75：齿宽内完全埋在齿轮体内，只有两侧各伸出 2 mm
+# 的环带是新增体积 → π*(4.5²−2.5²)*(14−10)，与齿形无关（独立解析）。
+ring = math.pi * (4.5 ** 2 - 2.5 ** 2) * (14.0 - 10.0)
+dv = r1["volume"] - r0["volume"]
+check("HUB_BODY", len(list(wp1.Bodies)) == 1,
+      "bodies=%d" % len(list(wp1.Bodies)))
+check("HUB_VOLUME", abs(dv - ring) <= 0.01 * ring,
+      "dv=%.3f expect ring=%.3f±1%%" % (dv, ring))
+
 check_finish("TEST34_DONE", "TEST34")

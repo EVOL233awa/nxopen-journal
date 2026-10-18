@@ -494,6 +494,18 @@ def check(path: Path) -> int:
                         f"第 {node.lineno} 行: journal 解释器是 NX12 内嵌 Python 3.6.1, "
                         f"{mod}.{node.attr} 不支持 ({hit})"
                     )
+        # from math import dist 后直接 dist(a, b): AST 里是 Name 调用, 上面只看
+        # Attribute 会漏 (2026-10-19 审计实证)。只在"作为调用被使用"时判, 避免
+        # 把 import 行本身或同名局部变量误报。
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            mod = alias_mod.get(node.func.id)
+            if mod:
+                hit = PY36_TRAPS.get((mod, node.func.id))
+                if hit:
+                    issues.append(
+                        f"第 {node.lineno} 行: journal 解释器是 NX12 内嵌 Python 3.6.1, "
+                        f"from {mod} import {node.func.id} 后调用不支持 ({hit})"
+                    )
     # str.removeprefix/removesuffix (3.9+) 与方法名撞车风险高, 只在确认为字符串变量时提示
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
@@ -527,6 +539,17 @@ def check(path: Path) -> int:
         issues.append(
             "CylinderBuilder.Types.AxisAndHeight 不存在 (NX12 Python 封装只有 "
             "ArcAndHeight / AxisDiameterAndHeight); 改用 AxisDiameterAndHeight"
+        )
+
+    # 5.19 (2026-10-19 冷启动实测) NXOpen.UF 没有 UFDrf 容器
+    # 装配图气泡符号用例实际踩中: NXOpen.UF.UFDrf → AttributeError。
+    # 正确入口是 ufs.Drf (UFSession.GetUFSession().Drf) / NXOpen.UF.Drf 属性。
+    if not allow_probes and (
+            re.search(r"\bNXOpen\.UF\.UFDrf\b", text)
+            or re.search(r"from\s+NXOpen\.UF\s+import\s+[^\n]*\bUFDrf\b", text)):
+        issues.append(
+            "NXOpen.UF 没有 UFDrf 容器 (运行时报 AttributeError); "
+            "改用 ufs.Drf (ufs = NXOpen.UF.UFSession.GetUFSession())"
         )
 
     for w in warnings:

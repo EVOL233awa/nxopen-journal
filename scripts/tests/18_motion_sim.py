@@ -13,8 +13,8 @@
 #
 # 检查只卡「运动学」（可靠）：曲柄恒速特性（每帧转角恒定）、摇杆摆角 60.02°、
 #   每转换向 2 次。
-#   注：曲柄判据用「每帧步长恒定」而非「总转角=360°」—— 尾部伪影帧必须截断，
-#   截断后总转角必然不足一整周，拿 360° 当判据会自相矛盾。
+#   注：曲柄判据用「每帧步长恒定」而非「总转角=360°」—— 帧索引 0 基（0..nfr-1），
+#   0 与 nfr-1 都是合法端点；用步长判据不依赖端点是否被截断。
 # ⚠ 反力**不作物理判据**：4 个转动副描述平面四杆同样属静不定
 #   （6×3 − 5×4 = −2），摇杆极限位（曲柄与连杆共线）邻域反力可能是冗余约束伪影。
 #   本用例只校验反力 API 通路（返回条数、数值有限非空）。物理可信的反力须改用
@@ -43,7 +43,7 @@ _p = os.path.abspath(os.path.join(_here, ".."))
 if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
     sys.path.insert(0, _p)
 
-from nxlib.testing import say
+from nxlib.testing import say, write_log
 
 # ---------------- 机构几何（曲柄摇杆四杆，全部 mm） ----------------
 AB, BC, CD, AD = 20.0, 60.0, 40.0, 70.0
@@ -79,8 +79,6 @@ TOL_SPAN = 2.0
 
 MASTER = "m18_asm.prt"
 LOG = os.path.join(os.getcwd(), "test18_log.txt")
-
-_log = []
 
 
 def set_expr(part, expr, value):
@@ -118,8 +116,7 @@ def main():
         _main()
     finally:
         try:
-            with open(LOG, "w", encoding="utf-8", newline="\n") as f:
-                f.write("\n".join(_log) + "\n")
+            write_log(LOG)
         except Exception:
             pass
 
@@ -266,30 +263,12 @@ def _main():
 
     def link_angles(cn):
         vals = []
-        for fr in range(1, nfr + 1):
+        for fr in range(nfr):                 # 0 基：0..nfr-1，含 t=0 与 t=t_end
             r = extract_tf(links[cn].Tag, fr)
             if r is None:
                 continue
             vals.append(math.atan2(r[4], r[0]))      # R[1,0]=r[4], R[0,0]=r[0]
         return vals
-
-    def drop_trailing_dup(vals, per_frame_rad):
-        """丢弃尾部的重复帧。
-
-        实测（2026-09-16，本用例 360 步）：AskNumberOfAnimationFrames 返回 NSTEP+1=361，
-        其中**第 1 帧已是第一个积分步之后的状态**（t=Δt，非 t=0），且**末帧与前帧完全相同**
-        （转角差 8e-6°）。序列为 -1.00000, -2.00000, ..., -360.00001, -360.00000。
-        合理解读：361 帧里有 360 个真实步态，多出的 1 帧是末帧副本。
-        判据：末尾相邻帧步长 < 10% 标准步长即判为副本，循环剔除。
-        ⚠ 不用「偏离中位步长」判据：从动件本就变速（本四杆 dψ/dθ ∈ 0~0.565 rad/rad），
-        中位判据会把真实变速误判为伪影（实测曾误截到第 6 帧）。"""
-        n = len(vals)
-        cut = n
-        while cut >= 2 and abs(vals[cut - 1] - vals[cut - 2]) < 0.1 * per_frame_rad:
-            cut -= 1
-        if cut < n:
-            say("  DROP_TRAILING_DUP: %d -> %d frame(s)" % (n, cut))
-        return vals[:cut]
 
     crank_raw = unwrap(link_angles("曲柄"))
     rocker_raw = unwrap(link_angles("摇杆"))
@@ -308,8 +287,8 @@ def _main():
 
     # 恒速驱动：真实步长应 = 360°/(nfr-1)。整周 360° 由 nfr-1 个步长覆盖。
     per_frame_rad = (2.0 * math.pi) / float(nfr - 1)
-    crank = drop_trailing_dup(crank_raw, per_frame_rad)
-    rocker = drop_trailing_dup(rocker_raw, per_frame_rad)
+    crank = crank_raw
+    rocker = rocker_raw
     nused = min(len(crank), len(rocker))
     crank, rocker = crank[:nused], rocker[:nused]
     per_frame = math.degrees(per_frame_rad)
@@ -349,11 +328,13 @@ def _main():
             f.write("# case 18: planar four-bar (crank-rocker), NX Motion solve\n")
             f.write("# crank %.1f deg/s constant, %d steps over %.1f s\n"
                     % (OMEGA_DEG_S, NSTEP, T_END))
-            f.write("# angles: unwrapped, degrees, as returned for frame 1..N\n")
-            f.write("# frame,crank_deg,rocker_deg\n")
+            f.write("# angles: unwrapped, degrees, frame 0 = t=0\n")
+            f.write("# frame,time_s,crank_deg,rocker_deg\n")
             for i in range(nused):
-                f.write("%d,%.6f,%.6f\n"
-                        % (i + 1, math.degrees(crank[i]), math.degrees(rocker[i])))
+                t = T_END * i / float(nused - 1) if nused > 1 else 0.0
+                f.write("%d,%.6f,%.6f,%.6f\n"
+                        % (i, t, math.degrees(crank[i]),
+                           math.degrees(rocker[i])))
         say("CSV %s rows=%d" % (os.path.basename(csv_path), nused))
     except Exception as exc:
         say("CSV SKIP %s: %s" % (type(exc).__name__, str(exc)[:50]))

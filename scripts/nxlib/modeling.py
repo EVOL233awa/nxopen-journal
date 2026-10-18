@@ -21,9 +21,13 @@ def ufs():
 
 # ---------------------------------------------------------------- 表达式
 
-def expressions(wp, pairs):
-    """pairs: [(名, 值)] → {名: Expression}（01 号口径）。"""
-    unit = wp.UnitCollection.GetBase("Length")
+def expressions(wp, pairs, unit_name="Length"):
+    """pairs: [(名, 值)] → {名: Expression}（01 号口径）。
+
+    unit_name: "Length"（默认）或 "Angle"。角度/弧度表达式必须传 "Angle"，
+    否则量纲按长度建，写 RightHandSide 时数值被当成 mm 解释。
+    """
+    unit = wp.UnitCollection.GetBase(unit_name)
     out = {}
     for n, v in pairs:
         out[n] = wp.Expressions.CreateSystemExpressionWithUnits(n + " = " + str(v), unit)
@@ -445,11 +449,14 @@ _D2R = _math.pi / 180.0
 _A2R = 180.0 / _math.pi
 
 
-def involute_gear(wp, m, z, alpha_deg, b_width, bore_d):
+def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
+                  hub_len=0.0, z_offset=0.0):
     """标准渐开线直齿圆柱齿轮（无变位、无根切保护，ha*=1 c*=0.25）。
 
     参数全部走数值（mm/deg）；内部建 Number 表达式链 p_gear_* → p_rp/ra/rf/rb
     与 2*z 条齿面规律曲线表达式（改表达式可联动齿面，弧/线为哑曲线）。
+    hub_d/hub_len > 0 时在齿宽中央加轮毂（2026-10-19 减速器冷启动实测口径）；
+    z_offset 平移整个齿轮的 Z 起点（默认 0）。
     返回 dict: body / volume / tip_tags / root_tags（供用例断言）。
     口径：T8 逐字平移；体积对 z 敏感 ~5%/齿，验收带 ±2%。
     """
@@ -557,7 +564,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d):
 
     # 5) 全齿闭合轮廓一次拉伸（region 点在材料内 r<rf）
     feats = u.Modl.CreateExtruded(
-        law_tags + aux_tags, "0.0", ["0.0", repr(b_width)],
+        law_tags + aux_tags, "0.0", [repr(z_offset), repr(z_offset + b_width)],
         [min(16.0, rf * 0.5), 0.0, 0.0], [0.0, 0.0, 1.0],
         NXOpen.UF.ModlFeatureSigns.NULLSIGN)
     bs = bodies(wp)
@@ -571,11 +578,40 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d):
         NXOpen.Vector3d(1.0, 0.0, 0.0), NXOpen.Vector3d(0.0, 1.0, 0.0),
         bore_d / 2.0, 0.0, 2.0 * _math.pi)
     u.Modl.CreateExtruded(
-        [circ.Tag], "0.0", ["-1.0", repr(b_width + 2.0)], [0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0], NXOpen.UF.ModlFeatureSigns.NEGATIVE)
+        [circ.Tag], "0.0", [repr(z_offset - 1.0), repr(z_offset + b_width + 1.0)],
+        [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], NXOpen.UF.ModlFeatureSigns.NEGATIVE)
     bs = bodies(wp)
     if len(bs) != 1:
         raise RuntimeError("involute_gear: bore gave %d bodies" % len(bs))
+    body = bs[0]
+
+    # 7) 可选轮毂：齿宽中央的圆柱，先打轴孔再并入齿轮
+    if hub_d > 0.0 and hub_len > 0.0:
+        def _disc(z0, z1, radius):
+            c = wp.Curves.CreateArc(
+                NXOpen.Point3d(0.0, 0.0, 0.0),
+                NXOpen.Vector3d(1.0, 0.0, 0.0), NXOpen.Vector3d(0.0, 1.0, 0.0),
+                radius, 0.0, 2.0 * _math.pi)
+            u.Modl.CreateExtruded(
+                [c.Tag], "0.0", [repr(z0), repr(z1)],
+                [0.0, 0.0, 0.0], [0.0, 0.0, 1.0],
+                NXOpen.UF.ModlFeatureSigns.NULLSIGN)
+
+        z0 = z_offset + (b_width - hub_len) / 2.0
+        _disc(z0, z0 + hub_len, hub_d / 2.0)
+        hub_body = [b for b in bodies(wp) if b.Tag != body.Tag][0]
+        if bore_d > 0.0:
+            _disc(z0 - 1.0, z0 + hub_len + 1.0, bore_d / 2.0)
+            hole_body = [b for b in bodies(wp)
+                         if b.Tag not in (body.Tag, hub_body.Tag)][0]
+            boolean(wp, hub_body, hole_body,
+                    NXOpen.Features.Feature.BooleanType.Subtract)
+        boolean(wp, body, hub_body, NXOpen.Features.Feature.BooleanType.Unite)
+        bs = bodies(wp)
+        if len(bs) != 1:
+            raise RuntimeError("involute_gear: hub unite gave %d bodies" % len(bs))
+        body = bs[0]
+
     return {
         "body": bs[0],
         "volume": volume(wp, bs[0]),

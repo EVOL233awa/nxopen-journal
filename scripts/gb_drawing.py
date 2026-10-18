@@ -251,13 +251,16 @@ def title_block(sheet, frame_geo, name=None, design=None, check=None,
             "top": top, "bottom": frame_geo["bottom"]}
 
 
-def tech_note(sheet, tb_geo, lines=None, size=TEXT_DIM):
+def tech_note(sheet, tb_geo, lines=None, size=TEXT_DIM, base_y=None):
     """技术要求块：贴标题栏正上方、随行数上生长（GB 通行位置）。
-    行距 6.5mm（约 1.9 倍字高），块底距标题栏顶约 6mm。"""
+    行距 6.5mm（约 1.9 倍字高），块底距标题栏顶约 6mm。
+
+    base_y: 上方已有明细栏时传明细栏顶边 y，避免技术要求压在明细栏上。"""
     if lines is None:
         lines = DEFAULT_NOTE_LINES
     x = tb_geo["left"]
-    y = tb_geo["top"] + 6.5 * len(lines) + 6.0
+    anchor = tb_geo["top"] if base_y is None else float(base_y)
+    y = anchor + 6.5 * len(lines) + 6.0
     note = part_note(sheet, lines, (x, y), size)
     return note
 
@@ -334,6 +337,21 @@ def model_bbox(body):
     if not xs:
         raise RuntimeError("model_bbox: body has no edges")
     return ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))
+
+
+def assembly_bbox(bodies):
+    """Union of model_bbox over several bodies (assembly drawing layout).
+
+    装配图包盒必须把所有组件（齿轮齿顶、端盖、轴伸）都算进来；
+    model_bbox/standard_views 只接受单个 body（2026-10-19 冷启动实测缺口）。
+    """
+    boxes = [model_bbox(b) for b in bodies]
+    if not boxes:
+        raise RuntimeError("assembly_bbox: empty body list")
+    return ((min(b[0][0] for b in boxes), min(b[0][1] for b in boxes),
+             min(b[0][2] for b in boxes)),
+            (max(b[1][0] for b in boxes), max(b[1][1] for b in boxes),
+             max(b[1][2] for b in boxes)))
 
 
 def content_bbox(view, mmin, mmax):
@@ -547,23 +565,25 @@ def extreme_edge(edges, along, key, side):
 
 
 def map_point(view, model_xyz):
-    """UF_VIEW_map_model_to_drawing with the documented fallback formula.
-    Accepts NXOpen.Point3d or any (x, y, z) sequence."""
+    """Map a model point to drawing space via ufs.View.MapModelToDrawing.
+
+    Accepts NXOpen.Point3d or any (x, y, z) sequence.  There is deliberately
+    NO fallback: a guessed affine formula (ref + xyz) ignores projection,
+    scale and view centre, so it returns plausible-looking but wrong sheet
+    coordinates and silently corrupts every dimension/BOM lane built on it.
+    """
     ufs = _ufs()
     if hasattr(model_xyz, "X"):
         xyz = (float(model_xyz.X), float(model_xyz.Y), float(model_xyz.Z))
     else:
         xyz = (float(model_xyz[0]), float(model_xyz[1]),
                float(model_xyz[2]))
-    try:
-        r = ufs.View.MapModelToDrawing(view.Tag, list(xyz))
-        cand = r[1] if isinstance(r, tuple) else r
-        if hasattr(cand, "__len__") and len(cand) >= 2:
-            return (float(cand[0]), float(cand[1]))
-    except Exception:
-        pass
-    ref = parent_ref(view)
-    return (ref[0] + xyz[0], ref[1] + xyz[1])
+    r = ufs.View.MapModelToDrawing(view.Tag, list(xyz))
+    cand = r[1] if isinstance(r, tuple) else r
+    if not hasattr(cand, "__len__") or len(cand) < 2:
+        raise RuntimeError("map_point: unexpected MapModelToDrawing result %r"
+                           % (r,))
+    return (float(cand[0]), float(cand[1]))
 
 
 # ----------------------------------------------------------------- dimensions
@@ -585,7 +605,14 @@ def dim_between(part, view, a, b, lane_y=None, lane_x=None, horizontal=True,
 
     a/b = (edge, assoc_type, model_point).  The dimension line sits at
     lane_y (horizontal dim) or lane_x (vertical dim) in sheet mm — pass
-    view_bbox() based values, e.g. bbox bottom - LANE_FIRST."""
+    content_bbox() based values (not view_bbox, which is inflated by the
+    view label), e.g. bbox bottom - LANE_FIRST.
+
+    WARNING (2026-10-19 measured): on assembly-instance edges + section
+    views, END_POINT attachments can silently pick the wrong endpoint
+    (200 -> 200.2, 140 -> 136.3) even with two different edges and explicit
+    AssocDwgPos.  Always verify the rendered value in the PDF text layer;
+    do not assume it equals the model bbox difference."""
     ufs = _ufs()
     oa, xy_a = _assoc_obj(a[0], view, a[1], a[2])
     ob, xy_b = _assoc_obj(b[0], view, b[1], b[2])

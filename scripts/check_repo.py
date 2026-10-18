@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """本仓库自检：不依赖 NX 与第三方包，云端 CI 与本机都能跑。
 
-四组检查，判据全部从目录树自身推出，没有一个写死的期望值，所以新增用例或文档
+六组检查，判据全部从目录树自身推出，没有一个写死的期望值，所以新增用例或文档
 不会让检查静默放过：
 
   1) PY36       scripts/tests/*.py 必须能以 Python 3.6 语法解析。NX 12 内嵌解释器
@@ -17,6 +17,8 @@
                 （同名=配方被复制进用例，正是"越滚越大的史山"的形态；应 import）。
                 探针/死路用例的自包含是设计决策，名单在 SELF_CONTAINED，新增同类
                 必须显式登记。nxlib/*.py 与 scripts/gb_drawing.py 同样过 PY36 语法。
+  6) CONCISE    agent 文档（SKILL.md、references/*.md、tests/README.md）不得出现
+                日期与过程叙述词；新知识必须是结论/做法，不能把验证故事写回来。
 
 用法：python scripts/check_repo.py [仓库根]
 退出码 0 = 全部通过，1 = 有问题（逐条打印在 stdout）。
@@ -40,6 +42,8 @@ SELF_CONTAINED = {
     "13_api_probe3.py", "17_motion_deadends.py", "28_pattern_helix.py",
     "32_pattern_enums.py",
 }
+# 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
+PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
 CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件
 PATH_RE = re.compile(r"`([A-Za-z0-9_./\\-]+\.(?:md|py|bat|yaml|png|prt|sim|fem))`")
@@ -47,6 +51,22 @@ PATH_RE = re.compile(r"`([A-Za-z0-9_./\\-]+\.(?:md|py|bat|yaml|png|prt|sim|fem))
 IMG_RE = re.compile(r"(?:<img[^>]*\bsrc=\"([^\"]+)\")|(?:\]\(([^)\s]+\.png)\))")
 EXTERNAL = ("ugiicmd.bat", "ufvars.bat", "run_journal.exe")
 DELIM = re.compile(r"^\|[\s:|\-]+\|$")
+# CONCISE：只扫 agent 文档。README/CHANGELOG 是人类文档，允许日期与"实测"表述。
+# 词表只收过程叙述标记；"验证/复测"这类动作词是配方的一部分，不拦。
+CONCISE_PATTERNS = (
+    (r"20\d\d-\d\d-\d\d", "日期"),
+    (r"实测", "实测"),
+    (r"冷启动", "冷启动"),
+    (r"复验", "复验"),
+    (r"此前", "此前"),
+    (r"推翻", "推翻"),
+    (r"旧结论", "旧结论"),
+    (r"作废", "作废"),
+    (r"踩过", "踩过"),
+    (r"白跑", "白跑"),
+    (r"本轮", "本轮"),
+    (r"代价", "代价"),
+)
 
 problems = []
 
@@ -110,19 +130,24 @@ def check_coverage():
         return
     batch = read(BATCH)
     files = set(n for n in os.listdir(TESTS) if CASE_RE.match(n))
-    gated = set(re.findall(r"call\s*:\s*gate\s+(\d\d)_[a-z_0-9]+\.py", batch))
+    # :gate 必须是行首的 call（允许前导空白）。旧正则不锚行首，于是
+    # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行仍被算作
+    # "已覆盖"，套件实际跳过 34 号却报全绿（2026-10-19 实测踩中）。
+    gated = set(re.findall(r"(?m)^[ \t]*call[ \t]+:gate[ \t]+(\d\d_[a-z_0-9]+\.py)", batch))
     mentioned = set(re.findall(r"(\d\d_[a-z_0-9]+\.py)", batch))
+    expected = files - PROBES
     for n in sorted(files):
         if n not in mentioned:
             problems.append("COVERAGE %s 未被 RUN_TESTS.bat 提及" % n)
             print("  FAIL %s 未被 RUN_TESTS.bat 提及" % n)
-    by_num = dict((n[:2], n) for n in files)
-    for g in sorted(gated):
-        if g not in by_num:
-            problems.append("COVERAGE :gate %s 没有对应文件" % g)
-            print("  FAIL :gate %s 没有对应文件" % g)
-    print("  用例文件 %d 个（其中并入校验 %d 个），批次文件提到 %d 个"
-          % (len(files), len(gated), len(mentioned)))
+    for n in sorted(expected - gated):
+        problems.append("COVERAGE %s 有文件但没有行首 call :gate（不会被实际执行）" % n)
+        print("  FAIL %s 有文件但没有行首 call :gate（不会被实际执行）" % n)
+    for g in sorted(gated - expected):
+        problems.append("COVERAGE :gate %s 是探针或没有对应文件" % g)
+        print("  FAIL :gate %s 是探针或没有对应文件" % g)
+    print("  用例文件 %d 个（应并入校验 %d 个，实际 gate %d 个），批次文件提到 %d 个"
+          % (len(files), len(expected), len(gated), len(mentioned)))
 
 
 def check_docs():
@@ -264,6 +289,30 @@ def check_nolib():
           % (len(apis), len(SELF_CONTAINED), dup))
 
 
+def check_concise():
+    print("== 6. agent 文档精简（禁日期 / 过程叙述）==")
+    paths = [os.path.join(ROOT, "SKILL.md")]
+    refdir = os.path.join(ROOT, "references")
+    if os.path.isdir(refdir):
+        paths += [os.path.join(refdir, n) for n in sorted(os.listdir(refdir))
+                  if n.endswith(".md")]
+    tests_readme = os.path.join(TESTS, "README.md")
+    if os.path.exists(tests_readme):
+        paths.append(tests_readme)
+    hits = 0
+    for path in paths:
+        r = rel(path)
+        text = read(path)
+        for pat, label in CONCISE_PATTERNS:
+            for m in re.finditer(pat, text):
+                line = text.count("\n", 0, m.start()) + 1
+                hits += 1
+                problems.append("CONCISE %s:%d 出现过程词 %s（改写成结论/做法）"
+                                % (r, line, label))
+                print("  FAIL %s:%d 过程词 %s" % (r, line, label))
+    print("  扫描 %d 个 agent 文档：过程词 %d 处" % (len(paths), hits))
+
+
 def main():
     print("check_repo.py  root=%s" % ROOT)
     check_py36()
@@ -271,6 +320,7 @@ def main():
     check_docs()
     check_tree()
     check_nolib()
+    check_concise()
     print("")
     if problems:
         print("CHECK_REPO_FAILED %d 项" % len(problems))
