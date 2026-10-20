@@ -41,7 +41,7 @@ mm = sim_part.MotionManager                   # .Links/.Joints/.JointDrivers
                                               # /.MotionSolutions/.ScalarTorques
 ```
 
-- 结果只在 `.sim` 读：`links`/`joints` 属 sim_part；`theSession.Parts` 直接迭代（无 `ToArray()`，SKILL.md §3 坑位 4）。
+- 结果只在 `.sim` 读：`links`/`joints` 属 sim_part；`theSession.Parts` 直接迭代（无 `ToArray()`，SKILL.md §3 路线约束 4）。
 - `.sim` 位于 `<master 目录>\<master 基名>\motion_1.sim`；重跑须连该子目录清理，否则生成 `motion_2.sim` 或认领旧仿真。
 
 ### M.2 Link（构件）与质量属性
@@ -80,7 +80,7 @@ joint = jb.Commit(); jb.Destroy()
 ms.FixLinkToGround(links[ground_cn])          # 接地件
 ```
 
-`JointDefine` 另供 `SecondOrigin`/`SecondVector`、`FirstCsys`/`SecondCsys`/`FirstMatrix`、`ExcludeRxConstraint`、`AxisType`、`LimitsDefined`；枚举在 `ufs.Motion`（`MotionType`/`VectorComponent`/`ReferenceFrame`/`FuncResultType`/`FuncComponentType`/`FuncRefFrameType`），`NXOpen.UF.UFMotion` 不可导入，`.NET` 枚举挂类上（SKILL.md §3 坑位 9/10）。
+`JointDefine` 另供 `SecondOrigin`/`SecondVector`、`FirstCsys`/`SecondCsys`/`FirstMatrix`、`ExcludeRxConstraint`、`AxisType`、`LimitsDefined`；枚举在 `ufs.Motion`（`MotionType`/`VectorComponent`/`ReferenceFrame`/`FuncResultType`/`FuncComponentType`/`FuncRefFrameType`），`NXOpen.UF.UFMotion` 不可导入，`.NET` 枚举挂类上。
 
 Slider：平移轴=关节局部 z 轴，两组向量对齐导轨，缺第二组报 `A NULL value was encountered`。r40/l120/e20：y 恒 20.000000 mm，x 偏差 ≤0.001316 mm，杆长 ≤0.001303 mm。
 
@@ -221,9 +221,9 @@ b.Validate(); b.Commit()
 - `AskGrueblerCount()`：2 Link+1 转动副 → **7**（`6n−5j` 粗计数，非自由度；见 §M.8）。
 - `InitInterferenceStruct()` 0 参（out 参数即返回值），字段 `Solid1`/`Solid2`；`CreateInterference(...)` 抛 `SystemError` → 用帧变换后处理。
 
-### M.5c 驱动的种类上限
+### M.5c 驱动选型
 
-`jdb.DriverMultiOperations` 只有 `MotionEulerAngle1`/`MotionPointOnCurve`/`MotionTranslationZ`；超出回退 GUI 或运动状态函数（§M.5）。
+`jdb.DriverMultiOperations` 用 `MotionEulerAngle1`/`MotionPointOnCurve`/`MotionTranslationZ`；其余驱动走 GUI 或运动状态函数（§M.5）。
 
 `MotionTranslationZ`：沿**关节局部 z 轴**，非全局 Z；正速度沿 **−z_joint**，单位 = 部件长度单位/秒。判据：局部 z 对齐 +X、`VelocityExpression=10.0` 跑 1 s → `Tx=-10.0`；沿 +X 传负值。
 
@@ -268,7 +268,7 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 - `AskLinkTransfromForGivenFrame`：2 参优先，3 参 `(tag, frame, [0.0]*12)` 备用；`frame` 0..nfr-1，帧 0=t=0。
 - 16 值=4×4 **行主序**，平移 **3/7/11**；R22（10）恒 1.0、Tz（11）自检。绕轴角（相对设计位姿）：Z `atan2(r[4],r[0])`、Y `atan2(r[2],r[0])`、X `atan2(r[9],r[5])`；要绝对物理角，按 §M.4 取 `T·[设计点,1]` 再 `atan2`。
 - 列主序（12/13/14）→ 杆长偏差 14.17 mm、铰点不共点；行主序 → 0.0013 mm。杆长/共点=判别器。
-- `AskVelocity/AccelerationResults` 恒 0.0（静默失败），签名 `(tag, MotionType.ROTATION, VC.MAGNITUDE, RF.ABSOLUTE)`。
+- 速度用帧变换中心差分；`AskVelocity/AccelerationResults` 恒 0.0（静默失败），签名 `(tag, MotionType.ROTATION, VC.MAGNITUDE, RF.ABSOLUTE)`。
 - 自算 ω/α：方位角中心差分，平面 `atan2(R[1,0],R[0,0])`；journal 内无 numpy，中心差分手写，端点用单边差分且不参与精度判据；宿主侧绘图可用 `np.gradient(..., edge_order=2)`。
 - 线速度：平移 3/7/11 差分；内部帧 ≤0.0032 mm/s；**frame 1 含首步瞬态（0.2366 mm/s），判据从 frame 2 起**；端点单边差分不可判精度。
 - 用 `range(nfr)`；1..nfr 越界返回末帧副本/归零值。勿用中位步长剔帧（四杆 dψ/dθ 0~0.565 rad/rad）。
@@ -280,7 +280,7 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 
 **转动副描述平面机构静不定，反力不可直接用。**
 
-平面 5 构件×7 转动副：`6×5−5×7=−5`。NX 打印 `Redundant constraints will be removed automatically, results may be not as expected.`。摇杆极限位（共线、雅可比近奇异）附近消去方式跳变，反力逐帧抖动（`J_D` 122/185 N，Z 向 ~1/~184 N）。
+平面 5 构件×7 转动副：`6×5−5×7=−5`。NX 打印 `Redundant constraints will be removed automatically, results may be not as expected.`。摇杆极限位（共线、雅可比近奇异）附近消去方式跳变，反力逐帧抖动数倍。
 
 判伪：步长加密 4 倍（1080→4320）尖峰位置与幅值不变 → 冗余约束数值伪影；尖峰在死点邻域。
 
@@ -290,7 +290,7 @@ Kinematics 仍可用 NX（位姿/摆角/传动角偏差 ≤0.15°），只有反
 
 ### M.9 批处理多工况（并行）
 
-`run_journal.exe` **不接收命令行参数** → 用环境变量传配置路径，输出名按配置名区分：
+`run_journal.exe` 只接收 `.bat` 传入的 journal 路径，**不转发额外参数** → 用环境变量传配置路径，输出名按配置名区分：
 
 ```python
 CFG = os.environ.get("RUN141_CFG") or os.path.join(RESDIR, "load_case.json")
@@ -313,27 +313,10 @@ scripts\run_journal_batch.bat C:\abs\...\scripts\tests\36_motion_slider.py C:\ab
 
 用例 18：四杆 AB20/BC60/CD40/AD70（Grashof，AB 曲柄），检查速率+恒速、摆角 `60.0282°`（解析 `60.0218°`）、换向 2 次、反力通路；期望值来自外部解析解。反向验证：驱动 `360→2π` → 速率/摆角/换向 FAIL、反力 PASS；`CD 40→50` → 仅摆角 FAIL（`47.74°`）。
 
-### 坑位对照（遇到 → 怎么做）
+### 结果读取约束（跨域通用）
 
-| 遇到 | 怎么做 |
-| --- | --- |
-| `AskVelocity/AccelerationResults` 全 0.0 | 静默失败；用帧变换中心差分 |
-| `ValueExpression` 写 `WZ`/`IF`/`TANH`/`SGN` 报 syntax error | 符号载荷走外部解算器 |
-| `CreateFunction()` 注册后取不到 | 用内置函数或运动状态函数 |
-| `MassCenter` 传 `Point3d` 报类型错 | 传 `NXOpen.Point`；被吞则质心落原点 |
-| NX 反力做强度校核 | 平面转动副静不定，死点邻域 5~10 倍伪尖峰；用静定解算器（§M.8） |
-| 无几何 Link 用包络/干涉 | 无体可扫掠；用帧变换后处理 |
-| `CreateInterference()` | 抛 `SystemError`；只有 `InitInterferenceStruct()` |
-| `ScalarSprings`/`ScalarDampers`/`ScalarBushings` | 用 `Springs`/`Dampers`/`Bushings`（§M.5a） |
-| 直接赋值 `b.ActionLink`、实例取 `AttachmentType` | 写 `.Value`；枚举在类上（§M.5a） |
-| 阻尼器建不出来 | 缺 `CoefficientType = Constant`（§M.5a） |
-| 衬套 Commit 报 `A NULL value` | 缺 `Orientation`，要 **NXMatrix**（§M.5a） |
-| 衬套旧族/混填系数型 | deprecated / `mixed usage is not supported`（§M.5a） |
-| 实例上 0 参调枚举访问器 | `instances of NX enums can not be created`（§M.5a） |
-| 取连杆位姿 | 16 值=4×4 行主序，平移 3/7/11；R22（10）恒 1.0（§M.7） |
-| 列主序解读，杆长/共点不符 | 平移误取 12/13/14 致 14 mm 漂移；改取 3/7/11（§M.7） |
-| `range(1,nfr+1)` 遍历 | 0 基 `0..nfr-1`，帧 0 = t=0（§M.6） |
-| 装配建 `Constraint.Type.Slider` | `not valid for this operation`；只在 Motion 域建（§M.3） |
-| 滑动副 Commit 报 `A NULL value` | 补 `SecondOrigin`/`SecondVector`（§M.3） |
-| `cb.FirstJoint = joint` 不生效 | `SelectObject` 写 `.Value`（§M.4a） |
-| 齿轮传动比不对 | `RatioExpression` 与半径比同值；外啮合取负（§M.4a） |
+- 帧索引 0 基 `0..nfr-1`，帧 0 = t=0；不要用 `range(1,nfr+1)`。
+- 位姿 16 值是 4×4 **行主序**，平移取 3/7/11；取 12/13/14 会得到 14 mm 级漂移。
+- `MassCenter` 传 `NXOpen.Point`，不是 `Point3d`；被 try/except 吞掉会让质心落原点。
+- `AskVelocity/AccelerationResults` 恒 0，速度用帧变换中心差分。
+- 平面转动副静不定，反力不做强度判据；用静定解算器（§M.8）。

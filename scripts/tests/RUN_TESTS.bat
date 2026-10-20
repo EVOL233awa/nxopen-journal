@@ -7,7 +7,7 @@ rem 12_api_probe2.py and 13_api_probe3.py are one-shot API probes: they are
 rem kept as evidence of how an API behaves and are not part of the gate.
 rem 09 runs NX Nastran and is the slowest case, so it runs last.
 rem
-rem GATE (2026-09-20): run_journal.exe propagates only UNCAUGHT
+rem GATE: run_journal.exe propagates only UNCAUGHT
 rem exceptions as a non-zero exit code, and these journals
 rem deliberately catch per-stage failures and continue
 rem (SKILL.md section 3). So every case is gated on a verdict
@@ -107,7 +107,7 @@ if errorlevel 1 exit /b 1
 call :gate 09_fea_static.py BENCH_PASS
 if errorlevel 1 exit /b 1
 
-rem host-side selftest of the 2026-09-25 check_journal rules:
+rem host-side selftest of the check_journal rules:
 rem counter-examples must HIT, the clean sample must pass
 call :ruleselftest
 if errorlevel 1 exit /b 1
@@ -163,7 +163,7 @@ rem step silently does nothing.
 rem ------------------------------------------------------------
 rem ------------------------------------------------------------
 rem :ruleselftest - host-side selftest of the check_journal rules
-rem added 2026-09-25 (5.17 enum accessor, 5.18 cylinder enum).
+rem covers 5.17 enum accessor, 5.18 cylinder enum, 5.19 UFDrf, 5.16 math.
 rem Counter-examples must HIT; a clean sample must pass.
 rem ------------------------------------------------------------
 :ruleselftest

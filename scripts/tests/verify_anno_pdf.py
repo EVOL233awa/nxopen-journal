@@ -12,7 +12,7 @@ Usage:
 
 --dump prints every text token, which is how the EXPECT list below was derived.
 
-Token layer limitations (NX 12 PDF export, measured 2026-09-20):
+Token layer limitations (NX 12 PDF export, measured):
   - CJK text has no ToUnicode mapping, so Chinese requirements/table text is
     invisible here (drafting-annotation.md section 10).
   - The diameter glyph Ø is dropped the same way: the "4x<O>8" label renders

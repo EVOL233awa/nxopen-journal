@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # Test 27: UF radius dimension -- what the call actually requires.
 #
-# The 2026-09-22 probe recorded "CreateRadiusDim needs a genuine arc edge; the
+# The probe recorded "CreateRadiusDim needs a genuine arc edge; the
 # D10 hole only offers two circle edges, no candidate" and never called the
 # function. That record was a probe artefact: the probe filtered candidates by
-# radius and bailed before the call. Measured again on 2026-09-23 (NX 12.0.0.27,
+# radius and bailed before the call. Measured again (NX 12.0.0.27,
 # headless batch), on a plate that carries BOTH kinds of circular edge:
 #
 #   ufs.Drf.CreateRadiusDim(uf_obj(edge, view, assoc, dwg_xy), ufs.Drf.Text(),
@@ -21,7 +21,7 @@
 # distinction that matters for picking a candidate is
 # edge.SolidEdgeType == NXOpen.Edge.EdgeType.Circular (a straight edge of the
 # same cylindrical face is EdgeType.Linear and reports the same face radius if
-# the radius is read off the face instead of the edge -- the 2026-09-22 trap).
+# the radius is read off the face instead of the edge -- the trap).
 import os
 import sys
 

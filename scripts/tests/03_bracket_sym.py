@@ -2,7 +2,7 @@
 # Test C: symmetric bracket (mirror feature + boolean unite + holes)
 # Covers: sketch+extrude half profile, datum plane via part.Planes.CreatePlane,
 #         MirrorFeatureBuilder, boolean unite, hole
-# 2026-09-24 起配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
+# 配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
 import os
 import sys
 

@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Current version 1.1.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Current version 1.2.0 (see [CHANGELOG.md](CHANGELOG.md)).
 
 An agent skill for Siemens NX 12. After installation, an agent can write NXOpen Python journal
 scripts from natural-language instructions, run them headlessly through NX 12 in batch mode, and
@@ -225,6 +225,7 @@ PASS 34_involute_gear.py
 PASS 35_assembly_preload.py
 PASS 36_motion_slider.py
 PASS 09_fea_static.py
+PASS check_journal rule selftest - counter-examples hit, clean passes
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
@@ -254,8 +255,9 @@ NXOpen is hard less because of syntax than because it is difficult to tell from 
 calls survive NX 12 batch mode and which ones take the process down. This skill turns those
 judgements into recipes: each conclusion is first checked against nxopen MCP, then run in NX 12
 batch mode. Conclusions that can be guarded have regression cases, so a change that breaks one
-shows up when running `scripts\tests\RUN_TESTS.bat`. Dead ends are listed in the pitfall tables as
-"when this happens, do that": for interference checking use the boolean-intersect route and
+shows up when running `scripts\tests\RUN_TESTS.bat`. Dead ends are inlined as a one-line constraint
+in the matching route ("when this happens, do that"); only cross-domain high-frequency traps stay in
+`SKILL.md` §1. For interference checking use the boolean-intersect route and
 the `SimpleInterference` route, for threaded holes use "pilot hole plus annotation".
 
 ## Known limitations
@@ -281,7 +283,7 @@ the `SimpleInterference` route, for threaded holes use "pilot hole plus annotati
 nxopen-journal/
 ├── SKILL.md                        entry layer: rules / environment / skeleton / common operations / logging / workflow / routing
 ├── CHANGELOG.md                    version history (Keep a Changelog)
-├── references/                     six domain files: modeling / assembly-drafting / drafting-annotation / fea / motion / gb-drawing
+├── references/                     eight domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
 ├── images/                         figures from real runs
 ├── scripts/
 │   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)

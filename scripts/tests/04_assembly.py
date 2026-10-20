@@ -2,7 +2,7 @@
 # Test D: assembly (create two parts, build assembly, add components)
 # Covers: multiple FileNew in one session, ComponentAssembly.AddComponent,
 #         component placement via origin + matrix, save assembly
-# 2026-09-24 起配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
+# 配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
 import os
 import sys
 

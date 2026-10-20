@@ -2,7 +2,7 @@
 # Test 31: the section-view variants test 21 does not reach -- half section,
 # revolved section, and the unfolded toggle.
 #
-# Measured 2026-09-23, NX 12.0.0.27, headless batch. Part: 120x80x12 plate with a
+# Measured, NX 12.0.0.27, headless batch. Part: 120x80x12 plate with a
 # D20 through hole at (60,40), A4 sheet, standard Base views (Front/Top/Right),
 # cut plane at z=6 (mid height, halves the through hole).
 #

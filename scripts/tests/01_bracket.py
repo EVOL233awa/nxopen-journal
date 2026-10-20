@@ -2,7 +2,7 @@
 # Test A: parametric bracket (base part)
 # Covers: FileNew, expressions, sketch+autodim, extrude, hole, chamfer,
 #         edge blend, linear pattern, boolean subtract, expression edit+update
-# 2026-09-24 起配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
+# 配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
 import os
 import sys
 

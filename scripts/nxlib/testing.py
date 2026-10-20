@@ -69,7 +69,7 @@ def check_finish(done_line, fail_prefix):
 
 
 def reset():
-    """清空本轮状态（一个进程串多个用例时用）。"""
+    """清空当前运行状态（一个进程串多个用例时用）。"""
     del RESULTS[:]
     del FAILED_STAGES[:]
     del LOG_LINES[:]

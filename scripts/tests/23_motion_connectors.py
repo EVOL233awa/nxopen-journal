@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Test 23: NX Motion 连接件 / UF struct 命名 / 自由度计数 回归（NX12 批处理，2026-09-22）。
+"""Test 23: NX Motion 连接件 / UF struct 命名 / 自由度计数 回归（NX12 批处理）。
 
-守的是 motion.md §M.5a~§M.5c 的三条实测结论，每条都曾让人白跑一轮：
+守的是 motion.md §M.5a~§M.5c 的三条结论：
 
 A) MotionManager 的连接件集合真名 = `Springs` / `Dampers` / `Bushings` / `ScalarForces` …
    `ScalarSprings` / `ScalarDampers` / `ScalarBushings` 与类 `ScalarSpring` 等**都不存在**。
 
-B) 三种连接件都能建成（2026-09-22 全部打通，此前只有弹簧）：
+B) 三种连接件都能建成：
    - 枚举 `AttachmentType` 挂在**类**上（`M.ConnectorBuilder.AttachmentType` 或 `M.AttachmentType`），
      在实例上取会 AttributeError；
    - `ActionLink` / `ReactionLink` 是**只读容器**，必须写 `.Value`（SKILL.md 铁律 4）；
@@ -159,7 +159,7 @@ def spring_case(mm, links, pts):
 
 
 def damper_case(mm, links, pts):
-    """阻尼器（2026-09-22 打通）。
+    """阻尼器（打通）。
 
     旧记录"DamperBuilder 没有 ActionLink/ReactionLink，连接关系无入口"是**读错日志**：
     这两个 SelectObject 一直在，真正缺的是 `CoefficientType = Constant`
@@ -213,7 +213,7 @@ def bushing_defs(b, links, pts):
 
 
 def bushing_case(mm, links, pts, sim_part):
-    """衬套（2026-09-22 打通）：真正缺的那一项是 `BushingDefine.Orientation`，
+    """衬套（打通）：真正缺的那一项是 `BushingDefine.Orientation`，
     而且它要的是 **NXMatrix**（给 Direction 报 Expecting NXOpen.NXMatrix type），
     来源是部件坐标系的 `csys.Orientation`。不设它 → Commit 报 "A NULL value"。
     """

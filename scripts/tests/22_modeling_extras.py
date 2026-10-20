@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Test 22: 图层/类别 + 独立基准平面 + 沿路径阵列 回归（NX12 批处理实测，2026-09-22）。
+"""Test 22: 图层/类别 + 独立基准平面 + 沿路径阵列 回归（NX12 批处理）。
 
-三条此前"文档写了但从未实测"的模块，现在升格成会失败的检查：
+覆盖三组模块 API，每组都断言读回值：
 
 A) 图层 API（modeling.md §1.7）
    - `body.Layer = 5` 可赋值可读回；`Feature.Layer` **不存在**（Feature 不是 DisplayableObject）
@@ -134,7 +134,7 @@ def datum_case(wp, ufs):
     b = wp.Features.CreateDatumCsysBuilder(NXOpen.Features.DatumCsys.Null)
     try:
         b.CommitFeature()
-        say("REG_DATUM_CSYS=INFO committed（与 2026-09-22 记录不符，值得重查）")
+        say("REG_DATUM_CSYS=INFO committed（与记录不符，值得重查）")
     except Exception as exc:
         say("REG_DATUM_CSYS=INFO dead-end as recorded: %s: %s"
             % (type(exc).__name__, str(exc)[:60]))

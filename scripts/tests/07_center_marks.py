@@ -3,9 +3,9 @@
 # bracket.prt from 01_bracket.py; builds its own sheet and views, saves nothing).
 #
 # History, because this file used to be an expected-failure probe:
-#   2026-08-22 / 2026-09-18  "annotation objects cannot be created in batch"  -> wrong
-#   2026-09-18  "root cause: the sheet was never Open()ed"  -> also wrong
-#   2026-09-20  measured root cause: CenterMarkBuilder fails as soon as one
+# "annotation objects cannot be created in batch"  -> wrong
+# "root cause: the sheet was never Open()ed"  -> also wrong
+# measured root cause: CenterMarkBuilder fails as soon as one
 #               builder carries 3 or more locations.
 #                  n=1 -> OK   n=2 -> OK   n=3 -> 1175305
 #                  n=4 -> 1175305         n=8 -> 1175307
@@ -128,7 +128,7 @@ def main():
         print("CENTERMARK_MULTI n=%d %s"
               % (MULTI_N, "accepted" if got else "rejected"))
         if got:
-            print("CENTERMARK_MULTI_CHANGED re-measure references/assembly-drafting.md B.2")
+            print("CENTERMARK_MULTI_CHANGED re-measure references/drafting.md B.2")
     stage("multi_location_note", multi_location_note)
 
     def per_builder_recipe():

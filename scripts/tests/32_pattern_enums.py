@@ -2,7 +2,7 @@
 # Test 32: the two PatternEnum members test 28 does not reach -- Polygon and
 # General.
 #
-# Measured 2026-09-23, NX 12.0.0.27, headless batch. Every case builds its OWN
+# Measured, NX 12.0.0.27, headless batch. Every case builds its OWN
 # part: probe 34 ran four polygon cases in one part, the first commit was refused
 # and every later property assignment then reported error text that did not
 # belong to the call being made ("Expecting int type, found str" for an Axis
@@ -21,7 +21,7 @@
 #       the module level PatternSpacingSpacingType (members: Offset=0 Span=1
 #       PitchAndSpan=2 Pitch=3 List=4 PolygonCountPerSide=5 PolygonPitchAlongSide=6)
 #   pg.PolygonSpacing.NCopies.RightHandSide = '2'
-#   Measured layout (probe 38, 2026-09-23): the regular polygon has its VERTICES on
+#   Measured layout (probe 38): the regular polygon has its VERTICES on
 #   the circle of radius R (the seed centroid's distance from the axis) and its
 #   phase set by the seed, so the seed itself is a vertex. Every side is then cut
 #   into NCopies-1 equal steps, i.e. NCopies-1 instances sit on each side with the
@@ -83,7 +83,7 @@
 #   referenced pattern is mapped onto the seed: with a 3-up linear pattern at pitch
 #   30 that the seed sits on, the default base instance reproduces the referenced
 #   offsets (0, 30, 60) from the seed's own position, while SetBaseInstance(1, 0)
-#   shifts the whole layout by one pitch (-30, 0, 30). Both measured 2026-09-23.
+#   shifts the whole layout by one pitch (-30, 0, 30). Both measured .
 #
 # MIRROR -- measured refusal, kept as a negative control
 #   pd.PatternType = PatternDefinition.PatternEnum.Mirror is reachable and

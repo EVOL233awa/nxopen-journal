@@ -7,8 +7,8 @@
 #   19_drafting_annotation.py (dims / note / label / table / PDF export). Both
 #   work in headless batch; the old "annotation objects are not creatable in
 #   batch" note and its first replacement root cause are both retracted in
-#   references/assembly-drafting.md B.2.
-# FIXED 2026-09-20: this case used StandardViewsBuilder.View.Drawing and
+#   references/drafting.md B.2.
+# FIXED: this case used StandardViewsBuilder.View.Drawing and
 #   asserted only a view count, so it stayed green while creating three EMPTY
 #   views (AskVisibleObjects()=0, blank plot). View.Base is the correct enum.
 #   Measured on this build: Base gives 13/13/15 visible objects on the three
@@ -33,7 +33,7 @@ from nxlib.testing import FAILED_STAGES, stage
 
 PART_PATH = os.path.abspath("bracket.prt")
 
-# measured 2026-09-20 on bracket.prt: Front/Right 13, Top 15
+# measured on bracket.prt: Front/Right 13, Top 15
 VIEW_VISIBLE_MIN = 8
 
 
@@ -58,7 +58,7 @@ def main():
     def s0():
         # Blank every datum before any view exists: the parts carry the
         # template's datum coordinate system, and its datum axes project into
-        # every drafting view as stray arrowheads (measured 2026-09-23 on the
+        # every drafting view as stray arrowheads (measured on the
         # plotted PDF). Blanked objects do not plot.
         n = 0
         for o in part.Datums:
@@ -116,7 +116,7 @@ def main():
     # RIGHT carries the same content a left-side view would.
     #
     # SetDrawingReferencePoint anchors the model point NX picked at creation,
-    # not the view's content centre (measured 2026-09-23 from the plotted PDF:
+    # not the view's content centre (measured from the plotted PDF:
     # each view's content landed a constant 4-5 mm off the requested point),
     # so the constants below carry that per-view offset pre-subtracted and the
     # content centres land at front (95,150), top (95,90), right (230,150).

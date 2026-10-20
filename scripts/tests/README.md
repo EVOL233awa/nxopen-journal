@@ -22,6 +22,8 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 ⚠ 22-30 九个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
 
+NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
+
 19 值级复核（host 端）：NX 内嵌 Python 3.6 无 PDF 库，数值由 `verify_anno_pdf.py` 用 PDF 文本层核对（需 pymupdf）：
 
     python scripts\tests\verify_anno_pdf.py scripts\tests\parts\anno19.pdf
@@ -32,7 +34,7 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 ## 用例、文件与判决 token
 
-判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（17/19/20/21/31/32），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15）。配方细节与坑位在用例源码头部注释（唯一真源），本表只记判定出口与决定性判据（括号数字为值）。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
+判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（17/19/20/21/31/32），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
 
 | 用例 | 文件 | 判决 token | 决定性判据（验收什么；数字为值） |
 | --- | --- | --- | --- |
@@ -47,14 +49,14 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 | 09 | `09_fea_static.py` | `BENCH_PASS` | 悬臂梁 SOL101 与手算比 0.9~1.4 |
 | 10 | `10_assembly_constraints.py` | `CONSTRAINT_PASS` | `Touch` 把销钉解到 z=10 |
 | 11-13 | `11…13_api_probe*.py` | （无） | 一次性 API 探针，不纳入令牌校验，留作历史证据 |
-| 14 | `14_block_boolean.py` | `TEST14_DONE` | 布尔静默失败回归：期望体积 `120000−21³`；token 须在 ok 判定之后 |
+| 14 | `14_block_boolean.py` | `TEST14_DONE` | 布尔后断言体积：期望 `120000−20³`（112000）；token 须在 ok 判定之后 |
 | 15 | `15_shell_draft.py` | `TEST15_DONE` | 抽壳去顶面 V=23232.000；四侧拔模 ±5° 与解析式零偏差 |
 | 16 | `16_motion_constraints.py` | `BENCH_PASS` | 等半径圆柱孔面 `Fit` 转动副：孔轴间距 36.0555→0.0000；`Bond` 销轴跟动 ≤0.01 |
 | 17 | `17_motion_deadends.py` | `TEST17_DONE` | 6 阶段：圆边 `Concentric` `Solved` 且移 25 mm（DOF `0T+1R`）、圆柱面 `Concentric` `CannotSolve`、等半径 `Fit` `Solved`、不等半径 `Fit` `InternallyInconsistent`、7 种内部枚举全被拒；失败打 `TEST17_FAIL stages=...` |
 | 18 | `18_motion_sim.py` | `BENCH_PASS` | 曲柄 1.00000°/帧、摇杆 60.0282°（解析 60.0218°）、每转换向 2 次、反力通路；驱动 2π 时前三项 FAIL，`CD` 40→50 仅摆角 FAIL；0 基 361 帧；落盘 `m18_motion.csv`（不判） |
 | 19 | `19_drafting_annotation.py` | `TEST19_DONE` | 12 阶段：节距 70/40、字高 `textSize=5.00`（须非默认）、3 个 UF 关联尺寸、中心标记/中心线/注释/引线、表格回读、PDF >20KB；失败打 `TEST19_FAIL stages=...` |
 | 20 | `20_drafting_views.py` | `TEST20_DONE` | 10 阶段：`View.Base` 三视图各 ≥4 可见（5/5/7）、`View.Drawing` 对照 0、删 TOP/RIGHT 并钉 FRONT 1:1、2 投影视图各 7、局部放大按 UF `AskViewScale` 2.0=2.0×父（.NET `Scale` 2.36 不作口径）、超 A4 被拒 |
-| 21 | `21_drafting_section.py` | `TEST21_DONE` | 6 阶段：毛坯圆柱面 ≥1（`Hatch` 单独证明不了孔）、三视图各 ≥10（13/13/14）、无父视图 `AddCutSegment` 必抛、剖视可见 18 且 `Hatch` ≥1、阶梯剖腿段 9>普通剖 5（`AskSxlineType` 均报 `STEPPED_SXLINE`） |
+| 21 | `21_drafting_section.py` | `TEST21_DONE` | 6 阶段：毛坯圆柱面 ≥1（`Hatch` 单独证明不了孔）、三视图各 ≥10（13/13/14）、先设父视图再 `AddCutSegment`（无父视图必抛）、剖视可见 18 且 `Hatch` ≥1、阶梯剖腿段 9>普通剖 5（`AskSxlineType` 均报 `STEPPED_SXLINE`） |
 | 22 | `22_modeling_extras.py` | `TEST22_DONE` | 13 项：图层/类别、`Feature.Layer` 不存在、`SetState` 只传 int（list 会堆损坏）、基准平面配方、`AlongPath` 质心 y=0/y=100（±1e-3）；`DatumCsysBuilder` 死路 |
 | 23 | `23_motion_connectors.py` | `TEST23_DONE` | 14 项：连接件集合真名、三个 `Scalar*` 不存在、弹簧 `AttachmentType` 只读、阻尼器补系数后 0→1、衬套缺 `Orientation` 报 `A NULL value`、`MotionInterference_Struct` 字段 `Solid1/Solid2`、`AskGrueblerCount` 整数、`DriverMultiOperations` 三项 |
 | 24 | `24_shell_mesh.py` | `TEST24_DONE` | 7 项：PSHELL 属性表+库材质+壳收集器；`ElementType` 含 `Shell` 不含 `ThinShell`；`CQUAD4` 节点 126；只网格不求解 |
@@ -84,12 +86,12 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 | 36 | 偏置符号 `E`→`−E` | 仅滑块 x 判据 FAIL（`MAX_DX=14.399113 mm`），其余四项 PASS |
 | 19 | 节距 70→71；去掉 `SetLetteringPreferences` | 前者 FAIL；后者须字高取非默认 5.0 时才 FAIL |
 | 17 | 圆边 `Concentric` 换等半径 `Fit` | 该阶段 FAIL（`dz=8.0000`） |
-| 14 | 期望体积改 `120000-21³` | FAIL；未改副本 PASS |
+| 14 | 期望体积改 `120000-20³` | FAIL；未改副本 PASS |
 | 22 / 23 | 质心 y=0→50；清单漏 `Tag` | 各有一条 `REG_*=FAIL` |
 | 30 | 显示名改假名；回切断言改恒真；清单删一项；真名改假名 | 前两条 FAIL；删项须靠独立项数断言才 FAIL |
 | 32 | 等弦长改等角度均分 | `polygon_copies_per_side` FAIL（2.0823 mm）；`NCopies=2` 两模型重合仍 PASS，判别力来自 `NCopies≥4` |
 | 32 | 引用阵列期望写“新增 3 件” | `reference_layout`/`reference_base_instance` FAIL；改按整族 3 件核对后通过 |
-| 19 PDF | 图纸 PDF 与论文 PDF 各跑一次 | 均 `VERIFY_FAIL missing 70,40,R2.,4x` RC=1 |
+| 19 PDF | 图纸 PDF 与另一份无关 PDF 各跑一次 | 均 `VERIFY_FAIL missing 70,40,R2.,4x` RC=1 |
 
 四条判据设计规则：
 
@@ -98,44 +100,9 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 - 判定结果必须无条件出现；异常在 `stage()` 之外时须有顶层兜底与前置检查。
 - 先证明模型真建成，再读它：21 探针 5 面选取出错时读数来自实心块，带孔为 18。
 
-## 已知限制（配方见对应 reference）
+## 配方归属
 
-**Drafting 视图**（assembly-drafting.md §B.1/§B.3/§B.4）：
-
-- 用 `View.Base`；`View.Drawing` 得空视图（可见 0、A4 出图 917 字节），`View.Base` 为 13/13/15、2179 字节。
-- `AskVisibleObjects()` 只对当前图纸视图有效，否则抛 `The view is not displayed`；先 `sheet.Open()`。
-- `part.DraftingViews` 无 `__len__`，用迭代；`sheet.GetDraftingViews()` 可 `list()`。
-- builder 空引用须类型化（`SectionView.Null`/`DetailView.Null`），传 `None` 报 `Expecting NXOpen.NXObject type`；`NXOpen.Tag.Null` 取不到，C 侧写 `0`。
-- builder 属性只读但容器可写（`SelectObject.Value`）；`DetailViewBuilder.Origin/Scale` 无通道，局部放大/投影走 `ufs.Draw.AddDetailView`/`AddOrthographicView`；`BoundaryPoint1` 要 `NXOpen.Point`。
-- 局部放大放置点须在图幅内，出界报 `Input is not a valid parameter`。
-- 剖视配方：`CreateSectionViewBuilder(SectionView.Null)`→`ParentView.View.Value`→`AddCutSegment(模型坐标)`×2→放置坐标→`Commit()`；判据 `IsSxview`、剖切线标签非 0、`AskSxsolidsOfSxview` n≥1、含 `Hatch`。
-- 阶梯剖：`SimpleStepped`、Z 形点挂投影面匹配父视图、模型坐标（§B.4）。
-- 剖视读数不反映切到哪个特征；曲线数只说明模型里有什么。
-- UF 枚举挂会话对象（`ufs.Draw.ProjDir/SxsegType`）；`NXOpen.UF.UFDraw` 不可导入，以 `dir(ufs.Draw)` 与 `uf_draw.h` 为准。
-- `RevolveBuilder` 批处理崩溃 → `ufs.Modl.CreateRevolved`；仅凸剖面/开放曲线。
-- Drafting 标注批处理可建且不需 `sheet.Open()`；`1175307/1175303` 真因是单次提交 ≥3 location（回归 07/19）。
-- 草图级镜像、草图直调尺寸 API 不可用。
-- 无螺纹特征 builder → 只有三种非螺纹孔可建，`ThreadedHole` 必崩；螺纹用底孔+标注。
-- `BlockFeatureBuilder.BooleanOption` 静默忽略 → `SetBooleanOperationAndTarget`。
-- STL：选择器用 `SetArray`、无需 `ProcessHoldFlag`；容差只有 `ChordalTol/AngularTol/AdjacencyTol`；输出用 `OutputType`+`OutputTypeEnum`，写错成员名整批中断；装配件按组件逐个导出（`part.Bodies` 为 0）；STEP 需 `ProcessHoldFlag=True`。
-- 批处理出不了位图（捕获 builder 不落文件、`Disp.CreateImage` 崩溃）→ Drafting PDF 或 STL 外部渲染。
-- `ShellBuilder.Tolerance`/`DraftBuilder.*Tolerance` 默认 `0.0`，不设必报错。
-- `DraftBuilder.Method` 等只读；固定面经 `StationaryEntity` 传且必须 Face。
-- Motion `AskVelocityResults`/`AskAccelerationResults` 静默全 0 → 用 `AskLinkTransfromForGivenFrame` 做差/微分。
-- Motion 帧数 NSTEP+1、0 基；`range(1, nfr+1)` 会漏帧 0 并误读越界 `nfr`。
-- Motion 扭矩按 N·mm（N·m ×1000）；`MassCenter` 必须 `NXOpen.Point`；非正定惯量 → 伪尖峰。
-- Motion 4 转动副四杆静不定（−2），反力不可作物理判据，只能验 API。
-
-**新增坑位**（逐条在 references 里有记录）：
-
-  - 建模：`CreateDatumCsysBuilder` 报 `Reference coordinate system undefined`；无 `CreateSlotBuilder` → 布尔求差。`HolePackage` 可建三种非螺纹孔（Section 灌点、`Tolerance` 必填、深度 `EndHoleData`）；`ThreadedHole` 标准名与 `Validate()` 均通过但 `CommitFeature()` 必崩 → 底孔+标注。
-  - 阵列：`Reference`/`Spiral` 可出实例，选择对象须 `SetValue(...)` 灌入；种子兼基准实例，`SetBaseInstance(i,0)` 整族平移；`Mirror` 提交抛 `Feature cannot be mirrored.` → 改用 `Features.MirrorFeatureBuilder`。
-  - 装配：`ClearanceSet` 不可建 → 布尔交集给干涉体积，或 `CreateSimpleInterferenceObject()` 独立判定；质量属性走 `FindOccurrence`+`NewMassProperties`。
-  - Motion：真名 `Springs/Dampers/Bushings`；阻尼器缺 `CoefficientType=Constant`，衬套缺 `Orientation` 且要 NXMatrix；枚举访问器 0 参调用抛 `NXException` → 用模块级类；`CreateInterference` 抛 `SystemError`，批处理无干涉入口；`DriverMultiOperations` 仅三项。
-  - UF 形状：struct 是 `NXOpen.UF.<名>_Struct`，`UFMotion` 不可导入；out 参数是返回值，`InitInterferenceStruct()` 0 参。
-  - 标注：`ufs.Drf.SetOrigin` 报参数无效（表格走 `ufs.Tabnot`）；`AddHeaderRow` 3 参、`MergeCells` 2 参、`EnableAutomaticUpdate` 0 参、无 `Sort`；`CreateRadiusDim` 可用；FCF/粗糙度/孔表 `.Null` 在 NX12 不存在。
-  - FEA：BC 描述符绑定当前激活方案（切模态报 `Invalid LBC neutral name`）；有效中性名仅 `ComponentForceField`/`UserDefinedDisplacementConstraint`；模态描述符裸 `"SEMODES 103"`；2D 壳已求解级标定（0.9994/0.9871）。
-  - 探针：stdout 全缓冲 → 每行落盘+`flush()`；list 传 int 参数会 `0xC0000374` 堆损坏 → 禁止猜签名循环。
+域配方的唯一权威在 `references/*.md`；本文件只维护用例、判决 token 与反向验证。新增约束写进对应域文件的路线，不在这里累积。
 
 ## 静态检查
 

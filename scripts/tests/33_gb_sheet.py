@@ -152,7 +152,7 @@ def main():
 
     def s_views():
         views = gb.standard_views(state["part"], state["sheet"],
-                                  body=state["body"], scale=SCALE)
+                                  body=state["body"], scale=SCALE, size="A4")
         counts = []
         for k in ("FRONT", "TOP", "RIGHT"):
             v = views[k]

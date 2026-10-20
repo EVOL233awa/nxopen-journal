@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.1.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
+当前版本 1.2.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran
@@ -205,6 +205,7 @@ PASS 34_involute_gear.py
 PASS 35_assembly_preload.py
 PASS 36_motion_slider.py
 PASS 09_fea_static.py
+PASS check_journal rule selftest - counter-examples hit, clean passes
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
@@ -232,7 +233,8 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 函数本身，不说明某些参数是否会导致进程崩溃。本技能把这些判断整理成了可以直接采用的
 配方：每条结论先在 nxopen MCP 里核实 API 存在，再在 NX 12 批处理中通过；能固化的结论都有
 对应的回归用例，改动后执行一次 `scripts\tests\RUN_TESTS.bat` 即可确认是否破坏。不可行的
-写法放在各域文件的坑位表里，按“遇到什么 → 如何处理”查阅。例如干涉检查给的是布尔求交与
+写法按域内联在对应路线的约束句里，按“遇到什么 → 如何处理”查阅；跨域通用且高发的陷阱只在
+`SKILL.md` §1。例如干涉检查给的是布尔求交与
 `SimpleInterference` 两条几何路线，螺纹孔给的是“底孔 + 标注”。
 
 ## 已知限制
@@ -253,7 +255,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 nxopen-journal/
 ├── SKILL.md                        ← 入口层：铁律 / 环境 / 脚本骨架 / 通用部件操作 / 日志导出 / 工作流 / 域路由
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog）
-├── references/                     ← 六个域文件：modeling / assembly-drafting / drafting-annotation / fea / motion / gb-drawing
+├── references/                     ← 八个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
 ├── images/                         ← 实际运行产物图（上面九张）
 ├── scripts/
 │   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）

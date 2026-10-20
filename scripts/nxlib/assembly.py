@@ -36,7 +36,7 @@ def add_component(assy, part_path, origin, layer=1):
 
 
 def preload_components(session, assy):
-    """预载装配全部子件（2026-09-25 冷测 T2 沉淀）。
+    """预载装配全部子件。
 
     组件体惰性加载：重开装配后 component.Prototype 下的实例体不自动进入
     上下文，干涉检查/约束读回前不预载则 SimpleInterference 空跑

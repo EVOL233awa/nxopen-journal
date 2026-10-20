@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Test 25: 2D 壳的**求解级**数值标定（NX12 批处理，2026-09-22；fea.md §3a）。
+"""Test 25: 2D 壳的**求解级**数值标定（NX12 批处理；fea.md §3a）。
 
-此前 fea.md §3a 只说"2D 壳能出网格"，明确标注"求解级数值口径未标定"。本用例把
-「薄板体 → PSHELL 壳网格 → 端边固支 + 端边集中力 → SOL101 → 与梁理论对照」整条链固化，
+把「薄板体 → PSHELL 壳网格 → 端边固支 + 端边集中力 → SOL101 → 与梁理论对照」整条链固化，
 并且**检查期望值来自独立解析解**，不是从 NX 数据反推：
 
     被测件：100 × 5（mm）薄板体（sheet body），PSHELL 厚 t = 5 mm，库 Steel（E = 206940 MPa）
@@ -11,9 +10,9 @@
     δ = F·L³/(3·E·I) = 3.0927 mm      （b/L = 0.05，横向剪切只占 0.2%，可忽略）
     σ = F·L·(t/2)/I  = 480.0 MPa
 
-2026-09-22 实测：δ_FEA = 3.090916（比值 0.9994）、von Mises = 473.83 MPa（比值 0.9871）。
+结果：δ_FEA = 3.090916（比值 0.9994）、von Mises = 473.83 MPa（比值 0.9871）。
 
-三条被本用例钉住的 API 事实（都曾让人白跑）：
+三条被本用例钉住的 API 事实：
   1. 薄板体用 `CreateBoundedPlaneBuilder(BoundedPlane.Null)`，而 `BoundingCurves` 是
      **只读容器**（直接赋值报 is not writable）→ 必须 `bp.BoundingCurves.AddToSection(...)`
      原地灌线（SKILL.md 铁律 4）。

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Render binary STL geometry to shaded PNG with feature edges (host side).
 
-The NX 12 batch session cannot export an image (measured 2026-09-23: the UF
+The NX 12 batch session cannot export an image (measured: the UF
 route raises a memory access violation, the Gateway builder commits and writes
 no file), so the README solid-model figures are rendered on the host from the
 STL the same parts export.  Z-buffer, flat shading, feature edges by dihedral

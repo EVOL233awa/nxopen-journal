@@ -4,7 +4,7 @@
 #
 # Why this case exists
 #   Test 06 asserted only "VIEWS=3", which is satisfied by three EMPTY views.
-#   Measured 2026-09-20 on this build: StandardViewsBuilder.View.Drawing
+#   Measured on this build: StandardViewsBuilder.View.Drawing
 #   produces views whose AskVisibleObjects() is empty and whose sheet plots to
 #   a blank page, while View.Base produces views with real content. Test 06
 #   used View.Drawing, so the suite was green while the views were empty.
@@ -43,7 +43,7 @@
 #     nxopen MCP index does not list them for NX12, so query the session object
 #     (dir(ufs.Draw)) rather than trusting the index.
 #   * The section view route is still NOT solved - see
-#     references/assembly-drafting.md B.4 for the attempts and exact errors.
+#     references/drafting.md B.4 for the attempts and exact errors.
 #
 # NXOpen enums in this build:
 #   ufs.Draw.ProjDir   PROJECT_INFER / PROJECT_ABOVE / PROJECT_RIGHT /
@@ -132,7 +132,7 @@ def main():
 
     def s_blank():
         # Blank the datum planes/axes before any view exists: they project
-        # into every drafting view as stray arrowheads (measured 2026-09-23).
+        # into every drafting view as stray arrowheads (measured).
         n = 0
         for o in part.Datums:
             if not o.IsBlanked:
@@ -251,7 +251,7 @@ def main():
                 raise RuntimeError(
                     "View.Drawing view %s now carries %d visible objects; the "
                     "documented distinction from View.Base no longer holds, "
-                    "see references/assembly-drafting.md B.1" % (v.Name, n))
+                    "see references/drafting.md B.1" % (v.Name, n))
         if len(views) != 3:
             raise RuntimeError("expected 3 views, got %d" % len(views))
         print("DRAWING_COUNTS=%s" % ",".join("%s:%d" % c for c in counts))
@@ -291,7 +291,7 @@ def main():
             made.append((dname, tag))
         sheet.Open()
         # AskVisibleObjects on a freshly added projected view returns [] until
-        # the view is regenerated (measured 2026-09-23: the view plots fine
+        # the view is regenerated (measured: the view plots fine
         # while its visible list is still empty) - update each view first
         for _, vtag in made:
             ufs.Draw.UpdateOneView(sheet.Tag, vtag)
@@ -342,7 +342,7 @@ def main():
         # the face view's anchor is the model origin = the BIG hole; wrap both
         # holes (SMALL at +30 in x, measured on the plotted sheet).  NX draws
         # the boundary circle at ~0.83x the selection rectangle's
-        # half-diagonal (measured 2026-09-23 on two rects: 5-6 mm inside), so
+        # half-diagonal (measured on two rects: 5-6 mm inside), so
         # the rectangle needs the extra margin or the circle clips the BIG
         # hole's rim.
         r = ufs.Draw.AddDetailView(

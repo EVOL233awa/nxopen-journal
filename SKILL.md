@@ -6,11 +6,13 @@ description: 生成、检查并批处理回放 Siemens NX 12 的 NXOpen Python j
 # NXOpen Journal 生成（NX 12）
 
 NX 自动化唯一入口是 NXOpen API。本技能生成可在 NX 12 回放的 Python journal，覆盖建模/装配/工程图/有限元/运动仿真。
-分层：本文件 = 会话与部件层（必读）；六个域文件按任务选读其一（§5 路由表）。
+分层：本文件 = 会话与部件层（必读）；八个域文件按任务选读其一（§5 路由表）。
 
 ⚠ **journal 解释器 = NX 12 内嵌 Python 3.6.1**：无 `math.dist`、`math.prod`、`math.isqrt`、f-string `=`、dict 合并运算符、`functools.cache`。`subprocess.run` 可用。宿主 3.12 预演通过不等于 NX 可跑，写完先过 `check_journal.py`。
 
 ## 1. 铁律
+
+本节是技能内唯一保留的跨域高发陷阱清单（通用 + 静默失败/崩溃）；单域负面事实写在对应路线里，不新开坑位清单。
 
 1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实（`search_api` / `get_class` / `get_member`）。
 2. **MCP 核实“存在” ≠ Python 封装“可调用”**：新 API 必须先最小批处理验证，通过后才写入本技能。
@@ -94,7 +96,7 @@ assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
 
 成员名是 `TrueValue` / `FalseValue`（`True`/`False` 是 Python 关键字）。
 
-### 通用坑位
+### 通用 API 路线约束
 
 1. **builder 创建不能传 `None`**：传 `NXOpen.Features.Feature.Null`（Block/Cylinder/Chamfer/Hole/EdgeBlend/Extrude/Revolve/Mirror/Pattern 等）、`NXOpen.Features.BooleanFeature.Null`（Boolean）。`.Null` 只存在于 Python 封装层。
 2. **FileNew 不覆盖**：重复运行报 `File already exists`；生成类 journal 启动时清理本工程旧 `.prt`（含 `_i.prt`），多部件各用独立路径。同一进程内不要对同一路径 FileNew 两次。
@@ -116,7 +118,7 @@ sc.Commit(); sc.Destroy()
 
 7. **`Point3d`/`Vector3d` 必须传 float**：`NXOpen.Point3d(0.0, 0.0, 0.0)`；传 int 报 `Expecting double type, found int`。
 8. **尺寸字符串不接受 float**：`SetOriginAndLengths(origin, "100", "60", "20")`、`AddChainset(col, "2.0")`、`FirstOffset = "1.0"` 都必须是 str；字符串可写表达式名。
-9. **UF struct 类型名是 `NXOpen.UF.<名>_Struct`**：如 `MotionInterference_Struct`、`MotionTrace_Struct`。UF 参数表中的 `Xxx@`（out 参数）在 Python 里是返回值，不要当实参传（`st = ufs.Motion.InitInterferenceStruct()`）。
+9. **UF struct 类型名按所属组查**：多数挂在 UF 组容器下（`NXOpen.UF.Drf.Object`、`NXOpen.UF.Curve.SectionGeneralData`），运动模块的部分是顶层 `NXOpen.UF.<名>_Struct`（`MotionInterference_Struct`、`MotionTrace_Struct`）；先用 `dir(NXOpen.UF.<组>)` 核实。UF 参数表中的 `Xxx@`（out 参数）在 Python 里是返回值，不要当实参传（`st = ufs.Motion.InitInterferenceStruct()`）。
 10. **builder 的 `Name` 有的是通道、有的是普通 str**：`SpringBuilder.Name` 直接赋值；`BushingDefine.Name` 要写 `b.BushingDefine.Name`。报 `A name has not been specified` 就是名字没落到承载对象上。
 
 ### 日志与阶段保存
@@ -152,7 +154,7 @@ for n in dir(s.DexManager):
     if n.startswith('Create'): print(n)
 ```
 
-- NX12 全集：Acis/Catiav4/Catiav5/Proe/Step(203/214/242)/Iges/Dxfdwg/Asc/Virtuallab/Stl/Nxto2d；**没有 3dxml、cgr**。
+- NX12 全集：Acis/Catiav4/Catiav5/Proe/Step(203/214/242)/Iges/Dxfdwg/Asc/Virtuallab/Stl/Nxto2d；3dxml/cgr 不在支持列表，先转 STEP/Parasolid 再导入。
 - **假成功**：不支持几何复制成 `.CATPart` 再 Commit 不报错但 `part.Bodies` 为 0；导入后必须开文件读体数。
 - CATProduct 导入是扁平化的，只解析当前文件直接层级；组件本体坐标通常已是整车坐标。
 
@@ -172,6 +174,15 @@ sc.Commit(); sc.Destroy()
 
 `DexManager` 在 NX12 没有 Parasolid 导出方法。
 
+⚠ **批处理下 STEP 可能写出 0 个实体**：Commit 成功、文件 2–3 KB、零 `ADVANCED_FACE`。落盘后必须开文件数实体；不可用时改用 Parasolid：
+
+```python
+ufs = NXOpen.UF.UFSession.GetUFSession()
+ufs.Ps.ExportData([body.Tag], r"C:\path\out.x_t")   # 首 24 字节含 **PARASOLID
+```
+
+IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Parasolid，等价于 STEP 的实体边界表示”。
+
 ## 4. 工作流
 
 1. 明确任务：零件/装配/图纸/仿真 + 关键尺寸 + 单位（默认 mm）。
@@ -189,9 +200,10 @@ sc.Commit(); sc.Destroy()
 | 图层与图层类别、独立基准平面 | `references/modeling.md` §1.7-§1.9 |
 | 阵列（线性/圆周/沿路径/螺旋/正多边形/目标点/引用已有阵列）与特征镜像 | `references/modeling.md` §3.1-§3.1f + §3.2 |
 | 抽壳/拔模/质量属性校验/去参/渐开线齿轮/导出 | `references/modeling.md` §3.4-§3.7 + 本文件 §3 导出 |
-| 装配（加组件/配对约束/组件阵列/引用集/装配质量属性） | `references/assembly-drafting.md` |
-| 工程图（图纸/三视图/投影视图/局部放大/剖视图/PDF 导出/球标） | `references/assembly-drafting.md` §B |
-| 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线） | `references/drafting-annotation.md` |
+| 装配（加组件/配对约束/组件阵列/引用集/装配质量属性/运动连接） | `references/assembly.md` |
+| 工程图（图纸/三视图/投影视图/局部放大/剖视图/PDF 导出/装配图路线） | `references/drafting.md` |
+| 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线/球标） | `references/drafting-annotation.md` |
+| **逆向重建**（无特征实体→图纸形态截面→逐层闭合草图拉伸→孔系/凹槽切除→双向偏差校核） | `references/reverse-engineering.md` |
 | **国标成套出图**（GB 图框/标题栏/技术要求/尺寸道位一张图到位） | `scripts/gb_drawing.py` + `references/gb-drawing.md`（验收=33 号用例） |
 | 有限元（CAD→FEM→SIM→求解→后处理；实体 CTETRA 与 2D 壳/PSHELL、模态 SOL103） | `references/fea.md` |
 | 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md` |
@@ -215,7 +227,7 @@ scripts\run_journal_batch.bat C:\abs\path\journal.py [workdir]
 # 全量回归（36 例 = 33 个批处理令牌校验 + 11-13 三个一次性探针）
 # 逐例覆盖内容与令牌名只维护在 tests/README.md
 # 09 含 Nastran 求解较慢；跑完默认清理 parts\，KEEP_PARTS=1 保留
-# 最后一步用宿主 python + pymupdf 复核 19 号 PDF 文本层
+# 末尾先跑 check_journal 规则自检（宿主 python），再用 pymupdf 复核 19 号 PDF 文本层
 scripts\tests\RUN_TESTS.bat
 # 环境变量：NX_HOME（默认 D:\UG-NX12）、PYTHON（带 pymupdf）、KEEP_PARTS=1
 ```
@@ -224,25 +236,25 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是五域标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。33 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
-⚠ 已知崩溃探针（如 `test26` 的 `ThreadedHole`）必须末位执行，靠 token 判定；崩后用 Undo mark 撤掉残废特征。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。33 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
+⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
 ⚠ **检查要有判别力**：期望值必须来自独立信息源（解析解、指令参数），不能取自被测数据本身；且要反向验证——故意改坏一处，确认对应检查 FAIL。
 
 ## 7. 维护约定
 
-**入库模板**（所有新知识按此写；`check_repo.py` 的 CONCISE 组会拦截违规）：
+**入库模板**（所有新知识按此写；`check_repo.py` 的 CONCISE/ROUTE 组会拦截违规）：
 1. 第一句写正确做法（祈使句），不写发现经过、验证过程或历史沿革。
 2. 失败观察只留一行判据：症状 → 怎么做。
 3. 数值只保留能当验收判据的（容差、阈值、比例），不写实验读数与日志。
-4. 禁止日期与过程叙述；完整词表见 `check_repo.py` 的 `CONCISE_PATTERNS`。只删叙述，不删 API/判据；拿不准就保留事实、改写表述。改完文档先跑 `python scripts/check_repo.py`，CONCISE 失败按提示改写，不要加白名单。
+4. 禁止日期与过程叙述；完整词表见 `check_repo.py` 的 `CONCISE_PATTERNS`。只删叙述，不删 API/判据；拿不准就保留事实、改写表述。改完文档先跑 `python scripts/check_repo.py`，CONCISE/ROUTE 失败按提示改写，不要加白名单。
 5. 新条目先查重：已有条目能覆盖就改那一句，不追加新段；结论变更时直接改掉旧句，不保留新旧并存。
-6. 落位：跨域会话/部件层 → 本文件 §3；单域完整成功路径 → 域文件正文；只有“结果不对时对号”价值的症状 → 域文件坑位表。坑位表一行一条，左列症状、右列做法。
+6. 落位：跨域会话/部件层 → 本文件 §3；单域完整成功路径 → 域文件正文。负面事实只作为路线里的一句约束（“用 X；Y 会…”），不新开坑位清单；只有跨域通用且高发（静默失败/进程崩溃）的才进本文件 §1 铁律。
 7. 入库门槛 = 铁律 2：MCP 核实 + 批处理验证双通过。
-8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|坑位 [0-9]"`。
+8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|路线约束 [0-9]"`。
 9. 吸收外部技能/项目时先在本机 NX12 验证；与本机冲突处以本机结果为准并注明。
 
-**增长纪律**：不设体积硬上限。新增条目先查重并合并，同一主题不新开小节；每次版本发布前跑 `check_repo.py`，CONCISE 组只拦过程叙述。文件明显膨胀时，优先删旧条目、压重复，而不是拆文件或放宽规则。
+**增长纪律**：不设体积硬上限。新增条目先查重并合并，同一主题不新开小节；每次版本发布前跑 `check_repo.py`。文件明显膨胀时，优先把坑位并回路线、删旧条目、压重复；只有两个独立任务域被迫共读一个文件时才按域拆分（装配/工程图即此例），不要靠拆文件掩盖重复。域文件不设坑位表；负面事实写进对应路线的约束句。
 
 ## 8. 文件清单
 
@@ -252,19 +264,20 @@ nxopen-journal/
 ├── LICENSE                         ← MIT 许可证
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
-├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.1.0）
+├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.2.0）
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
-├── references/*.md                 ← 六个域文件；各自的域与覆盖范围见 §5 路由表
+├── references/*.md                 ← 八个域文件；各自的域与覆盖范围见 §5 路由表
 ├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/标题栏/技术要求/尺寸道位/PDF；验收=33 号用例，用法=references/gb-drawing.md）
 ├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting 五模块；新用例 import 它、不复制配方）
 ├── scripts/render/                 ← 离线出图链（STL→着色渲染、PDF→PNG；用法=scripts/render/README.md）
-├── scripts/check_journal.py        ← 静态检查（语法/占位符/已固化坑位，含 NX12 专属名与 Py3.6 API）
-├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 / 文档精简）
+├── scripts/check_journal.py        ← 静态检查（语法/占位符/已固化约束，含 NX12 专属名与 Py3.6 API）
+├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 / 文档精简 / 路线优先）
 ├── scripts/run_journal_batch.bat   ← 批处理试跑（ugiicmd + run_journal.exe；NX 安装根走 NX_HOME）
-├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、已知限制
+├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、配方归属
 │   ├── 01…36_*.py                  ← 33 个并入令牌校验的用例（RUN_TESTS.bat 全量跑）
 │   ├── 11…13_api_probe*.py         ← 一次性 API 探针，不纳入检查
+│   ├── verify_check_rules.py       ← check_journal 规则自检（宿主解释器，反例必须命中）
 │   ├── verify_anno_pdf.py          ← 19 号用例的 PDF 文本层数值复核（宿主解释器 + pymupdf）
-│   └── RUN_TESTS.bat               ← 全量回归 + 19 号用例的 PDF 值级复核
+│   └── RUN_TESTS.bat               ← 全量回归 + 规则自检 + 19 号用例的 PDF 值级复核
 └── agents/openai.yaml              ← Codex/OpenAI 端界面配置（跨端迁移用）
 ```

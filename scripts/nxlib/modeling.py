@@ -438,7 +438,7 @@ def extrude_subtract(wp, target_body, curves, distance_expr):
 
 
 # ---------------------------------------------------------------- 渐开线齿轮
-# 来源：2026-09-25 冷测 T8（z=20/m=2 一次通过，体积与解析偏差 0.0013%）。
+# 数值口径：z=20/m=2，体积与解析偏差 0.0013%。
 # 齿廓 = 表达式驱动规律曲线（压力角参数化，NX12 表达式无反三角——见
 # modeling.md §4.1 硬限制）；齿顶/齿根 = 三点弧；齿根连接 = 径向线；
 # 全齿闭合轮廓一次 UF 拉伸成体；轴孔负向拉伸求差。
@@ -455,7 +455,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
 
     参数全部走数值（mm/deg）；内部建 Number 表达式链 p_gear_* → p_rp/ra/rf/rb
     与 2*z 条齿面规律曲线表达式（改表达式可联动齿面，弧/线为哑曲线）。
-    hub_d/hub_len > 0 时在齿宽中央加轮毂（2026-10-19 减速器冷启动实测口径）；
+    hub_d/hub_len > 0 时在齿宽中央加轮毂（减速器常用口径）；
     z_offset 平移整个齿轮的 Z 起点（默认 0）。
     返回 dict: body / volume / tip_tags / root_tags（供用例断言）。
     口径：T8 逐字平移；体积对 z 敏感 ~5%/齿，验收带 ±2%。
@@ -529,7 +529,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
 
     # 4) 径向连接线 + 齿顶/齿根三点弧（⚠ 必须按齿交错追加：线/线/顶弧/根弧×z，
     #    分组给（线全给完再弧）UF 链探测报 "Section curves are not connected
-    #    each other"，2026-09-25 探针二分实测，T8 原版即交错序）
+    #    each other"，探针二分实测，T8 原版即交错序）
     def _phi0(th, side):
         uu = 0.0
         off = uu - _math.degrees(_math.atan(uu))

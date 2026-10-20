@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Test 26: 孔包（HolePackage）四条孔型的批处理落地边界（NX12，2026-09-22）。
+"""Test 26: 孔包（HolePackage）四条孔型的批处理落地边界（NX12）。
 
-来源是 2026-09-22 的 B1–B11 十一轮探针（脚本归档在项目侧 work 下，命名 `_pt_thread*.py`）。此前 modeling.md §4.4 的结论是"批处理建不出孔"，本条把它彻底
-改写为可执行的三条正路 + 一条明确边界：
+三条正路 + 一条明确边界（每条都断言几何，不看"提交成功"就算数）：
 
 正路（本用例逐条断言几何，不看"提交成功"就算数）：
   1. `DrillSizeHole` 钻孔：**必须** `DrillSize`（规格标签）+ `DrillSizeHoleDiameter`
      / `DrillSizeHoleDepth`（Expression）**同时**给。只给标签 → 孔会变成默认的
-     Ø11 贯通（b1 实测）；只给 Expression → `Standard data not found`（d2 实测）。
-     两者都给 → Ø10、深 15 精确成立（d3 实测 r=5.0000，圆柱面 z=[5.0,19.4]）。
+     Ø11 贯通；只给 Expression → `Standard data not found`。
+     两者都给 → Ø10、深 15 精确成立（r=5.0000，圆柱面 z=[5.0,19.4]）。
   2. `GeneralHole` 通用孔（默认简单形式）：直径/深度全走 Expression，Ø10 × 15 成立。
   3. `ScrewClearanceHole` 螺钉过孔：吃标准数据，`ScrewSize="M10"` +
      `ScrewFitOption="Normal (H13)"` → 过孔 Ø11（ISO 273 正常配合），深度同样成立。

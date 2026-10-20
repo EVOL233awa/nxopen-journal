@@ -6,6 +6,8 @@
 RUN_TESTS.bat 末尾以 host 解释器调用（同 verify_anno_pdf 模式）。
 判定出口：`PASS check_journal rule selftest` / `FAIL check_journal rule selftest ...`
 """
+import contextlib
+import io
 import sys
 import tempfile
 from pathlib import Path
@@ -73,30 +75,35 @@ def run_check(src: str):
             dir=str(Path(tempfile.gettempdir()))) as f:
         f.write(src)
         path = Path(f.name)
+    buf = io.StringIO()
     try:
-        rc = check_journal.check(path)
+        with contextlib.redirect_stdout(buf):
+            rc = check_journal.check(path)
     finally:
         try:
             path.unlink()
         except OSError:
             pass
-    return rc
+    return rc, buf.getvalue()
 
 
 def main() -> int:
     failures = []
     for name, marker, src in COUNTER_EXAMPLES:
-        rc = run_check(src)
+        rc, out = run_check(src)
         if rc != 1:
             failures.append("%s: 反例未命中 (rc=%d, 规则失效?)" % (name, rc))
-    rc_clean = run_check(CLEAN_SAMPLE)
+        elif marker not in out:
+            failures.append("%s: 退出码 1 但输出无规则痕迹 %r "
+                            "(可能被另一条规则拦截)" % (name, marker))
+    rc_clean, _ = run_check(CLEAN_SAMPLE)
     if rc_clean != 0:
         failures.append("阴性对照被误报 (rc=%d, 规则过严?)" % rc_clean)
     if failures:
         for f in failures:
             print("FAIL check_journal rule selftest - %s" % f)
         return 1
-    print("PASS check_journal rule selftest - %d 反例命中 + 1 阴性通过"
+    print("PASS check_journal rule selftest - %d 反例命中对应规则 + 1 阴性通过"
           % len(COUNTER_EXAMPLES))
     return 0
 

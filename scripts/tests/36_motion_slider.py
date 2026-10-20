@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # Test 36: NX Motion 滑动副 —— 偏置曲柄滑块的运动学与矩阵口径
 #
-# 覆盖（NX12 批处理，2026-10-19 冷启动实测沉淀）：
+# 覆盖（NX12 批处理）：
 #   * Motion 层 Slider 关节：FirstOrigin/SecondOrigin 重合，FirstVector/SecondVector
 #     把关节局部 z 轴对齐到导轨（装配层 Constraint.Type.Slider 是 internal-only）
 #   * 3 个 Revolute + 1 个 Slider 的平面机构，驱动 2 s / 720 步整周
 #   * 帧变换 16 值按行主序解读：平移取 3/7/11；转置会让杆长漂 14 mm 量级
-#   * 帧索引 0 基：合法范围 0..nfr-1，帧 0 = t=0 设计位姿（2026-10-19 复验）
+#   * 帧索引 0 基：合法范围 0..nfr-1，帧 0 = t=0 设计位姿
 #
 # 解析式（独立信息源，不取自 NX 数据）：
 #   x(theta) = r*cos(theta) + sqrt(l^2 - (r*sin(theta) - e)^2)

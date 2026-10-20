@@ -1,6 +1,6 @@
-# 建模域：方法论 + 配方 + 坑位（NX 12 本机批处理）
+# 建模域：方法论 + 可复现路线（NX 12 本机批处理）
 
-> 先读 SKILL.md。§1 方法论；§2-§7 配方与坑位（⚠ 已验证）。示例 `scripts/tests/01-03`；§3.4-§3.6 抽壳/拔模/质量属性/去参，§4.4 螺纹。
+> 先读 SKILL.md。§1 方法论；§2-§6 路线（⚠ 已验证）。示例 `scripts/tests/01-03`；§3.4-§3.6 抽壳/拔模/质量属性/去参，§4.4 螺纹。
 
 ## 1. 建模方法论（风格约定，非 API）
 
@@ -65,16 +65,16 @@ dp.SetFaceAndOffset(face, 25.0, "")  # (Face, Double 偏置, String 备选名)
 f  = dp.CommitFeature(); dp.Destroy()  # → 'DATUM_PLANE'
 dp2.SetPointAndDirection(point, direction)  # (Point, Direction)
 ```
-  ⚠ `DatumCsysBuilder` 死路：只暴露 `Csys` 拾取，无既有坐标系报 `Reference coordinate system undefined.`；独立基准坐标系用 `Planes.CreatePlane`（§3.2）。
+  独立基准坐标系用 `Planes.CreatePlane`（§3.2）；`DatumCsysBuilder` 只暴露 `Csys` 拾取，无既有坐标系时报 `Reference coordinate system undefined.`。
 - 边建边查：体数/孔壁数/倒圆面数与设计值比对；**布尔后断言体数**（§2.5）。
 - builder 异常先 `print([a for a in dir(builder) if not a.startswith('_')])`。
 - 批处理改过的 prt 不热重载。
 
 ### 1.9 重复特征决策表（先决策再动手）
 
-按分布选型（详见 §3.1a-§3.2）：矩形/栅格 `Linear`、圆周 `Circular`、镜像 `MirrorFeatureBuilder`、沿曲线 `AlongPath`、螺旋 `Helix`、正多边形 `Polygon`、指定坐标 `General`、跟随已有阵列 `Reference`、螺旋线 `Spiral`；不规律且仅 2-3 件逐个创建。
+按分布选型（详见 §3.1a-§3.2）：矩形/栅格 `Linear`、圆周 `Circular`、沿曲线 `AlongPath`、螺旋 `Helix`、正多边形 `Polygon`、指定坐标 `General`、跟随已有阵列 `Reference`、螺旋线 `Spiral`；不规律且仅 2-3 件逐个创建。镜像走 §3.2 的 `MirrorFeatureBuilder`（`PatternEnum.Mirror` 的 `CommitFeature()` 必抛 `Feature cannot be mirrored.`）。
 
-⚠ `PatternEnum`：`AlongPath / Circular / General / Helix / Linear / Mirror / Polygon / Reference / Spiral`；除 `Mirror` 外均可用。`Mirror` 的 `Validate()` 回 True，但 `CommitFeature()` 抛 `NXException: Feature cannot be mirrored.` → 走 §3.2。`Axes.CreateAxis` 首参不能传 `Axis.Null`（内存访问违例）。
+`PatternEnum` 全集：`AlongPath / Circular / General / Helix / Linear / Mirror / Polygon / Reference / Spiral`。`Axes.CreateAxis` 首参传 `Point3d`（传 `Axis.Null` 内存访问违例）。
 
 ### 1.10 交付自检清单（逐项过）
 
@@ -90,7 +90,7 @@ blk.SetOriginAndLengths(NXOpen.Point3d(0.0, 0.0, 0.0), "100", "60", "20")
 blk.CommitFeature(); blk.Destroy()
 # ⚠ Length/Width/Height、Diameter/Height 只读（AttributeError）：用 SetLength/SetWidth/SetHeight 或 SetOriginAndLengths。
 # ⚠ CylinderBuilder 先建圆曲线赋 Arc 再拉伸。
-# ⚠ 坐标必须 float（0.0），长度必须 str（"100"）；SKILL.md §3 坑位 7/8。
+# 坐标必须 float（0.0），长度必须 str（"100"）；SKILL.md §3 路线约束 7/8。
 ```
 
 方块布尔用 `SetBooleanOperationAndTarget`（§2.5）：
@@ -107,15 +107,15 @@ cut.CommitFeature(); cut.Destroy()
 - `CylinderBuilder.Types` 只有 `ArcAndHeight`/`AxisDiameterAndHeight`，无 `BooleanType`。
 - 无 UF `CreateCone`/`CreateCylinder`；圆锥用 `ConeBuilder.Types.DiametersAndHeight` + `Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`。
 - `Diameter`/`Height` 只读，`.Expression.RightHandSide` 可绑定（`cyl.Diameter.RightHandSide = "D_Base"`）。
-- Builder 首参传 `Cylinder.Null`/`Cone.Null`（`None` 报 TypeError）；`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
+- Builder 首参传 `NXOpen.Features.Feature.Null`（Cylinder/Block 等）、`NXOpen.Features.Cone.Null`（Cone）；`None` 报 TypeError。`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
 
-### 2.2 拉伸（Section 路线，⚠ 三个坑）
+### 2.2 拉伸（Section 路线）
 
 - `Sections.CreateSection(0.0009, 0.001, 0.01)`：3 容差重载。
-- ⚠ `ExtrudeBuilder.Section` 恒为 `None`，需先建独立 Section 再赋。
-- ⚠ `AddToSection` 的 seed/connector 必须 `NXObject.Null`，传 `None` 报 `No overload matches`。
-- ⚠ 必须显式设 `Direction`，否则 `No axis selected`。
-- ⚠ `Curves.CreateArc` 的 startAngle/endAngle 是**弧度**。
+- `ExtrudeBuilder.Section` 恒为 `None`：先建独立 Section，再赋给 builder。
+- `AddToSection` 的 seed/connector 传 `NXObject.Null`（`None` 报 `No overload matches`）。
+- 显式设 `Direction`（否则 `No axis selected`）。
+- `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
 
 ### 2.3 孔（Hole 特征 + 十字辅助线）
@@ -186,12 +186,12 @@ builder.Destroy(); collector.Destroy()
 
 ### 2.5 布尔与孔壁识别
 
-- 布尔：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)`（Unite/Subtract）。
-- ⚠ 方块布尔必须 `SetBooleanOperationAndTarget(Subtract, target)`；用 `BooleanOption.Type`+`SetTargetBodies` 不报错但不生效（体数 1→2）。每次布尔后断言体数。
-- ⚠ 孔壁不能按"所有圆柱面"过滤：遍历 `GetFeatures()` 找 `FeatureType == "SUBTRACT"` 后取 `GetFaces()`，或 Hole 特征用 `AskFaceData` 按半径过滤（§5）。
+**布尔路线**：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)` → `SetBooleanOperationAndTarget(Subtract/Unite, target)` → `CommitFeature()` → 断言体数。方块布尔只用这条入口；`BooleanOption.Type`+`SetTargetBodies` 会静默不生效（体数 1→2）。
 
-**布尔**：必须**真正体积相交**；面/点/线接触静默留两个体；工具体在外报 `Tool body completely outside target body`；孔壁厚不足同 §2.3。依次合并每步接触当前材料；命名体数 vs 实际体数查孤立体。
-⚠ 相切工具体被拒（`... zero wall thickness.`）：Ø60 凸台改 Ø56（留 4 mm）；同轴圆柱先留间隙或先合并。
+- 工具体与目标体必须**真正体积相交**；面/点/线接触会静默留两个体，工具体在外报 `Tool body completely outside target body`。
+- 相切工具体被拒（`... zero wall thickness.`）：留间隙或先合并；Ø60 凸台改 Ø56（留 4 mm）。
+- 孔壁识别：遍历 `GetFeatures()` 找 `FeatureType == "SUBTRACT"` 后取 `GetFaces()`，或 Hole 特征用 `AskFaceData` 按半径过滤（§5）；不要按"所有圆柱面"过滤。
+- 依次合并每步接触当前材料；命名体数与实际体数不符时查孤立体。
 
 ## 3. 阵列 / 镜像 / 旋转 / 衍生特征
 
@@ -219,7 +219,7 @@ pb.CommitFeature(); pb.Destroy()
 ⚠ 2D 线性阵列必须 `rect.UseYDirectionToggle = True` 并给 YDirection。
 ⚠ 依赖特征一起阵列（打孔→倒圆）自带倒圆。
 ⚠ 验证：孔壁 type=16 半径=HD/2；孔口倒圆 type=19，`radius` = 主半径 = HD/2 + 倒圆半径。
-⚠ 圆周间距属性名 `PitchDistance`（`CountAndPitch` 不存在）。
+⚠ 圆周间距用 `PitchDistance`（`CountAndPitch` 不存在）。
 
 ### 3.1a 沿路径阵列（`AlongPath`）
 
@@ -268,7 +268,7 @@ pb.CommitFeature(); pb.Destroy()
 
 - `CountOfInstances` 含种子：角步距 = `360/(CountOfInstances-1)`；`z=p·θ/2π`。
 - `SizeOptions`：`AngleHelixPitchAndSpan / AngleHelixPitchAndTurns / CountAngleDistance / CountHelixPitchAndSpan / CountHelixPitchAndTurns`。
-- ⚠ `RotationAxis` 留空不报错但无副本，靠体数判定。
+- ⚠ `RotationAxis` 必须给；留空不报错但无副本，用体数判定。
 
 ### 3.1c 正多边形阵列（`PatternType=Polygon`）
 
@@ -348,7 +348,7 @@ pb.CommitFeature()
 ```
 
 - ⚠ 水平参考填 `HorizontalRef.HorizontalRefVector`（Direction）；不填报 `No section curves or points created.`。
-- ⚠ 不按阿基米德螺线算：半径对转角不单调，圈数 1 + 沿线节距 40 时零实例；严格螺线用 `General`。
+- ⚠ 不按阿基米德螺线算：半径对转角不单调，可产出零实例；严格螺线用 `General`。
 
 ### 3.2 特征级镜像
 
@@ -363,11 +363,11 @@ mb.CommitFeature(); mb.Destroy()
 
 ⚠ 草图级镜像不可用（§4.3）；对称用 Symmetric 规则或手工曲线。
 
-### 3.3 旋转体（RevolveBuilder 批处理不可用 → UF 路线）
+### 3.3 旋转体（UF 路线）
 
 ```python
-# ⚠ RevolveBuilder.CommitFeature 批处理报内存访问违例（Axes.CreateAxis 的轴也崩；
-#   DatumAxis 赋 Axis 属性被类型拒绝）→ 改用 UF:
+# 用 UF Modl.CreateRevolved；RevolveBuilder.CommitFeature 批处理报内存访问违例
+#   （Axes.CreateAxis 的轴也崩；DatumAxis 赋 Axis 属性被类型拒绝）。
 ufs = NXOpen.UF.UFSession.GetUFSession()
 feats = ufs.Modl.CreateRevolved(
     [c.Tag for c in profile_curves], ["0.0", "360.0"],
@@ -412,12 +412,12 @@ db.FaceSetAngleExpressionList.Append(ecs)
 db.CommitFeature(); db.Destroy()
 ```
 
-**拔模四个坑**：
+**拔模必设项**：
 
-- ⚠ `Method` 只读 → 设 `DraftIsoclineOrTruedraft`（`TrueDraft`/`Isocline`）。
-- ⚠ `StationaryEntity` 必须传 `Face`：传 `ScCollector` 报 `First parameter is invalid`；传 `Direction`/`DatumPlane`/不设报 `Draft reference is missing. ...`。
-- ⚠ `StationaryReference`/`StationaryPartingReference` 只读；`PartingReference` 可读不可写。
-- ⚠ 角度经 `CreateExpressionCollectorSet(collector, 角度串, unitsType, 0)`，`Append` 到 `FaceSetAngleExpressionList`；按度解释。
+- 拔模方式设 `DraftIsoclineOrTruedraft`（`Method` 只读）：`TrueDraft`/`Isocline`。
+- `StationaryEntity` 传 `Face`：传 `ScCollector` 报 `First parameter is invalid`，传 `Direction`/`DatumPlane` 或不设报 `Draft reference is missing.`。
+- `StationaryReference`/`StationaryPartingReference` 只读，`PartingReference` 只读；固定/分型基准只走 `StationaryEntity`。
+- 角度经 `CreateExpressionCollectorSet(collector, 角度串, unitsType, 0)` 追加到 `FaceSetAngleExpressionList`，按度解释。
 
 **符号与解析式**：`StationaryEntity` = 固定面、`Direction` = 拔模方向（+Z）。四侧面拔模、底面固定时
 
@@ -488,25 +488,24 @@ session.UpdateManager.DoUpdate(mark)  # ⚠ Session 属性是 UpdateManager（�
 wp.Sketches.CreateAutoConstrainBuilder().Commit()  # 自动几何约束
 adb = wp.Sketches.CreateAutoDimensionBuilder()
 adb.SelectionObject.SetArray(curves)
-adb.SetRules([Length, Symmetric])  # NXOpen.Sketch.AutoDimensionRule
-adb.DimType = NXOpen.Sketch.AutoDimensionBuilder.DimensionType.Driving
-adb.Commit()  # 自动生成驱动尺寸表达式
+adb.SetRules([NXOpen.Sketch.AutoDimensioningRule.Length,
+              NXOpen.Sketch.AutoDimensioningRule.Symmetric])
+adb.DimensionType = NXOpen.SketchAutoDimensionBuilder.DimType.Driving
+adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 ```
 
 ⚠ AutoDimension 非确定性：偶发 0 尺寸 → `UnderConstrained`（但 dof=0）。`GetStatus()` 非 `WellConstrained` 时对轮廓线 `CreateFullyFixedConstraints` 兜底（已有驱动尺寸时勿加）。
 
-### 4.3 草图 API 的不可用项（遇到 → 怎么做）
+### 4.3 草图尺寸与约束路线
 
-| 遇到 | 怎么做 |
-| --- | --- |
-| `Sketch.CreateDimension` / `CreateRadialDimension` 报 `No overload matches` | 改用 §4.2 |
-| 给 `SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 赋值 | 只读；用 §4.2 |
-| `SketchMirrorPatternBuilder.DirectionObject` 赋值 | 只读；草图级镜像走不通 |
-| `Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在 | 用 §5 的 `AskFaceData` |
+- 尺寸与约束统一走 §4.2 的 `CreateAutoConstrainBuilder` + `CreateAutoDimensionBuilder`；`GetStatus()` 非 `WellConstrained` 时对轮廓线 `CreateFullyFixedConstraints` 兜底。
+- `Sketch.CreateDimension` / `CreateRadialDimension`、`SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 批处理不可用（只读或 `No overload matches`），不要在这条路线上尝试。
+- 草图级镜像走不通（`SketchMirrorPatternBuilder.DirectionObject` 只读）；对称件用特征级 `MirrorFeatureBuilder`（§3.2）。
+- 面查询用 §5 的 `AskFaceData`（`Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在）。
 
-### 4.4 孔与螺纹：`HolePackage` 批处理**能建三种孔、建不出螺纹孔**（`scripts/tests/26_hole_package.py`）
+### 4.4 孔与螺纹路线（`HolePackage`；`scripts/tests/26_hole_package.py`）
 
-- `Thread`/`CreateThreadBuilder`/`ThreadFeatureBuilder` 在 NX12 **不存在**。螺纹归 HolePackage：`CreateHolePackageBuilder(NXOpen.Features.HolePackage.Null)`，`Types` = `DrillSizeHole / GeneralHole / HoleSeries / ScrewClearanceHole / ThreadedHole`。
+- 螺纹用 HolePackage：`CreateHolePackageBuilder(NXOpen.Features.HolePackage.Null)`，`Types` = `DrillSizeHole / GeneralHole / HoleSeries / ScrewClearanceHole / ThreadedHole`（NX12 没有 `Thread`/`CreateThreadBuilder`/`ThreadFeatureBuilder`）。
   ⚠ 枚举用模块级类（`HolePackageBuilder.Types.ThreadedHole`、`…HoleDepthLimitOptions.Value`、`…ThreadLengthOptions.Standard`）；写成 `b.Types()` 抛 `NXException: instances of NX enums can not be created` 并中断 journal。
 
 孔位：只读 `Section`，点用 `ScRuleFactory` 灌入：
@@ -536,7 +535,7 @@ b.Validate(); b.CommitFeature()
 - ⚠ `ScrewStandard/ScrewType/ScrewSize/ScrewFitOption` 仅螺钉过孔适用；成员名 `ScrewFitOption`，无 `ScrewFit`。
 - ⚠ 标准名须匹配 `modeling_standards\*.xml` 的 `Standard=`：钻孔 `nx6_Drill_Size_Hole_Standard.xml`（`ISO`，尺寸 `10`/`10.2`，`Fit` 仅 `Exact`）；螺纹孔 `nx502_Threaded_Hole_Standard.xml`（`Metric Coarse`，`M10 x 1.5`）。写错 → `Standard data not found`；别用 `thd_metric.dat`。
 
-**`ThreadedHole` 不可用**：`Validate()` 通过但 `CommitFeature()` 必抛 `memory access violation`，树里只留无几何 `HOLE PACKAGE`。**替代**：底孔 `GeneralHole`（M10×1.5 底孔 Ø8.5）或 `DrillSizeHole`，螺纹用标注（`Annotations`/`SymbolicThread`），装配用 `ScrewClearanceHole`。⚠ 崩溃后退出码 1（日志仍写 successful）→ 按令牌校验；`UndoMark`/`UndoToMark` 撤残废特征。
+**螺纹孔走替代路线**：底孔 `GeneralHole`（M10×1.5 底孔 Ø8.5）或 `DrillSizeHole`，螺纹用标注（`Annotations`/`SymbolicThread`），装配用 `ScrewClearanceHole`。`ThreadedHole` 的 `Validate()` 通过但 `CommitFeature()` 必抛 `memory access violation`，树里只留无几何 `HOLE PACKAGE`；崩溃后退出码 1（日志仍写 successful）→ 按令牌校验，`UndoMark`/`UndoToMark` 撤残废特征。
 ⚠ `AskFaceData` 的 box 是 `(xmin, ymin, zmin, xmax, ymax, zmax)`，配对 **(0,3)/(1,4)/(2,5)**。
 
 ## 5. 几何查询工具
@@ -545,8 +544,9 @@ b.Validate(); b.CommitFeature()
 ufs = NXOpen.UF.UFSession.GetUFSession()
 d = ufs.Modeling.AskFaceData(face.Tag)
 # ⚠ UF 会话属性是 Modeling 不是 Modl（Modl.AskFaceData 不存在）
-# 返回 (type, point, dir, box, radius, norm, count)：平面 22、圆柱面 16、圆环面 19
+# 返回 (type, point, dir, box, radius, rad_data, norm_dir)：平面 22、圆柱面 16、圆环面 19
 # dir 是 list 不是 Vector3d；圆环面 radius=主半径（孔半径+倒圆半径）
+# ⚠ rad_data = 圆环小半径 / 圆锥半角；norm_dir 是 ±1 的面法向翻转标志，不是法向矢量
 ```
 
 ## 6. 可编辑性 / 可检查性铁律（用户会打开检查并修改生成的 prt）
@@ -556,7 +556,3 @@ d = ufs.Modeling.AskFaceData(face.Tag)
 - **参数可改**：顶层尺寸命名表达式（§4.1）；关键特征 `SetName`。
 - **无垃圾几何**：未参与建模的线转参考线或删除。
 - **交付前验证**：`08_editability_probe.py`；数值见 §3.5；`Point3d` 坐标不受表达式驱动。
-
-## 7. 整机示例沉淀（四连杆机构）
-
-曲柄摇杆四杆 + 平行双摇臂，9 零件 + 14 组件，全部草图 WellConstrained。

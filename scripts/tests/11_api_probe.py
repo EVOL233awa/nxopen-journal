@@ -232,7 +232,7 @@ def main():
             comp, ok, os.path.getsize(step_out) if os.path.exists(step_out) else -1)
     probe("STEP_EXPORT", p_step)
 
-    # ---------- 13. STL 导出（2026-09-16 修正：可用，选择器必须用 SetArray） ----------
+    # ---------- 13. STL 导出（修正：可用，选择器必须用 SetArray） ----------
     def p_stl():
         stl_out = os.path.splitext(OUT)[0] + ".stl"
         if os.path.exists(stl_out):

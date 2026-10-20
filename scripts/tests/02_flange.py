@@ -2,7 +2,7 @@
 # Test B: flange (revolve: two convex sections + boolean unite, circular pattern, edge blend)
 # Covers: UF Modl.CreateRevolved (convex sections only; concave profile fails in NX12 batch),
 #         boolean unite, hole, circular pattern, edge blend
-# 2026-09-24 起配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
+# 配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
 import os
 import sys
 

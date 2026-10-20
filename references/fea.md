@@ -9,6 +9,24 @@
 - 求解器/分析类型：`"NXNASTRAN"`/`"STRUCT"`（FinalizeCreation 入参）；读回 `('NX NASTRAN', 'Structural')`。
 - 单位制 mm-N-s-MPa（应力 MPa、力 N）；Steel E=206940 MPa、密度 7.83e-9 tonne/mm³（重力载荷注意）；上游/手算载荷（压紧力、摩擦扭矩、转速）需换算单位。
 
+## 0a. 保存 .fem/.sim（已验证）
+
+```python
+fem.Save(NXOpen.BasePart.SaveComponents.FalseValue,
+         NXOpen.BasePart.CloseAfterSave.FalseValue)          # 只写 .fem
+fem.IdealizedPart.Save(NXOpen.BasePart.SaveComponents.FalseValue,
+                       NXOpen.BasePart.CloseAfterSave.FalseValue)  # 单独写 _i.prt
+sim.Save(NXOpen.BasePart.SaveComponents.FalseValue,
+         NXOpen.BasePart.CloseAfterSave.FalseValue)          # 写 .sim
+assert os.path.getsize(fem_path) > 0 and os.path.getsize(sim_path) > 0
+```
+
+- `session.Parts.Work` 与 `session.Parts.Display` 对 .fem/.sim 都抛 `The part file is not a .prt part`；部件句柄只保留 `FileNew().Commit()` 的返回值。
+- `fem.Save()` **只写 .fem，不写理想化件**：`fem.Save()` 之后 `save_i.prt` 不存在，补 `fem.IdealizedPart.Save(...)` 才落盘（47,764 B）。`fem.IdealizedPart` 是普通 `Part`，`.FullPath` 指向 `_i.prt`。
+- 返回值是 `NXOpen.PartSaveStatus` 对象（不是错误清单）；落盘判据用 `os.path.getsize > 0`。本机参考体积：.fem ≈1.5 MB、.sim ≈3.4 MB（模板差异，不作判据）。
+- `ufs.Part.Save()` 保存**显示部件**：新建 sim 后显示件是 sim，能写 .sim；但语义隐式，显式用 `sim.Save(...)`。
+- 重开：`part, status = session.Parts.Open(path)`（返回元组）。.fem 已作为 .sim 的依赖加载时再 `Open` 报 `File already exists`，先 `ufs.Part.CloseAll()`。
+
 ## 1. CAD → FEM
 
 ```python
@@ -77,7 +95,7 @@ mb.ElementType.ElementTypeName = "CQUAD4"
 mb.CommitMesh(); mb.Destroy()
 ```
 
-- ⚠ `ElementType` 无 `ThinShell`（`has no attribute 'ThinShell'`）。全表：`AnySolid/Beam/Connection/Contact/FreeSolid/Point/Pyramid/QuadShell/Shell/Spider/SweepSolid/SweepSolidWedge/TriaShell/Weld`。2D 用 `Shell`+`CQUAD4`/`CTRIA3`；3D 用 `FreeSolid`+`CTETRA(10)`。
+- 2D 用 `ElementType.Shell`+`CQUAD4`/`CTRIA3`；3D 用 `FreeSolid`+`CTETRA(10)`。`ElementType` 全表：`AnySolid/Beam/Connection/Contact/FreeSolid/Point/Pyramid/QuadShell/Shell/Spider/SweepSolid/SweepSolidWedge/TriaShell/Weld`（没有 `ThinShell`）。
 - ⚠ `.fem/.sim` 不能用 `Parts.Work`（`The part file is not a .prt part`），用 `fn.Commit()` 返回值。
 - ⚠ 壳厚必须在 PSHELL 表显式写 `element thickness`（不写只剩默认厚度，挠度差几个量级）。属性名先枚举 `GetPropertyNameByIndex(i)` + `GetPropertyCount()` → 13 项 `Plane Strain / material / bending material uses material / bending material / transverse shear material uses material / transverse shear material / membrane-bending coupling material / element thickness / bending coefficient / shear ratio / nonstructural mass / fiber distance 1 / fiber distance 2`。
   写法：`SetBaseScalarWithDataPropertyValue("element thickness", "5.0", unit_mm)`，单位取 `fem.UnitCollection.FindObject("MilliMeter")`；读回 `GetScalarWithDataPropertyValue` → `(5.0, <Unit>)`。
@@ -109,7 +127,7 @@ b.ElementType.ElementTypeName = "CTETRA(10)"
 b.ElementType.DestinationCollector.ElementContainer = collector
 b.ElementType.DestinationCollector.AutomaticMode = False
 unit_mm = fem.UnitCollection.FindObject("MilliMeter")
-# ⚠ 属性名跨版本漂移：先 GetPropertyCount()/GetPropertyNameByIndex(i) 枚举再设值
+# 先 GetPropertyCount()/GetPropertyNameByIndex(i) 枚举属性名，再设值（属性名跨版本漂移）
 b.PropertyTable.SetBaseScalarWithDataPropertyValue(
     "quad mesh overall edge size", "4", unit_mm)     # NX12 有此名；无 "automatic size option bool"
 b.CommitMesh(); b.Destroy()
@@ -129,7 +147,7 @@ sol = sim.Simulation.CreateSolution(
     "NX NASTRAN", "Structural", "SESTATIC 101 - Single Constraint",
     "Solution 1", NXOpen.CAE.SimSimulation.AxisymAbstractionType.NotSet)
 if sol.StepCount == 0: sol.CreateStep(0, True, "Subcase - Statics 1")  # NX12 3 参重载
-# ⚠ 不挂输出请求：dat 无 DISPLACEMENT/STRESS、op2 空、后处理 No results found
+# 先挂输出请求；不挂则 dat 无 DISPLACEMENT/STRESS、op2 空、后处理 No results found
 mo = sim.ModelingObjectPropertyTables.CreateModelingObjectPropertyTable(
     "Structural Output Requests", "NX NASTRAN - Structural", "NX NASTRAN",
     "Structural Output Requests1", 2)
@@ -151,8 +169,8 @@ def face_objs(faces):
         objs.append(so)
     return objs
 
-# 固定约束：NX12 无 "FixedConstraint"（Invalid LBC neutral name），
-# 用 "UserDefinedDisplacementConstraint" + DOF1..6 全 0（"-777777"=自由）
+# 固定约束用 "UserDefinedDisplacementConstraint" + DOF1..6 全 0
+# （"FixedConstraint" 报 Invalid LBC neutral name；"-777777"=自由）
 b = sim.Simulation.CreateBcBuilderForConstraintDescriptor(
     "UserDefinedDisplacementConstraint", "Fixed(1)", 1)
 b.TargetSetManager.SetTargetSetMembers(
@@ -213,7 +231,7 @@ sol.SolverType                       # → 'NX NASTRAN'
 
 ⚠ **BC 描述符有效性绑定当前激活方案，新建方案立即激活**：模态方案后建载荷 BC 报 `Invalid LBC neutral name`，先 `sim.Simulation.ActiveSolution = <静态方案>`。错误抛在 `CreateBcBuilderFor{Load,Constraint}Descriptor`（非 `CommitAddBc`）；第 3 参是载荷标签（int），非方案选择器。
 
-- 有效：`ComponentForceField`（载荷）、`UserDefinedDisplacementConstraint`（约束）。无效（均 `Invalid LBC neutral name`）：`PressureField`/`Pressure`/`NormalPressureField`/`HydrostaticPressureField`/`MagnitudeDirectionForceField`/`GravityField`/`AccelerationField`/`InertiaLoad`/`CentrifugalField`/`FixedConstraint`/`EnforcedDisplacementConstraint`/`PinnedConstraint`/`SimplySupportedConstraint`。
+- 静态有效描述符只有两个：`ComponentForceField`（载荷）、`UserDefinedDisplacementConstraint`（约束）；其余名字一律 `Invalid LBC neutral name`，不要逐个试。
 - BC 入口：`CreateBcBuilderForBc` / `…ForConstraintDescriptor` / `…ForLoadDescriptor` / `…ForSimulationObjectDescriptor` / `CreateAutoBcBuilder` / `CreateLoadSetBuilder` / `CreateConstraintSetBuilder`。
 
 ## 7. 求解 + 后处理
@@ -259,7 +277,7 @@ def ask_max(rt_name, comp):                          # comp: Component.Magnitude
 3. **网格**：CTETRA(10) 默认（CTETRA4 过刚）；尺寸取关键特征/壁厚 1/2~1/4；h 加密（尺寸减半）变化 <5% 为收敛。
 4. **BC 远离关注区**（圣维南）：约束/集中载荷 1~2 倍特征长度内应力不可信；角点应力集中注明位置；取远端中段对比梁理论。
 5. **奇异性**：点载荷、锐角、约束角点随网格细化不收敛，不作判据；改用分布载荷/圆角/远端取值。
-6. **判定**：延性钢 von Mises vs 屈服（235/345 MPa），SF = 屈服/vM_max；位移查量级、方向、变形形状。
+6. **判定**：延性钢 von Mises vs 屈服（235/345 MPa），SF = 屈服/vM_max；位移查量级、方向、变形形状。峰值落在孔口/锐边时补 3~5 个低应力测点（耳座、板、支架），以测点邻域应力作强度判据，报告同时列出峰值并注明其不可用于判定。
 7. **验证闭环**：求解后自动读 Max 位移/vM 对比手算，容差内打印 BENCH_PASS/BENCH_FAIL。
 8. **网格前验 CAD**：modeling.md §3.5 测体积/质心（不符 = 布尔未融合或尺寸错）。
 

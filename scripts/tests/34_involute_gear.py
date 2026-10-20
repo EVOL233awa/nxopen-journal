@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Test 34: 渐开线直齿圆柱齿轮（nxlib.modeling.involute_gear，2026-09-25 冷测 T8 配方沉淀）
+# Test 34: 渐开线直齿圆柱齿轮（nxlib.modeling.involute_gear）
 #
 # 覆盖：
 #   * 表达式驱动规律曲线（压力角参数化——NX12 表达式无 atan/acos/asin/atan2，
@@ -7,9 +7,9 @@
 #     "Expression does not exist for law"）
 #   * 齿顶/齿根三点弧 + 径向连接线 + 全齿闭合轮廓一次 UF 拉伸 + 负向拉伸打孔
 #   * gb_drawing.model_bbox 的 ufs.ModlGeneral.AskBoundingBox 主路线（纯回转体
-#     无直边——旧写法走直边回退会抛 "body has no edges"，2026-09-25 修正）
+#     无直边——直边回退会抛 "body has no edges"）
 #
-# 数值口径（独立解析，见冷测 verify_scripts/t8_truth.py 渐开线齿面积分）：
+# 数值口径（独立解析积分）：
 #   z=20 m=2 α=20° B=20 孔Ø20 → ra=22 rf=17.5；扣孔体积 18238.9 mm³，验收带 ±2%
 #   （体积对齿数敏感 ~5%/齿，带内即钉死齿数与齿形）。
 # 成功标志：TEST34_DONE 且无 _FAIL
@@ -117,7 +117,7 @@ names = [e.Name for e in wp.Expressions]
 check("EXPR", all(n in names for n in ("p_gear_m", "p_gear_z", "p_rp", "p_rb", "p_smax")),
       "参数链 p_gear_*/p_rp/ra/rf/rb/p_smax 齐全")
 
-# ---- 轮毂分支（2026-10-19 减速器冷启动沉淀）：独立部件，避免表达式重名 ----
+# ---- 轮毂分支（减速器常用结构）：独立部件，避免表达式重名 ----
 NO_HUB = os.path.join(OUT_DIR, "t34_gear_nohub.prt")
 HUB_PART = os.path.join(OUT_DIR, "t34_gear_hub.prt")
 for p in (NO_HUB, HUB_PART):

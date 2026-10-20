@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Test 24: 2D 壳网格 + PSHELL 回归（NX12 批处理实测，2026-09-22；fea.md §3a）。
+"""Test 24: 2D 壳网格 + PSHELL 回归（NX12 批处理；fea.md §3a）。
 
-此前 fea.md 只写了实体 CTETRA(10) 一条路线，壳路线属于"从未用过"。本用例把它固化成检查：
+壳路线与实体 CTETRA(10) 并行；本用例把它固化成检查：
 
 A) 壳物理属性：`PhysicalPropertyTables.CreatePhysicalPropertyTable(
        "PSHELL", "NX NASTRAN - Structural", "NX NASTRAN", name, 2)` 可建；

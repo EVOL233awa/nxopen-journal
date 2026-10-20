@@ -3,7 +3,7 @@
 # three views, i.e. run 01_bracket.py then 06_drafting.py first).
 #
 # Covers, all in headless batch (run_journal.exe):
-#   sheet.Open() precondition (references/assembly-drafting.md B.2)
+#   sheet.Open() precondition (references/drafting.md B.2)
 #   global lettering / line+arrow preferences and their inheritance by new dims
 #   UF DRF associative dimensions: hdim + vdim on hole-circle edges (ARC_CENTER)
 #   .NET center mark + 2D centerline (ByPoints)
@@ -93,9 +93,9 @@ def main():
 
     # ---------------------------------------------------------------- context
     # Open() makes the sheet current and is harmless, but it is NOT a
-    # precondition: measured 2026-09-20, every creator below also succeeds
+    # precondition: measured, every creator below also succeeds
     # without it, on both a sheet saved as current and a sheet inserted in this
-    # session (references/assembly-drafting.md B.2). The old "1175307 because
+    # session (references/drafting.md B.2). The old "1175307 because
     # the sheet was never opened" story was a mis-attribution; the real trigger
     # is a center-mark builder carrying 3 or more locations, see 07.
     stage("sheet_open", lambda: sheet.Open())

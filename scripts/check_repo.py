@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """本仓库自检：不依赖 NX 与第三方包，云端 CI 与本机都能跑。
 
-六组检查，判据全部从目录树自身推出，没有一个写死的期望值，所以新增用例或文档
-不会让检查静默放过：
+七组检查，判据尽量从目录树自身推出；只有设计决策（探针名单、外部依赖、
+精简词表）显式登记在常量里，所以新增用例或文档不会让检查静默放过：
 
   1) PY36       scripts/tests/*.py 必须能以 Python 3.6 语法解析。NX 12 内嵌解释器
-                实测是 Python 3.6.1，3.7+ 的新语法在宿主 Python 上通过、在 NX 里直接
+                是 Python 3.6.1，3.7+ 的新语法在宿主 Python 上通过、在 NX 里直接
                 报语法错，这一组就是拦这件事。
   2) COVERAGE   RUN_TESTS.bat 里 :gate 的每个用例号都要有对应文件，且每个用例文件
                 都要在 RUN_TESTS.bat 里被点到名（在跑或在不跑的注释里说明）。
@@ -19,6 +19,8 @@
                 必须显式登记。nxlib/*.py 与 scripts/gb_drawing.py 同样过 PY36 语法。
   6) CONCISE    agent 文档（SKILL.md、references/*.md、tests/README.md）不得出现
                 日期与过程叙述词；新知识必须是结论/做法，不能把验证故事写回来。
+  7) ROUTE      路线优先：域文件不新开坑位清单/坑位表；负面断言必须带做法。
+                跨域通用且高发（静默失败/崩溃）的陷阱才留在 SKILL.md 铁律。
 
 用法：python scripts/check_repo.py [仓库根]
 退出码 0 = 全部通过，1 = 有问题（逐条打印在 stdout）。
@@ -36,7 +38,7 @@ BATCH = os.path.join(TESTS, "RUN_TESTS.bat")
 NXLIB = os.path.join(ROOT, "scripts", "nxlib")
 KEEP_DIRS = ("parts", "__pycache__", ".git")
 # 探针/死路类用例：自包含（不复用标准层）是设计决策——它们的价值在原样记录
-# 当时的调用方式，改写成库调用反而失真。新增同类用例必须显式登记进来。
+# 原样调用方式，改写成库调用反而失真。新增同类用例必须显式登记进来。
 SELF_CONTAINED = {
     "08_editability_probe.py", "11_api_probe.py", "12_api_probe2.py",
     "13_api_probe3.py", "17_motion_deadends.py", "28_pattern_helix.py",
@@ -66,7 +68,22 @@ CONCISE_PATTERNS = (
     (r"白跑", "白跑"),
     (r"本轮", "本轮"),
     (r"代价", "代价"),
+    (r"冷测", "冷测"),
+    (r"沉淀", "沉淀"),
+    (r"复证", "复证"),
+    (r"审计实证", "审计实证"),
+    (r"踩到|踩过", "踩坑"),
+    (r"上轮|旧版|曾经|当时|最初|后来", "历史指代"),
 )
+# ROUTE：负面断言必须同时给出做法；坑位式标题/表格一律不再新增。
+ROUTE_VERBS = ("用", "改", "走", "传", "设", "先", "必须", "直接", "按", "只",
+               "不要", "禁止", "改用", "退回", "换", "取", "写", "赋", "加",
+               "保留", "删", "断言", "校验", "枚举", "调", "提交", "选", "匹配",
+               "→", "打")
+NEG_RE = re.compile(r"(不可用|不存在|只读|死路|不生效|必报|必抛|报错|失败|不能)")
+PITFALL_HEAD_RE = re.compile(r"^#+.*(坑位|反模式|不可用项|死路|陷阱)")
+ALLOWED_TRAP_HEAD_RE = re.compile(r"^#+.*高发")
+PITFALL_TABLE_RE = re.compile(r"^\|\s*(遇到|症状|问题|现象)\s*\|")
 
 problems = []
 
@@ -105,6 +122,9 @@ def check_py36():
     shipped = os.path.join(ROOT, "scripts", "gb_drawing.py")
     if os.path.exists(shipped):
         py_files.append(shipped)
+    render_export = os.path.join(ROOT, "scripts", "render", "export_stl.py")
+    if os.path.exists(render_export):
+        py_files.append(render_export)
     if os.path.isdir(NXLIB):
         py_files += [os.path.join(NXLIB, f)
                      for f in sorted(os.listdir(NXLIB))
@@ -130,9 +150,9 @@ def check_coverage():
         return
     batch = read(BATCH)
     files = set(n for n in os.listdir(TESTS) if CASE_RE.match(n))
-    # :gate 必须是行首的 call（允许前导空白）。旧正则不锚行首，于是
-    # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行仍被算作
-    # "已覆盖"，套件实际跳过 34 号却报全绿（2026-10-19 实测踩中）。
+    # :gate 必须是行首的 call（允许前导空白）。正则不锚行首时，
+    # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行会被算作
+    # "已覆盖"，套件实际跳过 34 号却报全绿。
     gated = set(re.findall(r"(?m)^[ \t]*call[ \t]+:gate[ \t]+(\d\d_[a-z_0-9]+\.py)", batch))
     mentioned = set(re.findall(r"(\d\d_[a-z_0-9]+\.py)", batch))
     expected = files - PROBES
@@ -289,8 +309,7 @@ def check_nolib():
           % (len(apis), len(SELF_CONTAINED), dup))
 
 
-def check_concise():
-    print("== 6. agent 文档精简（禁日期 / 过程叙述）==")
+def agent_docs():
     paths = [os.path.join(ROOT, "SKILL.md")]
     refdir = os.path.join(ROOT, "references")
     if os.path.isdir(refdir):
@@ -299,6 +318,12 @@ def check_concise():
     tests_readme = os.path.join(TESTS, "README.md")
     if os.path.exists(tests_readme):
         paths.append(tests_readme)
+    return paths
+
+
+def check_concise():
+    print("== 6. agent 文档精简（禁日期 / 过程叙述）==")
+    paths = agent_docs()
     hits = 0
     for path in paths:
         r = rel(path)
@@ -313,6 +338,56 @@ def check_concise():
     print("  扫描 %d 个 agent 文档：过程词 %d 处" % (len(paths), hits))
 
 
+def check_routes():
+    print("== 7. 路线优先（负面事实内联，不新开坑位清单）==")
+    paths = agent_docs()
+    bad_head = bad_tbl = bad_line = bad_long = 0
+    for path in paths:
+        r = rel(path)
+        lines = read(path).splitlines()
+        in_fence = False
+        trap_heading = None
+        trap_items = 0
+        for i, line in enumerate(lines, 1):
+            s = line.strip()
+            if s.startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if (s.startswith("#") and PITFALL_HEAD_RE.match(s)
+                    and not ALLOWED_TRAP_HEAD_RE.match(s)):
+                bad_head += 1
+                problems.append("ROUTE %s:%d 坑位式标题，改为成功路线" % (r, i))
+                print("  FAIL %s:%d 坑位式标题" % (r, i))
+            if s.startswith("#"):
+                if trap_heading is not None and trap_items > 8:
+                    bad_long += 1
+                    problems.append("ROUTE %s:%d 高发清单 %d 条，超过 8 条"
+                                    % (r, trap_heading, trap_items))
+                    print("  FAIL %s:%d 高发清单超过 8 条" % (r, trap_heading))
+                trap_heading = i if ALLOWED_TRAP_HEAD_RE.match(s) else None
+                trap_items = 0
+            elif trap_heading is not None and (s.startswith("- ") or re.match(r"\d+\.", s)):
+                trap_items += 1
+            if PITFALL_TABLE_RE.match(s):
+                bad_tbl += 1
+                problems.append("ROUTE %s:%d 坑位表，并入对应路线" % (r, i))
+                print("  FAIL %s:%d 坑位表" % (r, i))
+            if (not s.startswith("#") and NEG_RE.search(s)
+                    and not any(v in s for v in ROUTE_VERBS)):
+                bad_line += 1
+                problems.append("ROUTE %s:%d 只有负面断言，没有做法" % (r, i))
+                print("  FAIL %s:%d 只有负面断言" % (r, i))
+        if trap_heading is not None and trap_items > 8:
+            bad_long += 1
+            problems.append("ROUTE %s:%d 高发清单 %d 条，超过 8 条"
+                            % (r, trap_heading, trap_items))
+            print("  FAIL %s:%d 高发清单超过 8 条" % (r, trap_heading))
+    print("  扫描 %d 个 agent 文档：坑位标题 %d、坑位表 %d、无做法负面行 %d、超长高发清单 %d"
+          % (len(paths), bad_head, bad_tbl, bad_line, bad_long))
+
+
 def main():
     print("check_repo.py  root=%s" % ROOT)
     check_py36()
@@ -321,6 +396,7 @@ def main():
     check_tree()
     check_nolib()
     check_concise()
+    check_routes()
     print("")
     if problems:
         print("CHECK_REPO_FAILED %d 项" % len(problems))

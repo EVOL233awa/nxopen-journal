@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""14 方块布尔静默失败回归（2026-09-15 实测）。
+"""14 方块布尔静默失败回归（实测）。
 
 证明两件事（这是 references/modeling.md §2.1 新配方的依据）：
   1. BlockFeatureBuilder 的 BooleanOption 在 NX12 批处理下被**静默忽略**——

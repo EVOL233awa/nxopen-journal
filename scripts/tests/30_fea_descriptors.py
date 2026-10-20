@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Test 30: FEA 解算方案家族与 BC 描述符绑定（NX12 批处理，2026-09-22；fea.md §6a）。
+"""Test 30: FEA 解算方案家族与 BC 描述符绑定（NX12 批处理；fea.md §6a）。
 
-fea.md §6a 此前自己标注"本节的描述符结论**未纳入检查**，只有实测记录"——本用例把它
-升格成会失败的检查。守的是四条结论，其中第一条在本轮取证时**被修正**：
+守的是四条结论：
 
 A) 解算方案描述符真名只能从模板抽，实测全集 11 个（6 个 Nastran 变体模板各含同一套；
    `SimNxNastranDesign*.sim` 是 0，属另一种模板，不算"全集"）。
    ⚠ 期望清单的**项数**另用独立字面量钉住（REG_DESCRIPTOR_LIST_INTACT）：清单被削掉一项时
    REG_TEMPLATE_DESCRIPTORS 只会少检一项、静默保持通过 —— 覆盖清单型断言看不见自己的覆盖缩水。
-   这是本轮反向验证时实测到的误判通过，不是推测（删 `SEMFREQ 111 - Modal FRF` 后判定结果仍是 PASS）。
+   这是反向验证确认的误判通过，不是推测（删 `SEMFREQ 111 - Modal FRF` 后判定结果仍是 PASS）。
 
 B) 显示名与描述符名**不是一回事**：
    `SESTATIC 101 - Single Constraint` → 'SOL 101 Linear Statics - Global Constraints'
@@ -16,13 +15,11 @@ B) 显示名与描述符名**不是一回事**：
    垃圾名（`SEMODAL 103 - Normal Modes`）报 `Error number: 1775003`，**错误文本里没有任何
    可分辨的信息**，所以判据只能是"正对照能建 + 真名来自模板"，不能靠错误消息。
 
-C) **BC 描述符的有效性跟"当前激活的解算方案"绑定，且"当前激活方案"会被新建方案带走**
-   （本轮实测修正）：建完第二个（模态）方案后，`sim.Simulation.ActiveSolution` **指向的
-   就是那个模态方案**，此时 `ComponentForceField` 报 `Invalid LBC neutral name`；
+C) **BC 描述符的有效性跟"当前激活的解算方案"绑定，且"当前激活方案"会被新建方案带走**：
+   建完第二个（模态）方案后，`sim.Simulation.ActiveSolution` **指向的就是那个模态方案**，
+   此时 `ComponentForceField` 报 `Invalid LBC neutral name`；
    显式 `sim.Simulation.ActiveSolution = <静态方案>` 后同一个名字即可用。
-   旧文档只写了"切到模态方案后报错"，没说"新建方案本身就会把激活方案切过去"，
-   读者按字面理解会以为默认激活一直是静态方案 —— 检查自己走一遍
-   「模态激活 → 报错 → 回切静态 → 可用」的受控 A/B 把这条钉住。
+   检查走一遍「模态激活 → 报错 → 回切静态 → 可用」的受控 A/B 把这条钉住。
 
 D) 无效中性名清单抽样（全部 `Invalid LBC neutral name`，在静态方案激活下测）：
    `FixedConstraint` / `PinnedConstraint` / `PressureField`；

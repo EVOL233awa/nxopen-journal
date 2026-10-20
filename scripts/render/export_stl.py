@@ -6,7 +6,7 @@ Env:
   IMG_OUT   absolute path of the .stl to write (required)
 
 Selection block takes a plain body list (SetArray); ProcessHoldFlag is not
-needed for STL.  Measured corrections (2026-09-23):
+needed for STL.  Measured corrections:
   * NX 12 STLCreator has no TriangleTolerance -> use ChordalTol.
   * It also has no OutputTypeOption; the member is OutputType (OutputTypeEnum),
     so this probe leaves the default instead of guessing.
@@ -16,7 +16,7 @@ logs whatever the assembly-level attempt produced.
 
 Pass IMG_PART/IMG_OUT through the wrapper bat (run_export.bat): Git Bash
 `\\$var` inside double quotes eats the backslash and the journal sees a
-literal `$n` (measured 2026-09-23).  The log lands next to the STL so a
+literal `$n` (measured).  The log lands next to the STL so a
 swallowed NX console still leaves evidence.
 """
 import os

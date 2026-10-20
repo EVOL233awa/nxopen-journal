@@ -31,21 +31,20 @@ BINDING_A = 25.0                          # 装订边 a（GB/T 14689.1）
 NONBIND_C = {"A4": 5.0, "A3": 5.0}        # 非装订边 c；A0/A1 应为 10，未覆盖
 TEXT_DIM = 3.5                            # 尺寸/常用字高
 TEXT_SMALL = 2.5                          # 次要字高（标题栏字段）
-ARROW_LEN = 4.0                           # 箭头长度（19 号用例实测可用）
+ARROW_LEN = 4.0                           # 箭头长度（19 号用例可用）
 LANE_FIRST = 10.0                         # 第一道尺寸线离轮廓
 LANE_STEP = 7.0                           # 相邻尺寸线道距
 VIEW_GAP = 22.0                           # 三视图间距（内容区留白）
 VIEW_MARGIN = 18.0                        # 视图组离图框
-# 标题栏：105x21，3 行 7mm，列宽 [label,value]x3（2026-09-24 从一张真实
-# 工程图纸实测：总宽约 105mm、行高约 7mm、三行结构 = 图名/设计校核日期/
-# 图号比例材料）。原图列宽 14/21 在 NX 表格字体下放不下 10 字符的日期
-# （2.5 字高时 ASCII 字宽约 2.1mm，21mm 只容 10 字符，溢出画成 #），实测
-# 后改为 10/25，总宽 105 不变。
+# 标题栏：105x21，3 行 7mm，列宽 [label,value]x3（总宽约 105mm、
+# 三行结构 = 图名/设计校核日期/图号比例材料）。14/21 列宽在 NX 表格
+# 字体下放不下 10 字符日期（2.5 字高时 ASCII 字宽约 2.1mm，21mm 只容
+# 10 字符，溢出画成 #），故用 10/25，总宽 105 不变。
 TB_W, TB_H = 105.0, 21.0
 TB_COLS = [10.0, 25.0, 10.0, 25.0, 10.0, 25.0]
 TB_ROWS = [7.0, 7.0, 7.0]
-# 局部放大边界圆半径约等于选框半对角的 0.83 倍（2026-09-23 两次实测缩进
-# 5-6mm）：detail_rect() 据此自动放余量
+# 局部放大边界圆半径约等于选框半对角的 0.83 倍（缩进 5-6mm）：
+# detail_rect() 据此自动放余量
 DETAIL_CIRCLE_FACTOR = 0.83
 DEFAULT_NOTE_LINES = [
     u"技术要求：",
@@ -81,7 +80,7 @@ def new_sheet(part, name="SHT1", size="A4"):
 def blank_datums(part):
     """Blank every datum plane/axis before any view exists: the template's
     datum coordinate system projects into every drafting view as stray
-    arrowheads (measured 2026-09-23). Blanked objects do not plot."""
+    arrowheads. Blanked objects do not plot."""
     n = 0
     for o in part.Datums:
         if not o.IsBlanked:
@@ -268,7 +267,7 @@ def tech_note(sheet, tb_geo, lines=None, size=TEXT_DIM, base_y=None):
 def part_note(sheet, lines, origin_xy, size=TEXT_DIM):
     """Multi-line note anchored at its TOP-LEFT corner (default anchor is
     the block centre, which makes centred ragged lines - not GB style;
-    measured 2026-09-24).  NX re-interprets the stored origin when the
+    measured).  NX re-interprets the stored origin when the
     alignment changes, so the origin is pinned AFTER switching to TopLeft -
     then it is the block's top-left corner, deterministically."""
     part = sheet_part(sheet)
@@ -304,7 +303,7 @@ def sheet_part(sheet):
 def view_bbox(view):
     """Extent box centre + size from AskViewBorders.
 
-    注意：边框含视图标签/边界余量，可以比内容大很多（实测 TOP 视图边框高
+    注意：边框含视图标签/边界余量，可以比内容大很多（TOP 视图边框高
     141mm 而内容 60mm），只能用于"视图占多大地方"的粗估，禁止用于内容
     定位与尺寸道推导——用 content_bbox()。"""
     ufs = _ufs()
@@ -319,16 +318,17 @@ def model_bbox(body):
     """Model-space bounding box as ((xmin,ymin,zmin), (xmax,ymax,zmax)).
 
     NX12 UF 把 UF_MODL_ask_bounding_box 封装在 ufs.ModlGeneral（不是
-    ufs.Modeling——属性名写错时本函数会静默落入直边回退，纯回转体无直边
-    即抛错；2026-09-25 冷测 T10 实证后修正），返回扁平
+    ufs.Modeling）；属性名写错时本函数会落入直边回退，纯回转体无直边
+    即抛错，所以回退时打印警告而不是静默。返回扁平
     [xmin,ymin,zmin,xmax,ymax,zmax]。
     """
     ufs = _ufs()
     try:
         r = ufs.ModlGeneral.AskBoundingBox(body.Tag)
         return ((r[0], r[1], r[2]), (r[3], r[4], r[5]))
-    except Exception:
-        pass
+    except Exception as exc:
+        print("WARN model_bbox: AskBoundingBox failed (%s); using linear edges"
+              % exc)
     xs, ys, zs = [], [], []
     for _e, p1, p2 in linear_edges(body):
         xs += [p1.X, p2.X]
@@ -343,7 +343,7 @@ def assembly_bbox(bodies):
     """Union of model_bbox over several bodies (assembly drawing layout).
 
     装配图包盒必须把所有组件（齿轮齿顶、端盖、轴伸）都算进来；
-    model_bbox/standard_views 只接受单个 body（2026-10-19 冷启动实测缺口）。
+    model_bbox/standard_views 只接受单个 body，装配图要显式传多个 body。
     """
     boxes = [model_bbox(b) for b in bodies]
     if not boxes:
@@ -375,8 +375,8 @@ def pin_view(sheet, view, cx, cy, scale=1.0, tol=0.05, tries=3, bbox=None):
     content-centre delta and one compensating Set (constant per view ->
     converges; measured <0.05mm).  bbox = model_bbox() result, needed for
     the content measurement.  Content moves are rolled back if a LATER call
-    on the same sheet raises "Cannot move view off of the drawing" (measured
-    2026-09-24), so the caller must keep every view in-sheet."""
+    on the same sheet raises "Cannot move view off of the drawing" (measured),
+    so the caller must keep every view in-sheet."""
     if bbox is None:
         raise RuntimeError("pin_view: bbox=model_bbox() is required")
     ufs = _ufs()
@@ -398,13 +398,87 @@ def pin_view(sheet, view, cx, cy, scale=1.0, tol=0.05, tries=3, bbox=None):
                           ty - (last[1] + last[3]) / 2.0))
 
 
+def save_model_view(part, name, rows):
+    """Persist a named MODEL view with the given basis.
+
+    rows = (screen X, screen Y, view Z) as 3-tuples in absolute coordinates.
+    The matrix is the only working way to get a non-axis-aligned drawing:
+    drafting views reject View.Rotate ("The view may not be rotated") and UF
+    transform is a silent no-op on solids in batch.
+    """
+    m = NXOpen.Matrix3x3()
+    m.Xx, m.Xy, m.Xz = [float(v) for v in rows[0]]
+    m.Yx, m.Yy, m.Yz = [float(v) for v in rows[1]]
+    m.Zx, m.Zy, m.Zz = [float(v) for v in rows[2]]
+    part.Views.WorkView.SetRotationTranslationScale(
+        m, NXOpen.Point3d(0.0, 0.0, 0.0), 1.0)
+    part.Views.SaveAs(part.Views.WorkView, name, True, True)
+    if part.Views.FindObject(name) is None:
+        raise RuntimeError("save_model_view: %s not saved" % name)
+
+
+def base_view(part, sheet, model_view_name):
+    """Create a base drafting view from a named model view."""
+    bv = part.DraftingViews.CreateBaseViewBuilder(
+        NXOpen.Drawings.BaseView.Null)
+    bv.SelectModelView.SelectedView = part.Views.FindObject(model_view_name)
+    bv.Commit()
+    bv.Destroy()
+    key = model_view_name.upper()
+    for v in sheet.GetDraftingViews():
+        if v.Name.split("@")[0].upper() == key:
+            return v
+    raise RuntimeError("base_view: %s not created" % model_view_name)
+
+
+def set_cjk_font(part):
+    """Point all lettering classes at the 'chinesef' NX stroke font.
+
+    The default blockfont has no CJK glyphs: Chinese notes/tables plot as
+    empty boxes in the PDF.  Arial Unicode MS is loaded but NX's plotter does
+    not render its CJK glyphs either.  Lettering carries the font in
+    `Cfw.Font` (integer id); there is no `Lettering.Font`.
+    """
+    fonts = part.Fonts
+    fid = None
+    for i in range(1, fonts.GetLength() + 1):
+        try:
+            if fonts.GetFontName(i) == "chinesef":
+                fid = i
+                break
+        except Exception:
+            continue
+    if fid is None:
+        r = fonts.AddFont("chinesef", NXOpen.FontCollection.Type.Nx)
+        fid = r[0] if isinstance(r, tuple) else r
+    ap = part.Annotations.Preferences
+    lp = ap.GetLetteringPreferences()
+    for getter, setter in ((lp.GetGeneralText, lp.SetGeneralText),
+                           (lp.GetDimensionText, lp.SetDimensionText),
+                           (lp.GetAppendedText, lp.SetAppendedText),
+                           (lp.GetToleranceText, lp.SetToleranceText)):
+        lt = getter()
+        cfw = lt.Cfw
+        cfw.Font = int(fid)
+        lt.Cfw = cfw
+        setter(lt)
+    ap.SetLetteringPreferences(lp)
+    return int(fid)
+
+
 def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
-                   margin=VIEW_MARGIN, size="A4"):
+                   margin=VIEW_MARGIN, size=None):
     """Create the first-angle trio (FRONT above, TOP below, RIGHT beside),
     pinned by CONTENT centre into the free area above the title block.
     Call blank_datums() BEFORE this.  body defaults to the part's single
-    body.  Returns {"FRONT": view, "TOP": view, "RIGHT": view}."""
+    body.  size must match the sheet created by new_sheet (A4/A3); the
+    sheet exposes no Width/Height in NX 12, so it cannot be inferred.
+    Returns {"FRONT": view, "TOP": view, "RIGHT": view}."""
     ufs = _ufs()
+    if size is None:
+        raise RuntimeError("standard_views: pass size= (A4/A3) matching new_sheet")
+    if size not in SHEET:
+        raise RuntimeError("standard_views: unsupported size %r" % (size,))
     if body is None:
         bodies = list(part.Bodies)
         if len(bodies) != 1:
@@ -431,8 +505,8 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
     missing = [k for k in keep if k not in views]
     if missing:
         raise RuntimeError("standard views missing: %s" % (missing,))
-    # DraftingDrawingSheet exposes no Width/Height attribute in NX 12
-    # (measured 2026-09-24); the size is known from new_sheet instead
+    # DraftingDrawingSheet exposes no Width/Height attribute in NX 12;
+    # the size is known from new_sheet instead
     w, h = SHEET[size]
     # measure each view's content size at the target scale
     sizes = {}
@@ -460,7 +534,7 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
 def projected_views(part, sheet, parent, dx=0.0, dy=0.0):
     """Orthographic views projected from `parent`; call UpdateOneView (done
     here) before asking any view for visible objects, otherwise the count is
-    0 even though the view plots (measured 2026-09-23)."""
+    0 even though the view plots (measured)."""
     ufs = _ufs()
     sheet.Open()
     made = {}
@@ -599,6 +673,27 @@ def _assoc_obj(edge, view, assoc, model_xyz):
     return o, xy
 
 
+def dim_text_box(center_xy, text, size=TEXT_DIM):
+    """Sheet-space box of a dimension text in the NX stroke font.
+
+    chinesef at size 3.5: advance 3.81 mm per glyph including the leading
+    diameter sign and its space, visual box height 7.0 mm.  `text` is the
+    full displayed string, e.g. u"<O> 105,4".
+    Returns (x0, y0, x1, y1); use box_overlap() to test placement.
+    """
+    k = float(size) / TEXT_DIM
+    w = 3.81 * len(text) * k
+    h = 7.0 * k
+    return (float(center_xy[0]) - w / 2.0, float(center_xy[1]) - h / 2.0,
+            float(center_xy[0]) + w / 2.0, float(center_xy[1]) + h / 2.0)
+
+
+def box_overlap(a, b, gap=0.0):
+    """True when boxes a/b (x0,y0,x1,y1) overlap after adding `gap` to each."""
+    return not (a[2] + gap <= b[0] or b[2] + gap <= a[0] or
+                a[3] + gap <= b[1] or b[3] + gap <= a[1])
+
+
 def dim_between(part, view, a, b, lane_y=None, lane_x=None, horizontal=True,
                 text=None):
     """Linear dimension between two attachments.
@@ -608,7 +703,7 @@ def dim_between(part, view, a, b, lane_y=None, lane_x=None, horizontal=True,
     content_bbox() based values (not view_bbox, which is inflated by the
     view label), e.g. bbox bottom - LANE_FIRST.
 
-    WARNING (2026-10-19 measured): on assembly-instance edges + section
+    WARNING (measured): on assembly-instance edges + section
     views, END_POINT attachments can silently pick the wrong endpoint
     (200 -> 200.2, 140 -> 136.3) even with two different edges and explicit
     AssocDwgPos.  Always verify the rendered value in the PDF text layer;
@@ -696,7 +791,7 @@ def centerline_by_points(part, view, edge_a, pt_a, edge_b, pt_b):
 
 # -------------------------------------------------------------------- export
 def export_pdf(part, sheet, path):
-    """Plot one sheet to PDF (PrintPDFBuilder; measured 2026-09-17)."""
+    """Plot one sheet to PDF (PrintPDFBuilder; measured)."""
     import os
     if os.path.exists(path):
         os.remove(path)

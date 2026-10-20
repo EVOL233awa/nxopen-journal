@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Test 16: 装配运动连接 —— Fit(圆柱面) 做转动副 + Bond 让附属件跟动 + 拖动验证
 #
-# 覆盖（NX12 批处理，2026-09-15 实测，源自四连杆机构的装配改造）：
+# 覆盖（NX12 批处理，实测，源自四连杆机构的装配改造）：
 #   * Fit 作用在**两个等半径圆柱孔面**上 = 唯一可用的转动副基元；
 #     被约束件被故意移开后解算应弹回同轴（本测试通过与否可证伪：解算前
 #     孔轴间距 36.05 mm，解算后应 ≈0）
@@ -9,10 +9,10 @@
 #   * 拖动配方：EstablishNetwork → NonMovingGroupGrounded=False →
 #     SetMovingGroup → DragByTransform → Solve → ApplyToModel → EndDrag
 #   * Component.GetDegreesOfFreedom() 在批处理下**可用**（本测试把实测值
-#     打印出来；旧笔记说"数值滞后"见 references/assembly-drafting.md §A.2）
+#     打印出来；旧笔记说"数值滞后"见 references/assembly.md §A.2）
 #
 # 死路（Concentric / Hinge / 不等半径 Fit）不放在本文件，见对应用例
-#   scripts/tests/17_motion_deadends.py（2026-09-20 起为正式检查，含圆边 Concentric
+#   scripts/tests/17_motion_deadends.py（正式检查，含圆边 Concentric
 #   的拖动复验：单约束即得纯转动 0T+1R）
 #
 # 成功标志：TEST16_DONE 且 BENCH_PASS
@@ -225,7 +225,7 @@ def main():
         hf = hole_faces(p, ufs, HOLE_R)
         geo[name] = hf[0]
     # 必须显式切回装配件：ufs.Part.Save() 保存的是**显示部件**，
-    # 忘记切回会让结尾的保存静默写错对象（本用例 2026-09-15 实测踩到）
+    # 忘记切回会让结尾的保存静默写错对象
     ufs.Part.SetDisplayPart(asm.Tag)
 
     def axis_of(name):

@@ -22,7 +22,7 @@ def new_part(name=None, path=None, template=TEMPLATE):
     （抛 "The part file is not a .prt part"，25 号实测），此时返回
     FileNew().Commit() 的返回值且不做 SetWork。
     ⚠ name 分支并非"纯内存"：Commit() 会按 NewFileName 相对 CWD 直接落盘
-    （实测 112KB 模板件，2026-09-23），同名文件已存在时 Commit 抛
+    （实测 112KB 模板件），同名文件已存在时 Commit 抛
     "File already exists" —— 用例开工先 os.remove 同名残留（29 号实测）。
     """
     if not name and not path:

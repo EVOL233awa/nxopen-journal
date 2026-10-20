@@ -18,7 +18,7 @@
 #   hd.NumberOfTurns.RightHandSide    = "1"
 #   hd.HelixPitch.RightHandSide       = "20"
 #   hd.RotationAxis = axis                     # NXOpen.Axis; a Point is a TypeError
-# Measured (2026-09-23) on a 5 mm seed cube centred at r = 20: 3 new bodies at
+# Measured () on a 5 mm seed cube centred at r = 20: 3 new bodies at
 # theta = 120/240/360 deg with z = 6.6667/13.3333/20.0000 and r = 20.0000, i.e.
 # z = HelixPitch*theta/(2*pi) to 0.0000 mm. CountOfInstances counts the seed
 # (the angular step is 360/(CountOfInstances-1) = 120 deg) and the rise is

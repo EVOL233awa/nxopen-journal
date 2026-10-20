@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Test 29: interference between solids, by geometric intersection.
 #
-# references/assembly-drafting.md A.3 records that the ClearanceSets route has
+# references/assembly.md A.3 records that the ClearanceSets route has
 # no creation entry in batch; the replacement measured here is geometry:
 #
 #   1. boolean intersection -- CUBES = A INTERSECT B, exactly and cheaply:
@@ -177,7 +177,7 @@ def main():
     # ufs.Part.Save() writes the DISPLAY part only, and each FileNew case made the
     # part it had just created the display part -- so the parts of the middle three
     # cases were never written and the files simply did not exist (measured
-    # 2026-09-23: t29_outside/t29_touch/t29_simple = 0 bytes). Save every part
+    # : t29_outside/t29_touch/t29_simple = 0 bytes). Save every part
     # while it is the display part, then check each file.
     sizes = []
     for saved_part, saved_path in open_parts:

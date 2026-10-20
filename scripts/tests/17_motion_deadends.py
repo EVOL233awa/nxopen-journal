@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 # Test 17: NX12 装配约束的四条死路 + 一条正向对照（正式检查，已并入 RUN_TESTS.bat）
 #
-# 前身是"预期失败探针"（17_motion_deadends_probe.py）：只打印观察到的行为、
-# 不做断言，因此行为变了也全部通过。本版按 07 的做法收敛为检查：断言**实测值**，
-# 行为一旦变化即打 TEST17_FAIL 让套件变成 FAIL，迫使重新测量。
+# 断言实测值；行为一旦变化即打 TEST17_FAIL 让套件变成 FAIL，迫使重新测量。
 #
-# 逐条实测（2026-09-20，见 tests/README.md 的反向验证记录）：
+# 逐条判据（见 tests/README.md 的反向验证记录）：
 #   1) 运动副枚举 Hinge/Cylindrical/Ball/Screw/Gear/RackPinion/Cable
 #      赋值 ConstraintType 即抛 "not valid for this operation"
 #      （NXOpen.xml 对这些枚举标注 "For internal use only"）。
 #   2) Concentric（圆柱面）-> CannotSolve（参考被解析成 Line/Cylinder）。
 #   3) Concentric（圆边）-> **报 Solved**，且 DOF 读数仍 3T+3R。
-#      ⚠ 旧记录写的是"什么都没约束"，本轮在最小几何上重测**不成立**：
-#      被约束件真的动了 25 mm、孔轴落到目标轴上。可复现的危险只有一条 ——
-#      **`Solved` + DOF 不变 都不能证明约束是否生效**，必须量几何。
+#      ⚠ **`Solved` + DOF 不变 都不能证明约束是否生效**，必须量几何：
+#      圆边 Concentric 报 Solved、DOF 仍 3T+3R，但被约束件实际移动 25 mm、
+#      孔轴落到目标轴上。可复现的危险只有这一条。
 #   4) Fit 不等半径 -> InternallyInconsistent。
 #   5) 正向对照：Fit 等半径 -> Solved 且件被拉到同轴（本文件靠它取得鉴别力：
 #      如果 Fit 哪天失效，阶段 C 会 FAIL；只测死路的文件无法区分"死路"与"全坏"）。
@@ -329,7 +327,7 @@ def main():
             raise RuntimeError(
                 "edge concentric did not move the part (dev=%.4f) - the "
                 "documented 'Solved but constrains nothing' hazard is back; "
-                "re-measure references/assembly-drafting.md A.5" % moved["m17_big"])
+                "re-measure references/assembly.md A.5" % moved["m17_big"])
         print("CONC_EDGE_MOVED dev=%.4f (status alone would not show this)"
               % moved["m17_big"])
     stage("conc_edge", stage_edge_concentric)

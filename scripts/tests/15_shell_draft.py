@@ -15,7 +15,7 @@
        正角收缩  V = 120000 - 64000t + (32000/3)t^2  , t = tan(角)
        负角张开  V = 120000 + 64000t + (32000/3)t^2
 
-2026-09-24 起通用配方（new_part/bodies/面过滤/收集器/体积/落盘断言）走 nxlib。
+通用配方（new_part/bodies/面过滤/收集器/体积/落盘断言）走 nxlib。
 """
 import math
 import os

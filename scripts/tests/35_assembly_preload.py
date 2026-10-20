@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-# Test 35: 装配子件预载 + 干涉检查（nxlib.assembly.preload_components，
-# 2026-09-25 冷测 T2/T10 沉淀）
+# Test 35: 装配子件预载 + 干涉检查（nxlib.assembly.preload_components）
 #
 # 覆盖：
 #   * preload_components：收集子件路径并 session.Parts.Open 预载（已加载子件
 #     抛 "File already exists" 被吞掉，幂等可重入）——组件体惰性加载下
-#     SimpleInterference 不预载会空跑（T2 实证 inst_bodies=0）
+#     SimpleInterference 不预载会空跑（inst_bodies=0）
 #   * 预载后实例体可访问（Prototype.Bodies + FindOccurrence 口径；
 #     asm.Bodies 在批处理重开装配下恒为 0，不可用）
 #   * GetPosition 读回组件位姿（add_component 显式坐标口径）
 #   * SimpleInterference 负例：间隙布置（pin 悬空 5mm）→ 干涉结果 0 对面
-#     （⚠ 重合面/零间隙会报"接触=干涉"，语义见 assembly-drafting.md）
+#     （⚠ 重合面/零间隙会报"接触=干涉"，语义见 assembly.md）
 #
 # 成功标志：TEST35_DONE 且无 _FAIL
 import os

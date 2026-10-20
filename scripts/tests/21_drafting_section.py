@@ -2,7 +2,7 @@
 # Test 21: section view - the last drafting view type that 20_drafting_views.py
 # does not reach.
 #
-# Recipe (measured 2026-09-22, NX 12.0.0.27, headless batch):
+# Recipe (measured, NX 12.0.0.27, headless batch):
 #   svb = part.DraftingViews.CreateSectionViewBuilder(NXOpen.Drawings.SectionView.Null)
 #   svb.ParentView.View.Value = <parent drafting view>      <-- the missing link
 #   loc = svb.SectionLineSegments.SegmentLocation
@@ -33,7 +33,7 @@
 # a plain solid still crosshatches, so the Hatch check alone does not prove the
 # hole was cut; the DraftingCurve count is what moves (6 -> 8).
 #
-# Stepped section (measured 2026-09-23 on the same part, same sheet):
+# Stepped section (measured on the same part, same sheet):
 #   the section TYPE is a builder property, and the cut path is what makes it a
 #   step:
 #     svb.SectionViewType = SectionViewBuilder.SectionLineType.SimpleStepped
@@ -60,7 +60,7 @@
 #   steppedSxsegs, viewPlacementPt) - the steppedSxsegs argument is a UF_DRF_object
 #   array, the same dead end as the other UF section routes recorded above.
 #
-# Dead ends recorded so they are not retried (see references/assembly-drafting.md
+# Dead ends recorded so they are not retried (see references/drafting.md
 # B.4): cut points given in SHEET coordinates commit but leave the view out of date
 # and empty; SectionViewMode.StandAlone dies with "Internal error: memory access
 # violation"; the UF route (CreateSimpleSxview / CreateSxviewFromDmv) needs a
@@ -86,7 +86,7 @@ from nxlib.testing import FAILED_STAGES, stage
 from nxlib.modeling import find_planar_face
 from nxlib.drafting import sxline_legs
 
-# measured 2026-09-22 on this part: Right 13, Front 13, Top 14 visible objects
+# measured on this part: Right 13, Front 13, Top 14 visible objects
 PARENT_VISIBLE_MIN = 10
 # a strictly positive content check: 18 measured with the hole, 16 without it
 SECTION_VISIBLE_MIN = 4
@@ -103,7 +103,7 @@ PLACE_DROP_FOLDED = 210.0
 # 120x80 plate, and every leg stays at mid-height.
 STEP_PATH = ((20.0, 40.0), (80.0, 40.0), (80.0, 60.0), (110.0, 60.0))
 POINT_TO_POINT_PATH = ((20.0, 30.0), (110.0, 30.0))
-# measured SectionViewBuilder.SectionLineType members, 2026-09-23
+# measured SectionViewBuilder.SectionLineType members
 SECTION_LINE_TYPES = ["Half", "PointAndAngle", "PointToPoint", "Revolved",
                       "SimpleStepped"]
 # the hole's diameter must exist as a part expression BEFORE the hole feature is

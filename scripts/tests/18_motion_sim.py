@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Test 18: NX Motion 运动仿真 —— 平面四杆（曲柄摇杆）的运动副/驱动/求解/结果提取
 #
-# 覆盖（NX12 批处理，2026-09-16 实测，源自四连杆机构的载荷用例）：
+# 覆盖（NX12 批处理，实测，源自四连杆机构的载荷用例）：
 #   * MotionSession.CreateSimulation → 认领 .sim 部件 → InitializeSimulation
 #   * 无几何 Link（Geometries 留空 + MassType=UserDefined）+ 用户定义质量/惯量
 #   * 转动副 JointDefine（JointType=Revolute, FirstLink/SecondLink/FirstOrigin/

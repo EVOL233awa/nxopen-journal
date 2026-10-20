@@ -43,8 +43,8 @@ side = src + ".scalebar.json"
 if os.path.exists(side):
     with open(side, encoding="utf-8") as f:
         sb = json.load(f)
-    # px/mm after crop+resize, relative to the render canvas width
-    ppm = sb["px_per_mm"] * (im.size[0] / float(a.shape[1]))
+    # crop keeps the render scale; only the resize factor changes px/mm
+    ppm = sb["px_per_mm"] * scale
     bar_px = sb["length_mm"] * ppm
     strip = 40
     need_w = int(round(bar_px)) + 56

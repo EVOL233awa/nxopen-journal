@@ -22,6 +22,9 @@ jobs:
       - name: Repo self-check (Py3.6 syntax, case list, docs, file list)
         run: python scripts/check_repo.py
 
+      - name: check_journal rule selftest
+        run: python scripts/tests/verify_check_rules.py
+
       - name: Static check every journal
         shell: bash
         run: |
