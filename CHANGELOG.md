@@ -14,6 +14,7 @@
 - `references/reverse-protocol.md` §3：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
 - `references/modeling.md` §2.4：EdgeBlend 角点必须把同一顶点的相邻边放进同一 ChainSet。
 - `references/modeling.md` §2.2b：闭合环放样截面拆成“开链 + 接缝段”，避免 `ThroughCurves` 报 "Unable to reference edge"；截面面积突变时在突变处分段。
+- `references/reverse-engineering.md` §2.2：切向截面拓扑可从实心矩形变为工字型，先放样外轮廓再切腹板空腔，不跨拓扑直接放样。
 - `SKILL.md` §5：新增逆向复现协议路由；域文件计数改为九个。
 
 - `references/reverse-engineering.md` §1：三个产物（基线 / 交付件 / 核验器）与证据优先级（面表 > 精确截面 > 渲染图）；分层实体只在自由曲面或扫描网格输入时兜底。
