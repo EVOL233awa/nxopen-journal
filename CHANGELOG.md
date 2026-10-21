@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- `references/reverse-engineering.md` §1：三个产物（基线 / 交付件 / 核验器）与证据优先级（面表 > 精确截面 > 渲染图）；分层实体只在自由曲面或扫描网格输入时兜底。
+- `references/reverse-engineering.md` §2.2：多截面放样路线——根部/中段/端部三站截面、端部形状进末截面、放样后按组件门验收。
+- `references/modeling.md` §2.2b：`ThroughCurvesBuilder` 放样配方（`CreateSectionsUsingCurves` 返回 Section 列表、`SectionsList.Append`、`BodyPreference=Solid`、截面同向同段数）。
+- `references/reverse-engineering.md` §4：包围盒位置与尺寸分开验收、纯面积加权双向采样、轮廓 IoU / 剖面 IoU / 多料缺料聚类、共面切面 0.0137 mm 偏置、组件级门优先于全局 RMS。
+- `references/reverse-engineering.md` §8：组件闭合与切除边界——边界取原件边界面、截面与面表双证据、工具体穿过目标面 1–2 mm、布尔只做连接。
+- `references/reverse-engineering.md` §9：圆角阶段——圆角地图（半径组→边链→预期面数）、按组选边、主组覆盖 ≥70% 的验收。
+- `references/modeling.md` §6：表达式存活率测试（改 ±10% 体积必须变）与层间共面堆叠导致下游圆角失效的约束。
+- `SKILL.md` §3：`SaveAs` 到已存在路径报 `File already exists`，阶段件写新路径或先删目标。
+
+### Changed
+
+- `references/reverse-engineering.md` §3：分层路线定位为基线、兜底与分区域偏差参照，主体形状优先多截面放样。
+
 ## [1.2.0] - 2026-10-20
 
 ### Added

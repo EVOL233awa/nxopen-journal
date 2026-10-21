@@ -118,6 +118,25 @@ cut.CommitFeature(); cut.Destroy()
 - `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
 
+### 2.2b 多截面放样（ThroughCurves）
+
+```python
+secs = wp.Sections.CreateSectionsUsingCurves(
+    curves, NXOpen.SectionCollection.LoopOption.Separate, 0.01, 0.01, 0.5)
+# curves：同向、同起点、同段数的闭合曲线（精确直线/圆弧或样条）
+tb = wp.Features.CreateThroughCurvesBuilder(NXOpen.Features.Feature.Null)
+tb.BodyPreference = NXOpen.Features.ThroughCurvesBuilder.BodyPreferenceTypes.Solid
+for sec in secs:
+    tb.SectionsList.Append(sec)
+tb.Validate()
+tb.CommitFeature(); tb.Destroy()
+```
+
+- `CreateSectionsUsingCurves` 返回 `Section` 对象列表（不是元组）；参数依次为曲线、`LoopOption.Separate`、链容差、距离容差、角度容差（弧度）。
+- 截面必须同向、同起点、同段数；方向翻转会让放样自交。
+- 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
+- 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
+
 ### 2.3 孔（Hole 特征 + 十字辅助线）
 
 ```python
@@ -554,5 +573,7 @@ d = ufs.Modeling.AskFaceData(face.Tag)
 - **历史模式**：可编辑特征构成；禁止哑体、转同步建模/去参。
 - **草图完全约束**：`status, dof = sketch.GetStatus()`（不传参、返回元组）；`WellConstrained == 3` 且 dof=0。
 - **参数可改**：顶层尺寸命名表达式（§4.1）；关键特征 `SetName`。
+- **表达式必须被引用**：逐个改 ±10% 后 `DoUpdate`，体积必须变；体积不变的是死参数（特征里用了字面值），接进特征后再交付。
+- **层间不要共面堆叠**：上游厚度表达式一变，共面处拓扑重排会让下游圆角边失效并回滚；让切除工具穿过目标面，或给 0.5 mm 重叠。
 - **无垃圾几何**：未参与建模的线转参考线或删除。
 - **交付前验证**：`08_editability_probe.py`；数值见 §3.5；`Point3d` 坐标不受表达式驱动。

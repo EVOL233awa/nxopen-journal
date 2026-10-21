@@ -99,7 +99,7 @@ assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
 ### 通用 API 路线约束
 
 1. **builder 创建不能传 `None`**：传 `NXOpen.Features.Feature.Null`（Block/Cylinder/Chamfer/Hole/EdgeBlend/Extrude/Revolve/Mirror/Pattern 等）、`NXOpen.Features.BooleanFeature.Null`（Boolean）。`.Null` 只存在于 Python 封装层。
-2. **FileNew 不覆盖**：重复运行报 `File already exists`；生成类 journal 启动时清理本工程旧 `.prt`（含 `_i.prt`），多部件各用独立路径。同一进程内不要对同一路径 FileNew 两次。
+2. **FileNew 不覆盖**：重复运行报 `File already exists`；生成类 journal 启动时清理本工程旧 `.prt`（含 `_i.prt`），多部件各用独立路径。同一进程内不要对同一路径 FileNew 两次。阶段件用 `SaveAs(新路径)`，`SaveAs` 到已存在路径同样报 `File already exists`，先删目标或换路径。
 3. **`Part.FullPath` 批处理中可能只显示文件名**；以磁盘落盘位置为准。
 4. **集合无 `ToArray()`**：`part.Bodies`、`DrawingSheets`、`DraftingViews` 直接 `for x in ...`。
 5. **`ScCollector.ReplaceRules(rules, False)` 第二参必须 `False`**（立即求值）；`True` 会选中 0 条边。
