@@ -75,6 +75,8 @@ for ct in curves:
 - 返回值：`Associate=1` 返回特征 tag，`FeatureType == "SECTION_CURVES"`；`AskFeatureCurves` 返回 `(n, [curve tags])`。`Associate=0` 按头文件返回曲线组 tag（未验证返回形态）。
 - 截面曲线在**绝对坐标系**；直线段是 line（对象类型 3），圆柱孔截面是 **spline（类型 5）不是 circle**——闭合性用首尾采样点距离判，不要按对象类型认圆。
 - 采样函数在 `ufs.ModlGeneral.AskCurveProps`（不在 `ufs.Modl`）；返回 `(point, tangent, p_norm, b_norm, torsion, radius_of_curvature)`。孔截面采样点到孔心距离应为常数（r=5.0000、首尾闭合）。
+- **端点参数用 0/1，不用 `Eval.AskLimits`**：`AskLimits` 返回曲线内部参数域，把它传给 `AskCurveProps` 会让端点落在错误位置（同一批截面 184 个文件里 128 个出现开放链、最大缺口 28 mm）。端点取 `AskCurveProps(ct, 0.0/1.0)`；圆弧只从 `Eval.AskArc` 取 center/xaxis/yaxis/R，角度由端点反算，扫掠方向用 0.5 参数点判定。
+- **闭环用 `JoinType=0` 原始段自建**：`JoinType=1` 在轮缘端面、腔口、臂端开口处会返回开放“环”（最大缺口 207.9 mm）。按端点聚类（0.01 mm，失败回退 0.05 mm）串环，再算面积；端点簇度数必须为偶数。
 - 取完截面按 §2 平滑重建：直线/圆弧段保留精确曲线，样条段做 1-2-3-2-1 平滑后隔点抽稀；每层截面用同一条闭合样条，接缝放在曲率最大处。
 
 ### 2.2 多截面放样（变截面主体）

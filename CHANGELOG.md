@@ -20,6 +20,10 @@
 
 - `references/reverse-engineering.md` §3：分层路线定位为基线、兜底与分区域偏差参照，主体形状优先多截面放样。
 
+### Fixed
+
+- `references/reverse-engineering.md` §2.1：截面端点必须用 `AskCurveProps(ct, 0/1)` 而非 `Eval.AskLimits`；`JoinType=1` 在轮缘/腔口/臂端会返回开放环，闭环改用 `JoinType=0` 原始段按端点聚类自建。
+
 ## [1.2.0] - 2026-10-20
 
 ### Added
