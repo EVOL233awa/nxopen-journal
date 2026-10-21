@@ -40,6 +40,13 @@ origin, axes, lengths = ufs.ModlGeneral.AskBoundingBoxExact(body.Tag, 0)
 
 `AskBoundingBoxExact` 返回 `(origin, axes, lengths)`：`origin` 是盒角点，`lengths` 是全长；求角点用 0/1 偏移，按 ±1 取半长会把盒放大约一倍。`ufs.Modl.AskBoundingBox` 与 `Body.GetBoundingBox` 在 NX 12 不存在。`AskBoundingBox` 对 B 曲面偏保守；`AskBoundingBoxExact` 返回有向盒，可能包含未裁剪曲面的外延；`ufs.Modeling.AskFaceData` 的逐面盒并集只对解析面贴合。**门比较不要用这三种估计，改用两侧导出的 STL 顶点**。
 
+### 2.1b 检查计划
+
+- 主轴方向：取所有平面面的坐标断点、圆柱/圆锥端面、圆角切点，按最小结构特征尺寸补中间站；每个结构分界至少一站。
+- 孔轴方向：每个孔/锥孔至少一张过轴平面和一张垂直轴平面；孔心/半径用面表复核。
+- 局部结构：臂、凸台、槽沿其轴线取根/中/端；每个 boundary 至少一站。
+- 站名、位置、法向写入计划文件；测量后不临时补站，缺证据就回计划层补。
+
 ### 2.2 截面
 
 对每站建基准面并切分：
