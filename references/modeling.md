@@ -134,6 +134,8 @@ tb.CommitFeature(); tb.Destroy()
 
 - `CreateSectionsUsingCurves` 返回 `Section` 对象列表（不是元组）；参数依次为曲线、`LoopOption.Separate`、链容差、距离容差、角度容差（弧度）。
 - 截面必须同向、同起点、同段数；方向翻转会让放样自交。
+- 闭合环不要做成单条周期闭合样条：拆成“开链 + 接缝处一段”两个截面元素再放样，否则 `ThroughCurves` 报 "Unable to reference edge"（同一对截面拆缝后可放样）。
+- 相邻截面面积突变（接近 3 倍）时多截面放样报 "Cannot create B-surface by through curves"；在突变处分段放样或补中间截面。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
 - 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
 
