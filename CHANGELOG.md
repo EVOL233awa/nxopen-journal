@@ -7,8 +7,10 @@
 
 ### Added
 
-- `references/reverse-engineering.md` §2.2：统一弧长重采样（同 N 点、起点对齐）后再放样，可把段数/类型不一致的截面做通；单次放样限制 3 张，4 张以上常报 "Unable to reference edge"；末站之外用端部截面族中面轮廓的半径-高度窗口裁剪最后横截面，每 4 mm 生成过渡截面放样到外端。
-- `references/modeling.md` §2.2b：`ThroughCurves` 可能静默出片体（`BodyPreference=Solid` 不等于实体），提交后查 `IsSolidBody` 与体积；NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 静默不执行，实体合并用 `FeatureCollection.CreateUniteFeature`；纯共面接触被拒，相邻段需体积重叠 2–4 mm 或加偏置领圈。
+- `references/reverse-engineering.md` §2.2：截面重采样两种参数化按相似度选——形状相近用弧长等分+起点对齐，面积/拓扑变化大用绕形心等角射线；面内基向量必须取测站平面两轴（常半径站族面内轴是切向与 z）。放样提交后必须读体积：自交可返回 `IsSolidBody=True` 而体积 0，截面 IoU 仍 0.99。≥5 张截面时在首站外侧 2 mm 加同形定位截面。末站之外用端部截面族中面轮廓的半径-高度窗口收口，过渡截面与主段同参数化；已验证 9 站一次放样体积 81722、150 站 IoU 0.966。删除“单次不超过 3 张”和“领圈”两条旧结论。
+- `references/modeling.md` §2.2b：同上重采样路线与体积校验；两段同面放样不能靠体积重叠合并（"intersection gaps"），改用连续放样+定位截面；`CreateUniteFeature` 与共面接触限制保留。
+- `references/modeling.md` §2.3：锥孔用 UF `CreateRevolved` 旋转凸梯形剖面再 `CreateSubtractFeature`；锥面按孔表面基准点（UF `AskFaceData` 的 point/radius）定位，不用包围盒中心（半径差可达 0.06 mm）；回读归一化到同一轴向站再比较。
+- `references/modeling.md` §3.3：更正旋转体限制——轴上边在凸剖面上可用，仅凹/台阶剖面失败。
 - `references/reverse-protocol.md` §3：臂类组件的门站含整件 z 站，检查点从上一组件检查点起建（`BASE ∪ 本组件`），门按 region 裁剪；孤立臂体在 z 站缺料是结构造成。
 - `references/reverse-protocol.md`：逆向复现协议——测量数据契约、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段、G0–G8 判据、双盲重放验收与失败归因。
 - `references/reverse-protocol.md` §2.1：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。

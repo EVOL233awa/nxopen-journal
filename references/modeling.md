@@ -135,11 +135,14 @@ tb.CommitFeature(); tb.Destroy()
 - `CreateSectionsUsingCurves` 返回 `Section` 对象列表（不是元组）；参数依次为曲线、`LoopOption.Separate`、链容差、距离容差、角度容差（弧度）。
 - 截面必须同向、同起点、同段数；方向翻转会让放样自交。
 - 闭合环不要做成单条周期闭合样条：拆成“开链 + 接缝处一段”两个截面元素再放样，否则 `ThroughCurves` 报 "Unable to reference edge"（同一对截面拆缝后可放样）。
-- 相邻截面面积突变（接近 3 倍）时多截面放样报 "Cannot create B-surface by through curves"；在突变处分段放样或补中间截面。
-- 段数/类型不一致的截面先按弧长重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），起点对齐上一站，再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。两站/三站放样可通，截面 IoU 可达 0.999。
-- 单次放样限制在 3 张截面：4 张以上常报 "Unable to reference edge"，即使任取三张都能放样。
-- **放样可能静默出片体**：`BodyPreference=Solid` 不等于结果一定是实体。每次提交后查 `body.IsSolidBody` 与体积；片体体积为 0，后续合并报 "Cannot add solids and sheets"。发现片体先查截面起点对齐（起点漂到凹口/接缝上会自交），再重采样。
-- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。纯共面接触会被拒（"zero wall thickness"/"completely outside"），相邻段要体积重叠 2–4 mm，或在接缝处加偏置 0.1 mm、轴向 ±2 mm 的领圈再一起合并。
+- 相邻截面面积突变（接近 3 倍）时，原始截面直接放样报 "Cannot create B-surface by through curves"；重采样后可提交，但常得到体积 0 的退化实体，必须按下面的体积校验走。
+- 段数/类型不一致的截面先重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。参数化按截面相似度选：
+  - 弧长等分 + 起点对齐上一站：相邻两站形状相近时用。
+  - 绕形心等角：面积/拓扑变化大时用。面内取 N 条等角射线与闭合环求交，每角取最外交点；索引 k 即固定角度，无需起点对齐。基向量必须是测站平面内的两轴（常半径站族的法向是径向，面内轴为切向与 z）。
+- **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做（120→145 两站：弧长体积 0，等角 34015）。
+- **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低（首站面积可少 8%）。在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，9 站一次放样首站 IoU 0.9995。
+- **`BodyPreference=Solid` 也可能出片体**：提交后查 `IsSolidBody`；片体不可与实体合并（"Cannot add solids and sheets"）。
+- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。共面接触被拒（"zero wall thickness"/"completely outside"）。两段在同一区域体积重叠但侧面是同一张放样面时也失败（"Intersecting target and tool faces may have problems that cause intersection gaps"），此时不要加偏置领圈硬拼，改做一张连续放样；定位截面（上一条）是替代方案。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
 - 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
 
@@ -155,6 +158,25 @@ hb.CommitFeature(); hb.Destroy()
 ```
 
 ⚠ **孔位贴边 = 零壁厚**（`... zero wall thickness`）；孔边至少留壁厚（≥10 mm）。
+
+锥孔（functional cone）用 UF 旋转一条凸梯形剖面切成型，不用 Hole 特征：
+
+```python
+# 孔径目录里的 center 是包围盒中心，radii 是 UF 面在面基准点处的半径，
+# 两者不在同一轴向站。锥面必须用面基准 (point, radius) 定义，否则半径可差 0.06 mm。
+# s 沿 axis 增加：r(s) = R_datum + (s - s_datum) * tan(half_angle)
+s_datum = dot(datum_point - center, axis)
+R_center = R_datum - s_datum * tan(half_angle)
+# 剖面：轴上两点 + 两侧半径，绕 axis 旋转 360
+pts = [c + s0*a, c + s0*a + r0*p, c + s1*a + r1*p, c + s1*a]
+feats = ufs.Modl.CreateRevolved(tag_list, ["0.0", "360.0"], c, a,
+                                NXOpen.UF.ModlFeatureSigns.NULLSIGN)
+wp.Features.CreateSubtractFeature(target, False, tool_bodies, False, True)
+```
+
+- 凸梯形可以有两条边落在旋转轴上（验证过 360° 旋转成功）；凹剖面/带台阶剖面才报 "Cannot create Swept geometry"。
+- 切完用 `ufs.Modeling.AskFaceData` 回读锥面：type 17、`rad_data` 即半角（弧度）、`radius` 在面基准点处。与孔表比较半径时，把两侧都归一到同一轴向站（面基准点），不要直接比原始 `radius`——UF 的面基准点随修剪边界移动。
+- 旋转轴方向与孔表 axis 相反时，`AskFaceData` 的 dir 会翻转；比较轴向用绝对值点积。
 
 十字辅助线：
 
@@ -400,7 +422,7 @@ feats = ufs.Modl.CreateRevolved(
     [0.0, 0.0, 0.0], [1.0, 0.0, 0.0],  # 原点 + 旋转轴方向
     NXOpen.UF.ModlFeatureSigns.NULLSIGN,  # ⚠ 枚举是 ModlFeatureSigns，不是 FeatureSigns
 )
-# ⚠ 剖面含落在轴上的边或带台阶/凹剖面 -> "Cannot create Swept geometry"；凸剖面（矩形）可用。
+# ⚠ 剖面含落在轴上的边时其余弦凸剖面可用（360° 已验证）；凹剖面或带台阶/凹陷剖面报 "Cannot create Swept geometry"。
 #   复杂旋转体 = 多段凸剖面旋转 + BooleanBuilder Unite。
 ```
 
