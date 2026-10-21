@@ -201,6 +201,7 @@ builder.Destroy(); collector.Destroy()
 ```
 
 - ⚠ `Edge.GetVertices()` 返回 `Point3d` 列表。
+- 角点处的边不能逐条倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"；重建件上后补圆角受相邻拓扑影响大，能在截面轮廓里带的圆角（腔口/槽口小半径）优先画进轮廓。
 - 验证：Ø12 孔口 dV=−39.794；直边 dV=−60.000；面数 = 双棱边 2、单直边 1；倒角锥面 type **17**、直边倒角平面 22。
 
 ### 2.5 布尔与孔壁识别

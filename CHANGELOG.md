@@ -9,6 +9,10 @@
 
 - `references/reverse-protocol.md`：逆向复现协议——测量数据契约、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段、G0–G8 判据、双盲重放验收与失败归因。
 - `references/reverse-protocol.md` §2.1：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。
+- `references/reverse-protocol.md` §2.3：确定性序列化——排序键取到几何唯一、`-0.0` 归一、探针体积定小数位；判据是两个独立会话逐文件 sha256 相同。
+- `references/reverse-protocol.md` §2.5：小半径轮廓圆弧以面表半径为准（截面拟合可能偏 1 mm 以上）。
+- `references/reverse-protocol.md` §3：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
+- `references/modeling.md` §2.4：EdgeBlend 角点必须把同一顶点的相邻边放进同一 ChainSet。
 - `SKILL.md` §5：新增逆向复现协议路由；域文件计数改为九个。
 
 - `references/reverse-engineering.md` §1：三个产物（基线 / 交付件 / 核验器）与证据优先级（面表 > 精确截面 > 渲染图）；分层实体只在自由曲面或扫描网格输入时兜底。
