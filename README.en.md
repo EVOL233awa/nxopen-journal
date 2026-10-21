@@ -283,7 +283,7 @@ the `SimpleInterference` route, for threaded holes use "pilot hole plus annotati
 nxopen-journal/
 ├── SKILL.md                        entry layer: rules / environment / skeleton / common operations / logging / workflow / routing
 ├── CHANGELOG.md                    version history (Keep a Changelog)
-├── references/                     eight domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
+├── references/                     nine domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / reverse-protocol
 ├── images/                         figures from real runs
 ├── scripts/
 │   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)
