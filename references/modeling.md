@@ -136,6 +136,10 @@ tb.CommitFeature(); tb.Destroy()
 - 截面必须同向、同起点、同段数；方向翻转会让放样自交。
 - 闭合环不要做成单条周期闭合样条：拆成“开链 + 接缝处一段”两个截面元素再放样，否则 `ThroughCurves` 报 "Unable to reference edge"（同一对截面拆缝后可放样）。
 - 相邻截面面积突变（接近 3 倍）时多截面放样报 "Cannot create B-surface by through curves"；在突变处分段放样或补中间截面。
+- 段数/类型不一致的截面先按弧长重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），起点对齐上一站，再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。两站/三站放样可通，截面 IoU 可达 0.999。
+- 单次放样限制在 3 张截面：4 张以上常报 "Unable to reference edge"，即使任取三张都能放样。
+- **放样可能静默出片体**：`BodyPreference=Solid` 不等于结果一定是实体。每次提交后查 `body.IsSolidBody` 与体积；片体体积为 0，后续合并报 "Cannot add solids and sheets"。发现片体先查截面起点对齐（起点漂到凹口/接缝上会自交），再重采样。
+- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。纯共面接触会被拒（"zero wall thickness"/"completely outside"），相邻段要体积重叠 2–4 mm，或在接缝处加偏置 0.1 mm、轴向 ±2 mm 的领圈再一起合并。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
 - 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
 

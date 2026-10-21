@@ -7,6 +7,9 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §2.2：统一弧长重采样（同 N 点、起点对齐）后再放样，可把段数/类型不一致的截面做通；单次放样限制 3 张，4 张以上常报 "Unable to reference edge"；末站之外用端部截面族中面轮廓的半径-高度窗口裁剪最后横截面，每 4 mm 生成过渡截面放样到外端。
+- `references/modeling.md` §2.2b：`ThroughCurves` 可能静默出片体（`BodyPreference=Solid` 不等于实体），提交后查 `IsSolidBody` 与体积；NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 静默不执行，实体合并用 `FeatureCollection.CreateUniteFeature`；纯共面接触被拒，相邻段需体积重叠 2–4 mm 或加偏置领圈。
+- `references/reverse-protocol.md` §3：臂类组件的门站含整件 z 站，检查点从上一组件检查点起建（`BASE ∪ 本组件`），门按 region 裁剪；孤立臂体在 z 站缺料是结构造成。
 - `references/reverse-protocol.md`：逆向复现协议——测量数据契约、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段、G0–G8 判据、双盲重放验收与失败归因。
 - `references/reverse-protocol.md` §2.1：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。
 - `references/reverse-protocol.md` §2.3：确定性序列化——排序键取到几何唯一、`-0.0` 归一、探针体积定小数位；判据是两个独立会话逐文件 sha256 相同。
