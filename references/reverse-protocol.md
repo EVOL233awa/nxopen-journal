@@ -38,7 +38,7 @@ approx = ufs.ModlGeneral.AskBoundingBox(body.Tag)
 origin, axes, lengths = ufs.ModlGeneral.AskBoundingBoxExact(body.Tag, 0)
 ```
 
-`ufs.Modl.AskBoundingBox` 与 `Body.GetBoundingBox` 在 NX 12 不存在。`AskBoundingBox` 对 B 曲面偏保守；`AskBoundingBoxExact` 返回有向盒，可能包含未裁剪曲面的外延；`ufs.Modeling.AskFaceData` 的逐面盒并集只对解析面贴合。**门比较不要用这三种估计，改用两侧导出的 STL 顶点**。
+`AskBoundingBoxExact` 返回 `(origin, axes, lengths)`：`origin` 是盒角点，`lengths` 是全长；求角点用 0/1 偏移，按 ±1 取半长会把盒放大约一倍。`ufs.Modl.AskBoundingBox` 与 `Body.GetBoundingBox` 在 NX 12 不存在。`AskBoundingBox` 对 B 曲面偏保守；`AskBoundingBoxExact` 返回有向盒，可能包含未裁剪曲面的外延；`ufs.Modeling.AskFaceData` 的逐面盒并集只对解析面贴合。**门比较不要用这三种估计，改用两侧导出的 STL 顶点**。
 
 ### 2.2 截面
 
@@ -93,6 +93,7 @@ NX 不保证跨会话的枚举顺序：
 ## 3. 建模
 
 - 按组件划分与 `build_order` 逐个建；每个组件用自己的完整测站集（根/中/端），先写 `BUILD_PLAN.md` 再开建。
+- 组件门区域可能与相邻组件重叠：根部按区域内的参考截面建到分界外 1–2 mm，不要只在分界面贴 0.1 mm 薄片；低 z 站的缺料会直接反映在截面面积差上。
 - 主体优先多截面放样；局部结构用切除。切除工具体穿过目标面 1–2 mm，不在目标面上停刀。
 - 每个组件单独过组件门（覆盖、孔、体积、包围盒、截面 IoU），再合并；合并后过整件门。
 - 特征树可以不同；判据是几何门与边界决策，不是特征数。
@@ -133,3 +134,4 @@ NX 不保证跨会话的枚举顺序：
 - 测量层数值不可复算 → 修测量脚本或包，不用建模件补偿。
 - 门阈值与零件类型不匹配 → 改门配置并写明依据，不悄悄放宽。
 - 两轮差异集中在同一区域 → 结构判断或边界选择问题；差异分散且小 → 曲面近似误差。
+- 截面门在低 z 站缺料 → 组件根部没有建到相邻组件分界外；在端站缺料/多料 → 末截面没有纳入放样或端部轮廓取错；在孔站面积差 → 孔环没有减掉或锥角取错；只在一个平面族失败 → 该方向没有截面证据，补该族测站。
