@@ -5,59 +5,33 @@
 
 ## [Unreleased]
 
-### Changed
-
-- 纠错：逐层切片拉伸不是交付路线。`references/reverse-engineering.md` §1 第 3 条改为“按结构建特征，不按层建特征”（组件按自然成形方式建，截面是测量数据不是特征单位，特征数与结构数同量级）；§2.2 选型改为“一个结构分界一次拉伸/布尔”；§3 改题为“分层基线（只作测量与核验，不作交付）”；§4.1 新增 **G9 结构语义**（无逐层拉伸堆栈、每个结构可单独修改），并写明几何门全过不能替代 G9。`references/modeling.md` §6 增“特征按结构划分，不按层划分”。依据：四轮盲测交付件全部是逐带件，R3 过了 G0/G3/G4/G5/G6 但特征树仍是层号表。
-
-### Fixed
-
-- 纠正本轮沉淀中的内容错误：俯视多料 5 534→5 327 mm²（冻结链 `views_cmp.json`）；R4 的 20 条告警并非全为 UNITE，实为 13 UNITE + 7 EXTRUDE（`gates.json`）；臂方位目测偏差 120°→30°；L3 缺口不是 R25.405 窗口，而是 157°…287° C 形缺口。锥座切量 170–650 mm³ 与“0.35 mm 多边形孔壁”等成因改为子代理报告口径，不再当作主线程复算事实。
-
 ### Added
 
-- `references/reverse-engineering.md` §2/§7/§8/§10：并入 v3 路线日志的可复用判据——`CreateExtruded` 的 limits 相对曲线所在平面；`Invalid string objects` 是轮廓自交（用分段二分探针定位）；共面顶面使切除失效、整圆盘回填已切孔、补孔排在整圆盘之后；`RetainTool` 反向减“目标区域 = 形体 − 已建实体”；先比同一 z 的多张定 u 剖面再决定剪影拉伸或放样；堆叠层各用各的截面；凸台顶 21.59 与板顶 22.225 不同（沉孔切到板顶会加长 0.635）；`DoUpdate` 失败先用 Accept 模式拿失败特征；臂方位用环形心角中位数、孔轴用定 u 剖面、层界用环消失位置；把量得的 z 当刀具上限前先沿轴向射线确认上方无料；测量可复用、构造按组件重写。§4.1 增“委派前先做路线证明件”。
-- `references/reverse-engineering.md` §4.1：G6 方向不对称是体数探测器——参考→重建 0.30 而重建→参考 5.92 表示外形贴合但内部多出封口壁（逐带合并残留 lump），先数体数不要修外形；G5 俯视能抓 G1 漏掉的多料（G1 33/37 时俯视仍 0.8693、多 5 327 mm²），两门必须一起看。
-- `references/modeling.md` §2.5：切孔按面表验收而非体积差——锥座落在已挖空腔里时切除仍小降体积（数百 mm³）却不产生锥面，每把刀提交后核对新增面的半径/半角/孔心；失败的布尔分支必须 `UndoToMark`，否则失败特征留树成告警（R4 的 20 条告警中 13 条 UNITE、7 条 EXTRUDE），G8 不过。
-- `references/modeling.md` §2.2：多环截面语义（受控实验）——截面必须在新建件里建（原件上下文 `AddToSection` 抛 Internal error）；内环留 0.03 mm 缝被静默丢弃、孔变实心（96863→100000），外环留缝生成错误实体；多环=带孔轮廓，结果单实体。§2.1b：斜轴孔/锥孔切除配方——CylinderBuilder `AxisDiameterAndHeight` / ConeBuilder `DiametersAndHeight` + `Axes.CreateAxis`，提交后单独 `BooleanBuilder(Subtract)`；实测斜轴 Ø10 圆柱与 Ø10→Ø6 锥孔均一次切成单实体。
-- `references/reverse-engineering.md` §4.1：G1 判据补上“每站 IoU ≥0.95、面积差 ≤5%”——只查组件站数覆盖会让局部阶梯面重的件判过；子代理/盲测自定的站表与阈值（G2 半径 ±0.15 对冻结包 ±0.025、孔心 ±0.2 对 ±0.05、不含通孔长度）不能当验收证据，主线程必须用冻结包原命令复算。§8 补“孔必须独立切除体”：靠截面碎片留空，拉伸后是竖直槽，孔表复算判缺失（4 个臂/耳销孔全缺）。§4.1 记两条路线互补：逐站轮廓拉伸全局门全过但局部阶梯、圆角链不可倒；分组件放样布尔局部准、全局差。
-- `references/reverse-engineering.md` §8：组件门 region 不得按固定半径裁组件自己的料（BASE 用 `radius_max 98.5` 裁掉背侧筋板 r98.5–154，组件门全过而整件 z 站缺料）；门站恰好落在水平面上时，用同一站 z 与 z+0.002 的面积差查面高——实测 BASE 筋板上表面差 0.075 mm（15.80 vs 15.875）被放大成 15% 面积缺口；薄层补片与既有实体共面时 `CreateUniteFeature` 报 intersection gaps，补片多边形 `buffer(-0.1)`、顶面停在参考面下 5 µm 即可并上（补 320 mm³，z15.8 IoU 0.8314→0.9781）。
-- `references/reverse-engineering.md` §8：占位/切除盒的底面落到基体底面——clevis 方块从 z1.0 起会漏掉 z0–1 的板料足迹（z0.05 缺 447 mm²），下延到 z0 后 z0.05 IoU 0.920→0.937、体积 +480。
-- `references/reverse-engineering.md` §2.2：凸台孔在放样跨度内闭合时单环放样表达不了——切向截面进入凸台环后变成带孔闭合环（ARM315 r151–153，孔环 z 顶 111.4），凸台上角被削掉 230–250 mm²/臂；在孔外补一行切向截面（r154.4）反而扰动曲面（体积 −1,155）。改绕孔轴单独旋转成实体再并，或让 Section 同时携带外环与孔环。
-- `references/reverse-engineering.md` §4.2：同一站 z 与 z+0.002 面积差 >10% → 先查水平面高度，不要直接重建组件。
-
-- `references/reverse-engineering.md` §2.2：截面重采样两种参数化按相似度选——形状相近用弧长等分+起点对齐，面积/拓扑变化大用绕形心等角射线；面内基向量必须取测站平面两轴（常半径站族面内轴是切向与 z）。放样提交后必须读体积：自交可返回 `IsSolidBody=True` 而体积 0，截面 IoU 仍 0.99。≥5 张截面时在首站外侧 2 mm 加同形定位截面。臂根把同族内圈实测站（95/100/105）并入放样，门站内侧再加定位截面。末站之外用端部截面族中面轮廓的半径-高度窗口收口，过渡截面与主段同参数化；已验证 9 站一次放样切锥孔后 1 实体、体积 77818，110/120/145/150 站 IoU 0.9995/0.962/0.980/0.950。删除“单次不超过 3 张”和“领圈”两条旧结论；注明落在端面切平面上的 z 门站不可用于调形。
-- `references/modeling.md` §2.2b：同上重采样路线与体积校验；两段同面放样不能靠体积重叠合并（"intersection gaps"），改用连续放样+定位截面；`CreateUniteFeature` 与共面接触限制保留。
-- `references/modeling.md` §2.3：锥孔用 UF `CreateRevolved` 旋转凸梯形剖面再 `CreateSubtractFeature`；锥面按孔表面基准点（UF `AskFaceData` 的 point/radius）定位，不用包围盒中心（半径差可达 0.06 mm）；回读归一化到同一轴向站再比较。
-- `references/modeling.md` §3.3：更正旋转体限制——轴上边在凸剖面上可用，仅凹/台阶剖面失败。
-- `references/reverse-engineering.md` §8：臂类组件的门站含整件 z 站，检查点从上一组件检查点起建（`BASE ∪ 本组件`），门按 region 裁剪；孤立臂体在 z 站缺料是结构造成。
-- `references/reverse-engineering.md` §10：测量链——探针与包围盒入口、测站按结构分界布置、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段；§4 增加 G0–G8 验收项与失败归因。移除独立的逆向复现协议文件：技能输入统一为原件加一句重建要求，双盲重放属于验收流程，不作为技能入口。
-- `references/reverse-engineering.md` §10：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。
-- `references/reverse-engineering.md` §10：确定性序列化——排序键取到几何唯一、`-0.0` 归一、探针体积定小数位；判据是两个独立会话逐文件 sha256 相同。
-- `references/reverse-engineering.md` §10：小半径轮廓圆弧以面表半径为准（截面拟合可能偏 1 mm 以上）。
-- `references/reverse-engineering.md` §8：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
-- `references/reverse-engineering.md` §3：布尔目标与刀具按 Tag 识别——NXOpen 每次取 `part.Bodies` 返回新包装对象，`is` 比较会选错体；刀具只取本次新建体，切孔时用“除目标外的所有实体”会减掉主体。
-- `references/reverse-engineering.md` §8：基体按真实外边界建，不用固定半径截断——半径截断会在臂间留下环形缺口，整件 z 站表现为该半径带沿扇区均匀缺料，而臂根站截面仍合格。
-- `references/modeling.md` §2.4：EdgeBlend 角点必须把同一顶点的相邻边放进同一 ChainSet。
-- `references/modeling.md` §2.2b：闭合环放样截面拆成“开链 + 接缝段”，避免 `ThroughCurves` 报 "Unable to reference edge"；截面面积突变时在突变处分段。
-- `references/reverse-engineering.md` §2.2：切向截面拓扑可从实心矩形变为工字型，先放样外轮廓再切腹板空腔，不跨拓扑直接放样。
-- `SKILL.md` §5：逆向重建路由并入测量链与验收项；域文件计数改为八个。
-
-- `references/reverse-engineering.md` §1：三个产物（基线 / 交付件 / 核验器）与证据优先级（面表 > 精确截面 > 渲染图）；分层实体只在自由曲面或扫描网格输入时兜底。
-- `references/reverse-engineering.md` §2.2：多截面放样路线——根部/中段/端部三站截面、端部形状进末截面、放样后按组件门验收。
-- `references/modeling.md` §2.2b：`ThroughCurvesBuilder` 放样配方（`CreateSectionsUsingCurves` 返回 Section 列表、`SectionsList.Append`、`BodyPreference=Solid`、截面同向同段数）。
-- `references/reverse-engineering.md` §4：包围盒位置与尺寸分开验收、纯面积加权双向采样、轮廓 IoU / 剖面 IoU / 多料缺料聚类、共面切面 0.0137 mm 偏置、组件级门优先于全局 RMS。
-- `references/reverse-engineering.md` §8：组件闭合与切除边界——边界取原件边界面、截面与面表双证据、工具体穿过目标面 1–2 mm、布尔只做连接。
-- `references/reverse-engineering.md` §9：圆角阶段——圆角地图（半径组→边链→预期面数）、按组选边、主组覆盖 ≥70% 的验收。
-- `references/modeling.md` §6：表达式存活率测试（改 ±10% 体积必须变）与层间共面堆叠导致下游圆角失效的约束。
+- `references/reverse-engineering.md` §2.1：从 B-rep 批量取精确截面的配方——`SectionFromPlanes`/`SectionFromParallelPlanes`、端点参数用 `AskCurveProps(ct, 0/1)`、闭环用 `JoinType=0` 原始段按端点聚类自建、圆弧只读 `Eval.AskArc`。
+- `references/reverse-engineering.md` §2.2：多截面放样路线——重采样参数化（弧长等分/绕形心等角）的选择、放样后体积校验、定位截面、端部收口、拓扑突变与凸台孔闭合的处理。
+- `references/reverse-engineering.md` §3：分层路线定位改为“只作测量与核验，不作交付”，交付件走结构特征路线。
+- `references/reverse-engineering.md` §4：G0–G9 验收项与失败归因——逐站截面 IoU/面积差、孔系半径/孔心/轴向/半角/长度、体积与包围盒、四视图、双向偏差、圆角面数覆盖、单实体/告警/表达式存活、结构语义；门结果必须由独立脚本从交付件复算。
+- `references/reverse-engineering.md` §8：组件闭合与切除边界规则——端部形状进末截面、切除边界取实测面、孔独立切除体、堆叠层各用各的截面、切除刀具穿过目标面、布尔顺序。
+- `references/reverse-engineering.md` §9：圆角阶段——圆角地图（半径组→边链→预期面数）、按组选边（exact/ring）、主组覆盖 ≥70%。
+- `references/reverse-engineering.md` §10：测量链——一次探针取全量事实、按结构分界布置测站、特征分组、确定性序列化、边界目录。
+- `references/modeling.md` §1.11：会话/部件设置入口（`NXOpen.Preferences` 子模块、`session.Preferences.Modeling.BodyType`）。
+- `references/modeling.md` §2.1b/§2.2b：斜轴圆柱/锥孔切除与多截面放样配方。
+- `references/modeling.md` §2.5：切孔按面表验收（核对新增面的半径/半角/孔心），失败布尔用 undo mark 回滚。
+- `references/modeling.md` §6：特征按结构划分，不按层划分。
 - `SKILL.md` §3：`SaveAs` 到已存在路径报 `File already exists`，阶段件写新路径或先删目标。
 
 ### Changed
 
-- `references/reverse-engineering.md` §3：分层路线定位为基线、兜底与分区域偏差参照，主体形状优先多截面放样。
+- 逆向重建交付路线改为结构特征优先：组件按自然成形方式建（回转/拉伸/放样/布尔/阵列），特征数与结构数同量级；新增 G9 结构语义，与几何门同时验收。
+- G1 判据由“覆盖组件与平面族”收紧为“每站 IoU ≥0.95、面积差 ≤5%”。
+- `SKILL.md` 路由表中的逆向重建描述改为“原件+一句重建要求→测量链→截面/放样→切除→验收项”。
 
 ### Fixed
 
-- `references/reverse-engineering.md` §2.1：截面端点必须用 `AskCurveProps(ct, 0/1)` 而非 `Eval.AskLimits`；`JoinType=1` 在轮缘/腔口/臂端会返回开放环，闭环改用 `JoinType=0` 原始段按端点聚类自建。
+- 截面端点参数与闭环提取：端点用 `AskCurveProps(ct, 0/1)`，闭环用 `JoinType=0` 原始段按端点聚类自建。
+- 布尔顺序：切除刀具穿过目标面，补孔排在整圆盘并集之后。
+- 圆角选边改用 exact，避免 ring 带入曲面缝边。
+- 孔轴判读、堆叠层截面、凸台顶面与板顶面的区分。
 
 ## [1.2.0] - 2026-10-20
 
