@@ -80,6 +80,23 @@ dp2.SetPointAndDirection(point, direction)  # (Point, Direction)
 
 - 脚本 `run_journal_batch.bat`/`check_journal.py` 通过；其余见 §6。
 
+### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
+
+`NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：
+
+```python
+import NXOpen
+import NXOpen.Preferences          # 显式导入子模块，否则枚举路径不可达
+
+session = NXOpen.Session.GetSession()
+session.Preferences.Modeling.BodyType = \
+    NXOpen.Preferences.SessionModeling.BodyTypeOption.Solid
+```
+
+- `session.Preferences` 返回 `SessionPreferences`，没有 `SessionModeling` 成员；建模偏好挂在它的 `Modeling` 属性下（类型 `SessionModeling`）。
+- 枚举在 `NXOpen.Preferences.SessionModeling.BodyTypeOption`；批处理回读 `BodyType`：`Solid=0`、`Sheet=1`，可读可写。
+- 多数建模特征自带 `BodyPreference`（如 `ThroughCurves`），不依赖会话偏好；只有需要全局切换时才设这一项。
+
 ## 2. 特征配方
 
 ### 2.1 方块 / 圆柱
