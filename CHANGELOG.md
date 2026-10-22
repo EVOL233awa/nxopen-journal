@@ -8,6 +8,7 @@
 ### Added
 
 - `references/reverse-engineering.md` §8：组件门 region 不得按固定半径裁组件自己的料（BASE 用 `radius_max 98.5` 裁掉背侧筋板 r98.5–154，组件门全过而整件 z 站缺料）；门站恰好落在水平面上时，用同一站 z 与 z+0.002 的面积差查面高——实测 BASE 筋板上表面差 0.075 mm（15.80 vs 15.875）被放大成 15% 面积缺口；薄层补片与既有实体共面时 `CreateUniteFeature` 报 intersection gaps，补片多边形 `buffer(-0.1)`、顶面停在参考面下 5 µm 即可并上（补 320 mm³，z15.8 IoU 0.8314→0.9781）。
+- `references/reverse-engineering.md` §8：占位/切除盒的底面落到基体底面——clevis 方块从 z1.0 起会漏掉 z0–1 的板料足迹（z0.05 缺 447 mm²），下延到 z0 后 z0.05 IoU 0.920→0.937、体积 +480。
 - `references/reverse-engineering.md` §2.2：凸台孔在放样跨度内闭合时单环放样表达不了——切向截面进入凸台环后变成带孔闭合环（ARM315 r151–153，孔环 z 顶 111.4），凸台上角被削掉 230–250 mm²/臂；在孔外补一行切向截面（r154.4）反而扰动曲面（体积 −1,155）。改绕孔轴单独旋转成实体再并，或让 Section 同时携带外环与孔环。
 - `references/reverse-engineering.md` §4.2：同一站 z 与 z+0.002 面积差 >10% → 先查水平面高度，不要直接重建组件。
 
