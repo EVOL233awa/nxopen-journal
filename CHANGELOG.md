@@ -11,6 +11,7 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §2/§7/§8/§10：并入 v3 路线日志的可复用判据——`CreateExtruded` 的 limits 相对曲线所在平面；`Invalid string objects` 是轮廓自交（用分段二分探针定位）；共面顶面使切除失效、整圆盘回填已切孔、补孔排在整圆盘之后；`RetainTool` 反向减“目标区域 = 形体 − 已建实体”；先比同一 z 的多张定 u 剖面再决定剪影拉伸或放样；堆叠层各用各的截面；凸台顶 21.59 与板顶 22.225 不同（沉孔切到板顶会加长 0.635）；`DoUpdate` 失败先用 Accept 模式拿失败特征；臂方位用环形心角中位数、孔轴用定 u 剖面、层界用环消失位置；把量得的 z 当刀具上限前先沿轴向射线确认上方无料；测量可复用、构造按组件重写。§4.1 增“委派前先做路线证明件”。
 - `references/reverse-engineering.md` §4.1：G6 方向不对称是体数探测器——参考→重建 0.30 而重建→参考 5.92 表示外形贴合但内部多出封口壁（逐带合并残留 lump），先数体数不要修外形；G5 俯视能抓 G1 漏掉的多料（G1 33/37 时俯视仍 0.8693、多 5 534 mm²），两门必须一起看。
 - `references/modeling.md` §2.5：切孔按面表验收而非体积差——锥座落在已挖空腔里时切除仍降 170–650 mm³ 却不产生锥面，每把刀提交后核对新增面的半径/半角/孔心；失败的布尔分支必须 `UndoToMark`，否则失败特征留树成告警（20 条告警全部来自合并重试残留），G8 不过。
 - `references/modeling.md` §2.2：多环截面语义（受控实验）——截面必须在新建件里建（原件上下文 `AddToSection` 抛 Internal error）；内环留 0.03 mm 缝被静默丢弃、孔变实心（96863→100000），外环留缝生成错误实体；多环=带孔轮廓，结果单实体。§2.1b：斜轴孔/锥孔切除配方——CylinderBuilder `AxisDiameterAndHeight` / ConeBuilder `DiametersAndHeight` + `Axes.CreateAxis`，提交后单独 `BooleanBuilder(Subtract)`；实测斜轴 Ø10 圆柱与 Ø10→Ø6 锥孔均一次切成单实体。
