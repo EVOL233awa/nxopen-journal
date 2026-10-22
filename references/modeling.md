@@ -134,6 +134,10 @@ cut.CommitFeature(); cut.Destroy()
 - 显式设 `Direction`（否则 `No axis selected`）。
 - `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
+- **截面必须在新建件里建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`。在打开的原件上下文里对同一组曲线调 `AddToSection` 抛 `NXException: Internal error`（与 helpPoint 无关，换料内点同样报错）。
+- **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔。100×100 方形 + 64 边形 r10 内环、拉伸 10：体积 96863.45（解析 96858.41，差值为多边形化）。
+- **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心（体积 96863→100000）；外环留 0.03 mm 缝时链被错误闭合，体积涨到 4,000,000 量级。截面环拼接后要校验首末点重合。
+- `helpPoint` 取料内一点；落在曲线上的点不可用。
 
 ### 2.2b 多截面放样（ThroughCurves）
 
