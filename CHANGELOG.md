@@ -7,6 +7,9 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §8：组件门 region 不得按固定半径裁组件自己的料（BASE 用 `radius_max 98.5` 裁掉背侧筋板 r98.5–154，组件门全过而整件 z 站缺料）；门站恰好落在水平面上时，用同一站 z 与 z+0.002 的面积差查面高——实测 BASE 筋板上表面差 0.075 mm（15.80 vs 15.875）被放大成 15% 面积缺口；薄层补片与既有实体共面时 `CreateUniteFeature` 报 intersection gaps，补片多边形 `buffer(-0.1)`、顶面停在参考面下 5 µm 即可并上（补 320 mm³，z15.8 IoU 0.8314→0.9781）。
+- `references/reverse-engineering.md` §4.2：同一站 z 与 z+0.002 面积差 >10% → 先查水平面高度，不要直接重建组件。
+
 - `references/reverse-engineering.md` §2.2：截面重采样两种参数化按相似度选——形状相近用弧长等分+起点对齐，面积/拓扑变化大用绕形心等角射线；面内基向量必须取测站平面两轴（常半径站族面内轴是切向与 z）。放样提交后必须读体积：自交可返回 `IsSolidBody=True` 而体积 0，截面 IoU 仍 0.99。≥5 张截面时在首站外侧 2 mm 加同形定位截面。臂根把同族内圈实测站（95/100/105）并入放样，门站内侧再加定位截面。末站之外用端部截面族中面轮廓的半径-高度窗口收口，过渡截面与主段同参数化；已验证 9 站一次放样切锥孔后 1 实体、体积 77818，110/120/145/150 站 IoU 0.9995/0.962/0.980/0.950。删除“单次不超过 3 张”和“领圈”两条旧结论；注明落在端面切平面上的 z 门站不可用于调形。
 - `references/modeling.md` §2.2b：同上重采样路线与体积校验；两段同面放样不能靠体积重叠合并（"intersection gaps"），改用连续放样+定位截面；`CreateUniteFeature` 与共面接触限制保留。
 - `references/modeling.md` §2.3：锥孔用 UF `CreateRevolved` 旋转凸梯形剖面再 `CreateSubtractFeature`；锥面按孔表面基准点（UF `AskFaceData` 的 point/radius）定位，不用包围盒中心（半径差可达 0.06 mm）；回读归一化到同一轴向站再比较。
