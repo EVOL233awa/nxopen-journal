@@ -7,6 +7,8 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §4.1：G6 方向不对称是体数探测器——参考→重建 0.30 而重建→参考 5.92 表示外形贴合但内部多出封口壁（逐带合并残留 lump），先数体数不要修外形；G5 俯视能抓 G1 漏掉的多料（G1 33/37 时俯视仍 0.8693、多 5 534 mm²），两门必须一起看。
+- `references/modeling.md` §2.5：切孔按面表验收而非体积差——锥座落在已挖空腔里时切除仍降 170–650 mm³ 却不产生锥面，每把刀提交后核对新增面的半径/半角/孔心；失败的布尔分支必须 `UndoToMark`，否则失败特征留树成告警（20 条告警全部来自合并重试残留），G8 不过。
 - `references/modeling.md` §2.2：多环截面语义（受控实验）——截面必须在新建件里建（原件上下文 `AddToSection` 抛 Internal error）；内环留 0.03 mm 缝被静默丢弃、孔变实心（96863→100000），外环留缝生成错误实体；多环=带孔轮廓，结果单实体。§2.1b：斜轴孔/锥孔切除配方——CylinderBuilder `AxisDiameterAndHeight` / ConeBuilder `DiametersAndHeight` + `Axes.CreateAxis`，提交后单独 `BooleanBuilder(Subtract)`；实测斜轴 Ø10 圆柱与 Ø10→Ø6 锥孔均一次切成单实体。
 - `references/reverse-engineering.md` §4.1：G1 判据补上“每站 IoU ≥0.95、面积差 ≤5%”——只查组件站数覆盖会让局部阶梯面重的件判过；子代理/盲测自定的站表与阈值（G2 半径 ±0.15 对冻结包 ±0.025、孔心 ±0.2 对 ±0.05、不含通孔长度）不能当验收证据，主线程必须用冻结包原命令复算。§8 补“孔必须独立切除体”：靠截面碎片留空，拉伸后是竖直槽，孔表复算判缺失（4 个臂/耳销孔全缺）。§4.1 记两条路线互补：逐站轮廓拉伸全局门全过但局部阶梯、圆角链不可倒；分组件放样布尔局部准、全局差。
 - `references/reverse-engineering.md` §8：组件门 region 不得按固定半径裁组件自己的料（BASE 用 `radius_max 98.5` 裁掉背侧筋板 r98.5–154，组件门全过而整件 z 站缺料）；门站恰好落在水平面上时，用同一站 z 与 z+0.002 的面积差查面高——实测 BASE 筋板上表面差 0.075 mm（15.80 vs 15.875）被放大成 15% 面积缺口；薄层补片与既有实体共面时 `CreateUniteFeature` 报 intersection gaps，补片多边形 `buffer(-0.1)`、顶面停在参考面下 5 µm 即可并上（补 320 mm³，z15.8 IoU 0.8314→0.9781）。
