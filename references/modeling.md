@@ -566,19 +566,46 @@ adb.DimensionType = NXOpen.SketchAutoDimensionBuilder.DimType.Driving
 adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 ```
 
-⚠ AutoDimension 非确定性：偶发 0 尺寸 → `UnderConstrained`（但 dof=0）。`GetStatus()` 非 `WellConstrained` 时对轮廓线 `CreateFullyFixedConstraints` 兜底（已有驱动尺寸时勿加）。
+⚠ AutoDimension 非确定性：偶发 0 尺寸 → `UnderConstrained`（但 dof=0）。`GetStatus()` 非 `WellConstrained` 时用逐条 `CreateFixedConstraint` 兜底（§4.3），**不要**用 `CreateFullyFixedConstraints`（实测静默无效）。
+⚠ AutoConstrain/AutoDimension 会**挪动几何**：实测轮廓（尤其小 R3 弧）会被拉到自交，拉伸体体积从 2 507 变 956 671 mm³。实测轮廓只加固定约束，自动约束/自动尺寸只用于简单圆/矩形。
 
 ### 4.3 草图尺寸与约束路线
 
-- 尺寸与约束统一走 §4.2 的 `CreateAutoConstrainBuilder` + `CreateAutoDimensionBuilder`；`GetStatus()` 非 `WellConstrained` 时对轮廓线 `CreateFullyFixedConstraints` 兜底。
+- 尺寸与约束：简单草图走 §4.2；实测轮廓走 `sk.CreateFixedConstraint(NXOpen.Sketch.ConstraintGeometry(c, NXOpen.Sketch.ConstraintPointType.NotSet, 0))` 逐条固定，dof 未归零时再对每条试 `ArcCenter / StartVertex / EndVertex`（无效点类型会抛异常，逐条 try 即可）。`ConstraintPointType` 的“无点”成员是 `NotSet`（不是 `None`）。
+- **非 XY 草图平面只能靠 Reattach**（NX12 批处理实测）：`PlaneReference` 无论配 `PlaneOption=ExistingPlane/NewPlane/NewCsys`、`PlaneCollection.CreatePlane(FixedY)`、`CreateFixedPlane` 还是 `CreateSketchInPlaceBuilder2` 都被忽略，提交后 `AttachPlane.Normal` 仍是 (0,0,1)。可行路线：
+  ```python
+  db = wp.Features.CreateDatumPlaneBuilder(NXOpen.Features.Feature.Null)   # ⚠ 参数是 Feature.Null
+  db.SetPointAndDirection(wp.Points.CreatePoint(pt),
+                          wp.Directions.CreateDirection(pt, Vector3d(*normal),
+                              NXOpen.SmartObject.UpdateOption.WithinModeling))
+  dpf = db.CommitFeature(); db.Destroy()
+  ab = wp.Features.CreateDatumAxisBuilder(NXOpen.Features.Feature.Null)
+  ab.SetFixedDatumAxis(NXOpen.Features.DatumAxisBuilder.FixedType.Z)      # Z 必须落在草图平面内
+  daf = ab.CommitFeature(); ab.Destroy()
+  # 先按默认平面建草图，再：
+  sk.Reattach(dpf.DatumPlane, daf.DatumAxis, NXOpen.Vector3d(0,0,0),
+              NXOpen.AxisOrientation.Horizontal, NXOpen.Sense.Forward,
+              NXOpen.PlaneNormalOrientation.Outward, NXOpen.Point3d(*origin))
+  ```
+  `CreateSketch(..., attachmentPlane=dpf.DatumPlane, referenceAxis=...)` 这条直接建草图的路走不通（referenceAxis 传 DatumPlane 报 “wrong type”，传 DatumAxis 报 “Orientation ... invalid”）。
+- **AddGeometry 只收 NXOpen 对象**：UF `CreateArcThru3pts` 返回 tag，必须改用 `Curves.CreateArc(center, xaxis, yaxis, r, a0, a1)`；三点弧用外接圆公式自行求心（端点必须与相邻线严格重合，否则拉伸报 “Section curves are not connected each other”）。
+- **`RevolveBuilder` 对草图截面崩溃**（`memory access violation`）；改用 UF `Modl.CreateRevolved`（草图曲线可用，体积与解析值一致）。
 - `Sketch.CreateDimension` / `CreateRadialDimension`、`SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 批处理不可用（只读或 `No overload matches`），不要在这条路线上尝试。
 - 草图级镜像走不通（`SketchMirrorPatternBuilder.DirectionObject` 只读）；对称件用特征级 `MirrorFeatureBuilder`（§3.2）。
 - 面查询用 §5 的 `AskFaceData`（`Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在）。
 
 ### 4.4 孔与螺纹路线（`HolePackage`；`scripts/tests/26_hole_package.py`）
 
-- 螺纹用 HolePackage：`CreateHolePackageBuilder(NXOpen.Features.HolePackage.Null)`，`Types` = `DrillSizeHole / GeneralHole / HoleSeries / ScrewClearanceHole / ThreadedHole`（NX12 没有 `Thread`/`CreateThreadBuilder`/`ThreadFeatureBuilder`）。
+- 螺纹用 HolePackage：`CreateHolePackageBuilder(NXOpen.Features.HolePackage.Null)`，`Type` = `DrillSizeHole / GeneralHole / HoleSeries / ScrewClearanceHole / ThreadedHole`（NX12 没有 `Thread`/`CreateThreadBuilder`/`ThreadFeatureBuilder`）。
+  ⚠ 类型是**可写属性 `Type`**（`b.Type = …`）；`Types` 是只读枚举类。
   ⚠ 枚举用模块级类（`HolePackageBuilder.Types.ThreadedHole`、`…HoleDepthLimitOptions.Value`、`…ThreadLengthOptions.Standard`）；写成 `b.Types()` 抛 `NXException: instances of NX enums can not be created` 并中断 journal。
+- ⚠ 孔向默认 `FaceNormal`：孔位点落在两面共面的接缝/共线边上时报 "No closest face found within tolerance for Normal to Face direction option"。必须显式切到矢量：
+  ```python
+  hb.ProjectionDirection.ProjectDirectionMethod = \
+      NXOpen.GeometricUtilities.ProjectionOptionsDirectionType.Vector  # CrvPlaneNormal/FaceNormal/Vector
+  hb.ProjectionDirection.ProjectVector = wp.Directions.CreateDirection(pt, NXOpen.Vector3d(0.0, 1.0, 0.0))
+  ```
+  只设 `ProjectVector` 不切方法无效（方法仍是 FaceNormal）。
 
 孔位：只读 `Section`，点用 `ScRuleFactory` 灌入：
 
@@ -601,8 +628,11 @@ b.Validate(); b.CommitFeature()
 | 类型 | 必须给什么 | 结果 |
 | --- | --- | --- |
 | `GeneralHole` | `GeneralSimpleHoleDiameter / GeneralSimpleHoleDepth / GeneralTipAngle` | Ø10 × 15 精确；**首选** |
+| `GeneralHole` + 沉孔 | `GeneralHoleForm=HoleForms.Counterbored` + 通孔 `GeneralCounterboreHoleDiameter/Depth` + 沉孔 `GeneralCounterboreDiameter/Depth` | 受控实验：60×60×10 块，Ø10 通孔 + Ø20×4 沉孔，去料 1 727.876 = 解析值 |
 | `DrillSizeHole` | `DrillSizeStandard="ISO"` + `DrillSizeFitOption="Exact"` + `DrillSize` 标签（`"10"`）**且** `DrillSizeHoleDiameter/Depth` | 只给标签 → 默认 Ø11 贯通；只给 Expression → `Standard data not found` |
 | `ScrewClearanceHole` | `ScrewStandard="ISO"` + `ScrewType="General Screw Clearance"` + `ScrewSize="M10"` + `ScrewFitOption="Normal (H13)"` | 过孔 **Ø11** |
+
+- 直径/深度字段都收表达式名（`"D_BOLT"`、`"2 * R_BRKT_HOLE"`），命名参数才能驱动孔特征；写 float 只会固化成字面值。
 
 - ⚠ `ScrewStandard/ScrewType/ScrewSize/ScrewFitOption` 仅螺钉过孔适用；成员名 `ScrewFitOption`，无 `ScrewFit`。
 - ⚠ 标准名须匹配 `modeling_standards\*.xml` 的 `Standard=`：钻孔 `nx6_Drill_Size_Hole_Standard.xml`（`ISO`，尺寸 `10`/`10.2`，`Fit` 仅 `Exact`）；螺纹孔 `nx502_Threaded_Hole_Standard.xml`（`Metric Coarse`，`M10 x 1.5`）。写错 → `Standard data not found`；别用 `thd_metric.dat`。

@@ -18,6 +18,10 @@
 - `references/modeling.md` §2.1b/§2.2b：斜轴圆柱/锥孔切除与多截面放样配方。
 - `references/modeling.md` §2.5：切孔按面表验收（核对新增面的半径/半角/孔心），失败布尔用 undo mark 回滚。
 - `references/modeling.md` §6：特征按结构划分，不按层划分。
+- `references/modeling.md` §4.3：非 XY 草图平面只能靠 `Sketch.Reattach`（`PlaneReference` 在 NX12 批处理里被忽略，`AttachPlane` 仍是 XY）；任意法向/过任意点的基准面用 `DatumPlaneBuilder.SetPointAndDirection`，参考轴用 `FixedType.Z`。
+- `references/modeling.md` §4.2/§4.3：实测轮廓只加 `CreateFixedConstraint`（`CreateFullyFixedConstraints` 静默无效）；AutoConstrain/AutoDimension 会挪动几何（小 R3 弧被拉到自交，2 507→956 671 mm³）。
+- `references/modeling.md` §4.3：`RevolveBuilder` 对草图截面报 `memory access violation`，改用 UF `Modl.CreateRevolved`。
+- `references/modeling.md` §4.4：沉孔 HolePackage 配方（`GeneralHoleForm=HoleForms.Counterbored` + `GeneralCounterboreHole*` + `GeneralCounterbore*`），受控实验与解析值一致；直径/深度可传表达式名。
 - `SKILL.md` §3：`SaveAs` 到已存在路径报 `File already exists`，阶段件写新路径或先删目标。
 
 ### Changed
@@ -28,6 +32,7 @@
 
 ### Fixed
 
+- `references/modeling.md` §4.4：HolePackage 类型属性是 `Type`（可写），`Types` 只读；孔向默认 `FaceNormal`，接缝处需显式切 `ProjectDirectionMethod=ProjectionOptionsDirectionType.Vector`。
 - 截面端点参数与闭环提取：端点用 `AskCurveProps(ct, 0/1)`，闭环用 `JoinType=0` 原始段按端点聚类自建。
 - 布尔顺序：切除刀具穿过目标面，补孔排在整圆盘并集之后。
 - 圆角选边改用 exact，避免 ring 带入曲面缝边。
