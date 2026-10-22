@@ -8,6 +8,12 @@
 ### Added
 
 - `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
+- `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
+- `references/reverse-engineering.md` §1：动手前先出结构清单（原件功能组为建模与自检分母），结构尺寸先建命名表达式再绑定。
+- `references/reverse-engineering.md` §10.1：自检分母用原件、功能清单筛 `ref_a`、匹配成功不等于合格、G4 用 STL 包盒。
+- `references/reverse-engineering.md` §2.2：有孔分瓣截面凸包只补孔内桥接，外边界取两瓣外包络。
+- `references/reverse-engineering.md` §4.2：低 z 多料→底部让位结构或外圆锥形过渡。
+- `references/reverse-engineering.md` §7/§9：尺寸参数化属于交付件；圆角是交付前固定阶段。
 - `scripts/tests/38_measure.py`：受控实体测量用例（`TEST38_DONE`）；`RUN_TESTS.bat` 与 `tests/README.md` 登记。
 - `references/reverse-engineering.md` §10.1：无外部检查包时的自检闭环（量原件→建→量自建件→比），含面表→结构假设与截面站选择。
 - `references/reverse-engineering.md` §2.2/§4.2：腰形凹腔按截面放样切除、端盖 B 曲面按 z 窗口收口，以及耳座圆柱/孔长/锥面/底板/clevis/端盖的症状→动作。

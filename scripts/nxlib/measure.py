@@ -74,6 +74,12 @@ def _line_dist(p1, d, p2):
     return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
 
 
+def _perp_dist(p1, p2, d):
+    """两点差在垂直于 d 的平面上的投影长度（G2 孔心口径）。"""
+    v = _sub(p2, p1)
+    return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
+
+
 def _project_extent(box, p0, d):
     lo, hi = 1e9, -1e9
     for sx in (box[0], box[3]):
@@ -213,7 +219,8 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3):
             for f in cl["faces"]:
                 a, b = _project_extent(f["box"], cl["p0"], d)
                 lo, hi = min(lo, a), max(hi, b)
-            mid = 0.5 * (lo + hi)
+            bx = [min(f["box"][k] for f in cl["faces"]) for k in range(3)] + \
+                 [max(f["box"][k + 3] for f in cl["faces"]) for k in range(3)]
             groups.append({
                 "kind": kind,
                 "axis": d,
@@ -222,7 +229,9 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3):
                 "half_angle_deg": math.degrees(cl["faces"][0].get("rad_data", 0.0)),
                 "extent": [lo, hi],
                 "length": hi - lo,
-                "center": [cl["p0"][i] + d[i] * mid for i in range(3)],
+                "bbox": bx,
+                "center": [0.5 * (bx[k] + bx[k + 3]) for k in range(3)],
+                "concave": all(f.get("norm_dir") == -1 for f in cl["faces"]),
                 "faces": [f["tag"] for f in cl["faces"]],
                 "ends": _end_faces(cl["faces"], d, cl["p0"], faces),
             })
@@ -252,14 +261,12 @@ def _end_faces(group_faces, d, p0, all_faces):
 
 
 def hole_params(group):
-    """圆柱组的孔参数：直径/轴/中心/轴向长度/端面。"""
-    d = group["axis"]
-    mid = 0.5 * (group["extent"][0] + group["extent"][1])
+    """圆柱组的孔参数：直径/轴/中心/轴向长度/端面。中心取组包盒中心（G2 口径）。"""
     return {
         "diameter": 2.0 * group["radius"],
         "radius": group["radius"],
-        "axis": d,
-        "center": [group["point"][i] + d[i] * mid for i in range(3)],
+        "axis": group["axis"],
+        "center": list(group["center"]),
         "length": group["length"],
         "extent": list(group["extent"]),
         "ends": list(group.get("ends", [])),
@@ -296,7 +303,8 @@ def measure_part(path, with_edges=True):
     }
 
 
-def _match_groups(ga, gb, radius_tol, axis_tol_deg, line_tol):
+def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
+                  length_tol, half_angle_tol):
     used = set()
     pairs = []
     unmatched_a = []
@@ -305,16 +313,17 @@ def _match_groups(ga, gb, radius_tol, axis_tol_deg, line_tol):
         for j, q in enumerate(gb):
             if j in used:
                 continue
-            if abs(o["radius"] - q["radius"]) > radius_tol:
+            dr = abs(o["radius"] - q["radius"])
+            if dr > 2.0 * radius_tol:
                 continue
             ang = math.degrees(math.acos(
                 min(1.0, abs(_dot(o["axis"], q["axis"])))))
             if ang > axis_tol_deg:
                 continue
-            pd = _line_dist(o["point"], o["axis"], q["point"])
-            if pd > line_tol:
+            cd = _perp_dist(o["center"], q["center"], o["axis"])
+            if cd > center_tol:
                 continue
-            score = pd + abs(o["radius"] - q["radius"]) + 0.1 * ang
+            score = cd + dr + 0.1 * ang
             if best is None or score < best[0]:
                 best = (score, j)
         if best is None:
@@ -326,26 +335,66 @@ def _match_groups(ga, gb, radius_tol, axis_tol_deg, line_tol):
     out = []
     for i, j in pairs:
         o, q = ga[i], gb[j]
+        dr = abs(q["radius"] - o["radius"])
         ang = math.degrees(math.acos(min(1.0, abs(_dot(o["axis"], q["axis"])))))
+        cd = _perp_dist(o["center"], q["center"], o["axis"])
+        dha = abs(q["half_angle_deg"] - o["half_angle_deg"])
+        ok = dr <= radius_tol and ang <= axis_tol_deg and cd <= center_tol
+        if kind == CONE:
+            ok = ok and dha <= half_angle_tol
+        else:
+            ok = ok and abs(q["length"] - o["length"]) <= length_tol
         out.append({
             "a": i, "b": j,
             "delta_radius": q["radius"] - o["radius"],
             "delta_length": q["length"] - o["length"],
-            "delta_center": math.sqrt(sum(
-                (q["center"][k] - o["center"][k]) ** 2 for k in range(3))),
+            "delta_center": cd,
             "delta_axis_deg": ang,
+            "delta_half_angle_deg": dha,
+            "pass": ok,
             "a_group": o,
             "b_group": q,
         })
-    return {"pairs": out, "unmatched_a": unmatched_a, "unmatched_b": unmatched_b}
+    return {
+        "pairs": out,
+        "unmatched_a": unmatched_a,
+        "unmatched_b": unmatched_b,
+        "pass": (not unmatched_a and not unmatched_b and
+                 all(p["pass"] for p in out)),
+    }
 
 
-def compare_parts(path_a, path_b, radius_tol=0.05,
-                  axis_tol_deg=0.1, line_tol=0.05):
-    """原件/自建件的 G2 口径比对：圆柱组、圆锥组按轴+半径匹配，
-    返回逐组长度/中心/轴差与未匹配项，另附体积差。"""
+def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
+                  axis_tol_deg=0.1, length_tol=0.1, half_angle_tol=0.1,
+                  ref_a=None, ref_b=None):
+    """原件/自建件的 G2 口径比对。
+
+    匹配条件：半径差 ≤2×radius_tol、轴角 ≤axis_tol_deg、孔心（垂直于轴的
+    平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度，圆锥再加半角。
+    `pass` 只有在两组都无未匹配项且每个 pair 都过阈值时为真；`unmatched_a`
+    是“原件有、自建件没有”的结构，必须逐项建或写入简化清单。
+
+    ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单（按 faces
+    tag 识别）。原件侧应先用截面圆孔环筛出功能孔清单再传 ref_a；不筛时
+    圆角/凸台的圆柱组也会算进未匹配项。
+    """
     a = measure_part(path_a)
     b = measure_part(path_b)
+
+    def subset(groups, ref):
+        if ref is None:
+            return groups
+        keys = set(tuple(g["faces"]) for g in ref)
+        return [g for g in groups if tuple(g["faces"]) in keys]
+
+    cyl = _match_groups(subset(a["cylinders"], ref_a),
+                        subset(b["cylinders"], ref_b), CYLINDER,
+                        radius_tol, center_tol, axis_tol_deg,
+                        length_tol, half_angle_tol)
+    cones = _match_groups(subset(a["cones"], ref_a),
+                          subset(b["cones"], ref_b), CONE,
+                          radius_tol, center_tol, axis_tol_deg,
+                          length_tol, half_angle_tol)
     return {
         "a": {"path": a["path"], "volume": a["volume"],
               "bodies": a["bodies"], "features": a["features"]},
@@ -354,10 +403,9 @@ def compare_parts(path_a, path_b, radius_tol=0.05,
         "delta_volume": b["volume"] - a["volume"],
         "delta_volume_ratio": ((b["volume"] - a["volume"]) / a["volume"]
                                if a["volume"] else 0.0),
-        "cylinders": _match_groups(a["cylinders"], b["cylinders"],
-                                   radius_tol, axis_tol_deg, line_tol),
-        "cones": _match_groups(a["cones"], b["cones"],
-                               radius_tol, axis_tol_deg, line_tol),
+        "cylinders": cyl,
+        "cones": cones,
+        "pass": cyl["pass"] and cones["pass"],
     }
 
 
@@ -424,6 +472,20 @@ def _fix_normals(tris):
             nrm = _cross(_sub(v1, v0), _sub(v2, v0))
         out.append((_unit(nrm), v0, v1, v2))
     return out
+
+
+def mesh_bbox(mesh):
+    """三角网格的轴对齐包盒 [xmin,ymin,zmin,xmax,ymax,zmax]（G4 口径）。"""
+    if not mesh:
+        raise ValueError("empty mesh")
+    lo = [1e300, 1e300, 1e300]
+    hi = [-1e300, -1e300, -1e300]
+    for _, v0, v1, v2 in mesh:
+        for v in (v0, v1, v2):
+            for i in range(3):
+                lo[i] = min(lo[i], v[i])
+                hi[i] = max(hi[i], v[i])
+    return [lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]]
 
 
 def _basis(normal):

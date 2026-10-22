@@ -44,7 +44,8 @@ from nxlib.session import new_part
 from nxlib.modeling import block, boolean, blend_on_edges
 from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            export_mesh, face_table, group_coaxial, hole_params,
-                           cone_params, read_stl, section_area, section_iou)
+                           cone_params, measure_part, mesh_bbox, read_stl,
+                           section_area, section_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -260,6 +261,12 @@ def main():
     export_mesh(part, stl_path)
     mesh = read_stl(stl_path)
     say("STL=%s tris=%d" % (os.path.basename(stl_path), len(mesh)))
+    bbox = mesh_bbox(mesh)
+    expect_bbox = [0.0, 0.0, 0.0, BLOCK_X, BLOCK_Y, BLOCK_Z + BOSS_H]
+    check("REG_MESH_BBOX",
+          max(abs(bbox[i] - expect_bbox[i]) for i in range(6)) <= 0.01,
+          "STL bbox=%s expected=%s" %
+          (["%.3f" % v for v in bbox], ["%.3f" % v for v in expect_bbox]))
     area = section_area(mesh, (0.0, 0.0, SECTION_Z), (0.0, 0.0, 1.0))
     check("REG_SECTION_AREA", abs(area - EXPECT_AREA) <= 0.005 * EXPECT_AREA,
           "z=%.1f section area=%.3f analytic=%.3f (err %.4f%%)" %
@@ -273,11 +280,15 @@ def main():
     # ------------------------------------------------------ self compare
     cmp = compare_parts(part_path, part_path)
     deltas = []
+    all_pairs_pass = True
     for key in ("cylinders", "cones"):
         for pair in cmp[key]["pairs"]:
             deltas.extend((abs(pair["delta_radius"]), abs(pair["delta_length"]),
-                           pair["delta_center"], pair["delta_axis_deg"]))
+                           pair["delta_center"], pair["delta_axis_deg"],
+                           pair["delta_half_angle_deg"]))
+            all_pairs_pass = all_pairs_pass and pair["pass"]
     check("REG_COMPARE_SELF",
+          cmp["pass"] and all_pairs_pass and
           cmp["cylinders"]["unmatched_a"] == [] and
           cmp["cylinders"]["unmatched_b"] == [] and
           cmp["cones"]["unmatched_a"] == [] and
@@ -285,11 +296,22 @@ def main():
           abs(cmp["delta_volume"]) < 1e-6 and
           (not deltas or max(deltas) < 1e-6),
           "self compare: cyl=%d pairs, cone=%d pairs, unmatched=%d/%d, "
-          "max delta=%.9f, dV=%.9f" %
+          "max delta=%.9f, dV=%.9f, pass=%s" %
           (len(cmp["cylinders"]["pairs"]), len(cmp["cones"]["pairs"]),
            len(cmp["cylinders"]["unmatched_a"]) + len(cmp["cones"]["unmatched_a"]),
            len(cmp["cylinders"]["unmatched_b"]) + len(cmp["cones"]["unmatched_b"]),
-           max(deltas) if deltas else 0.0, cmp["delta_volume"]))
+           max(deltas) if deltas else 0.0, cmp["delta_volume"], cmp["pass"]))
+
+    mp = measure_part(part_path)
+    inv = mp["cylinders"] + mp["cones"]
+    cmp_inv = compare_parts(part_path, part_path, ref_a=inv)
+    check("REG_COMPARE_INVENTORY",
+          cmp_inv["pass"] and
+          len(cmp_inv["cylinders"]["pairs"]) == len(mp["cylinders"]) and
+          len(cmp_inv["cones"]["pairs"]) == len(mp["cones"]),
+          "inventory compare: %d cyl + %d cone groups, pass=%s" %
+          (len(cmp_inv["cylinders"]["pairs"]),
+           len(cmp_inv["cones"]["pairs"]), cmp_inv["pass"]))
 
     failed = [n for n, v in RESULTS if not v]
     say("TEST38_CASES=%d" % len(RESULTS))
