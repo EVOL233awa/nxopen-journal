@@ -18,6 +18,7 @@
 - `references/reverse-engineering.md` §10：小半径轮廓圆弧以面表半径为准（截面拟合可能偏 1 mm 以上）。
 - `references/reverse-engineering.md` §8：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
 - `references/reverse-engineering.md` §3：布尔目标与刀具按 Tag 识别——NXOpen 每次取 `part.Bodies` 返回新包装对象，`is` 比较会选错体；刀具只取本次新建体，切孔时用“除目标外的所有实体”会减掉主体。
+- `references/reverse-engineering.md` §8：基体按真实外边界建，不用固定半径截断——半径截断会在臂间留下环形缺口，整件 z 站表现为该半径带沿扇区均匀缺料，而臂根站截面仍合格。
 - `references/modeling.md` §2.4：EdgeBlend 角点必须把同一顶点的相邻边放进同一 ChainSet。
 - `references/modeling.md` §2.2b：闭合环放样截面拆成“开链 + 接缝段”，避免 `ThroughCurves` 报 "Unable to reference edge"；截面面积突变时在突变处分段。
 - `references/reverse-engineering.md` §2.2：切向截面拓扑可从实心矩形变为工字型，先放样外轮廓再切腹板空腔，不跨拓扑直接放样。
