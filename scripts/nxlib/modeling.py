@@ -123,7 +123,12 @@ def find_face(wp, body, point, want_normal, axis=2):
 # ---------------------------------------------------------------- 草图与拉伸
 
 def make_sketch(wp, curves, reference_curves=None):
-    """草图 + 自动约束 + 自动尺寸；reference_curves 转构造线并全固定（01 号口径）。"""
+    """草图 + 自动约束 + 自动尺寸；reference_curves 转构造线并全固定（01 号口径）。
+
+    ⚠ 这里的 AutoDimension 实际不产生任何尺寸：AutoConstrain 已经把简单轮廓
+    标成完全约束且不产生表达式（实测圆 3→0 DOF、表达式表为空）。需要尺寸驱动
+    的草图用 make_sketch_dims（不跑 AutoConstrain）。
+    """
     sib = wp.Sketches.CreateNewSketchInPlaceBuilder(NXOpen.Sketch.Null)
     origin_point = wp.Points.CreatePoint(NXOpen.Point3d(0.0, 0.0, 0.0))
     sib.SketchOrigin = origin_point
@@ -168,6 +173,58 @@ def make_sketch(wp, curves, reference_curves=None):
                 print("FIX_RC_FAIL " + str(exc))
     sketch.Deactivate(VIEW_REORIENT_FALSE, NXOpen.Sketch.UpdateLevel.Model)
     return sketch
+
+
+def make_sketch_dims(wp, curves, links=(), rules=None):
+    """草图 + AutoDimension 驱动尺寸，并把尺寸改指命名表达式。
+
+    links: [(数值, "表达式右端"), ...]；对每个自动生成的尺寸，按
+    float(RightHandSide) 与数值匹配（1e-6）后改指。返回 (sketch, 改指数)。
+
+    唯一的实测前提：**不能先跑 AutoConstrain** —— 它会把简单轮廓标成完全
+    约束且不产生表达式，AutoDimension 随后一个尺寸都不出（受控实验
+    scripts/tests/37_sketch_autodim_param.py）。GetStatus 只用来读 dof，
+    少调它不影响出尺寸。
+
+    只用于简单轮廓（圆/矩形/扇形/台阶轮廓）；实测轮廓（短弧+倒角+偏移线）
+    开了自动尺寸会被拉变形，仍走 make_sketch 的固定约束路线。
+    """
+    sib = wp.Sketches.CreateNewSketchInPlaceBuilder(NXOpen.Sketch.Null)
+    sib.SketchOrigin = wp.Points.CreatePoint(NXOpen.Point3d(0.0, 0.0, 0.0))
+    sib.Commit()
+    sketch = sib.GetCommittedObjects()[0]
+    sib.Destroy()
+    sketch.Activate(VIEW_REORIENT_FALSE)
+    sketch.AddGeometry(
+        NXOpen.Sketch.InferConstraintsOption.InferNoConstraints,
+        NXOpen.Sketch.AddEllipseOption.TreatAsEllipse,
+        curves,
+    )
+    sketch.GetStatus()
+    ad = wp.Sketches.CreateAutoDimensionBuilder()
+    ad.SelectionObject.SetArray(curves)
+    ad.SetRules(rules or [
+        NXOpen.Sketch.AutoDimensioningRule.Length,
+        NXOpen.Sketch.AutoDimensioningRule.Symmetric,
+    ])
+    ad.DimensionType = NXOpen.SketchAutoDimensionBuilder.DimType.Driving
+    ad.Commit()
+    ad.Destroy()
+    sketch.GetStatus()
+    linked = 0
+    for e in sketch.GetAllExpressions():
+        try:
+            val = float(e.RightHandSide)
+        except Exception:
+            continue
+        for target, rhs in links:
+            if abs(val - float(target)) < 1e-6:
+                e.RightHandSide = rhs
+                linked += 1
+                break
+    sketch.LocalUpdate()
+    sketch.Deactivate(VIEW_REORIENT_FALSE, NXOpen.Sketch.UpdateLevel.Model)
+    return sketch, linked
 
 
 def extrude(wp, curves, distance_expr):

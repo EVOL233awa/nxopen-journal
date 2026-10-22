@@ -104,6 +104,8 @@ call :gate 35_assembly_preload.py TEST35_DONE
 if errorlevel 1 exit /b 1
 call :gate 36_motion_slider.py BENCH_PASS
 if errorlevel 1 exit /b 1
+call :gate 37_sketch_autodim_param.py TEST37_DONE
+if errorlevel 1 exit /b 1
 call :gate 09_fea_static.py BENCH_PASS
 if errorlevel 1 exit /b 1
 

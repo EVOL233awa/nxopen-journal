@@ -253,6 +253,7 @@ scripts\tests\RUN_TESTS.bat
 7. 入库门槛 = 铁律 2：MCP 核实 + 批处理验证双通过。
 8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|路线约束 [0-9]"`。
 9. 吸收外部技能/项目时先在本机 NX12 验证；与本机冲突处以本机结果为准并注明。
+10. `CHANGELOG.md` 只记 diff：一行一条（位置 + 改了什么），不写验证过程、实验读数、归因沿革、影响分析；理由与证据留在报告或域文件正文。
 
 **增长纪律**：不设体积硬上限。新增条目先查重并合并，同一主题不新开小节；每次版本发布前跑 `check_repo.py`。文件明显膨胀时，优先把坑位并回路线、删旧条目、压重复；只有两个独立任务域被迫共读一个文件时才按域拆分（装配/工程图即此例），不要靠拆文件掩盖重复。域文件不设坑位表；负面事实写进对应路线的约束句。
 
@@ -274,7 +275,7 @@ nxopen-journal/
 ├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 / 文档精简 / 路线优先）
 ├── scripts/run_journal_batch.bat   ← 批处理试跑（ugiicmd + run_journal.exe；NX 安装根走 NX_HOME）
 ├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、配方归属
-│   ├── 01…36_*.py                  ← 33 个并入令牌校验的用例（RUN_TESTS.bat 全量跑）
+│   ├── 01…37_*.py                  ← 34 个并入令牌校验的用例（RUN_TESTS.bat 全量跑）
 │   ├── 11…13_api_probe*.py         ← 一次性 API 探针，不纳入检查
 │   ├── verify_check_rules.py       ← check_journal 规则自检（宿主解释器，反例必须命中）
 │   ├── verify_anno_pdf.py          ← 19 号用例的 PDF 文本层数值复核（宿主解释器 + pymupdf）

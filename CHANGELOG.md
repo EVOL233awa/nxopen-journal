@@ -7,6 +7,12 @@
 
 ### Added
 
+- `references/modeling.md` §4.2：AutoDimension 不出尺寸的判据改为 AutoConstrain 抢占；`GetStatus()` 只读 dof。
+- `references/modeling.md` §4.2b：新增自动尺寸接命名参数配方（`GetAllExpressions` 按 RHS 匹配后改指）。
+- `references/modeling.md` §4.3：新增共面堆叠特征表达式起点、倒圆边归属、一进程一次 `FileNew` 三条约束。
+- `references/reverse-engineering.md` §4.1：新增 G8 还原残差判据（新会话 ×1.5 复核）。
+- `scripts/nxlib/modeling.py`：新增 `make_sketch_dims`；`make_sketch` 注释标注其 AutoDimension 不产尺寸。
+- `scripts/tests/37_sketch_autodim_param.py`：新增自动尺寸→命名参数用例（`TEST37_DONE`）；`RUN_TESTS.bat`、`tests/README.md` 登记。
 - `references/reverse-engineering.md` §2.1：从 B-rep 批量取精确截面的配方——`SectionFromPlanes`/`SectionFromParallelPlanes`、端点参数用 `AskCurveProps(ct, 0/1)`、闭环用 `JoinType=0` 原始段按端点聚类自建、圆弧只读 `Eval.AskArc`。
 - `references/reverse-engineering.md` §2.2：多截面放样路线——重采样参数化（弧长等分/绕形心等角）的选择、放样后体积校验、定位截面、端部收口、拓扑突变与凸台孔闭合的处理。
 - `references/reverse-engineering.md` §3：分层路线定位改为“只作测量与核验，不作交付”，交付件走结构特征路线。

@@ -557,22 +557,46 @@ session.UpdateManager.DoUpdate(mark)  # ⚠ Session 属性是 UpdateManager（�
 ### 4.2 自动约束 / 自动标注（替代手加约束）
 
 ```python
-wp.Sketches.CreateAutoConstrainBuilder().Commit()  # 自动几何约束
+sk.AddGeometry(NXOpen.Sketch.InferConstraintsOption.InferNoConstraints,
+               NXOpen.Sketch.AddEllipseOption.TreatAsEllipse, curves)
+sk.GetStatus()          # 查 dof 用；不是出尺寸的前提（见下条）
 adb = wp.Sketches.CreateAutoDimensionBuilder()
 adb.SelectionObject.SetArray(curves)
 adb.SetRules([NXOpen.Sketch.AutoDimensioningRule.Length,
               NXOpen.Sketch.AutoDimensioningRule.Symmetric])
 adb.DimensionType = NXOpen.SketchAutoDimensionBuilder.DimType.Driving
 adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
+sk.GetStatus()
 ```
 
-⚠ AutoDimension 非确定性：偶发 0 尺寸 → `UnderConstrained`（但 dof=0）。`GetStatus()` 非 `WellConstrained` 时用逐条 `CreateFixedConstraint` 兜底（§4.3），**不要**用 `CreateFullyFixedConstraints`（实测静默无效）。
-⚠ AutoConstrain/AutoDimension 会**挪动几何**：实测轮廓（尤其小 R3 弧）会被拉到自交，拉伸体体积从 2 507 变 956 671 mm³。实测轮廓只加固定约束，自动约束/自动尺寸只用于简单圆/矩形。
+- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**（受控实验 `scripts/tests/37_sketch_autodim_param.py`）：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
+- **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出（同用例第 1 条断言）。把 0 尺寸归因于少调 `GetStatus` 是错归因——同一实验里另一个变量是 AutoConstrain。
+- ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小 R3 弧）会被拉到自交，拉伸体体积从 2 507 变 956 671 mm³。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
+- **适用边界（已验证）**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；26 曲线轮毂轮廓出 108 个尺寸、dof=6，尺寸是线长/角度而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
+
+### 4.2b 自动尺寸 → 命名参数（唯一可行的参数化路线）
+
+```python
+for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
+    try:
+        val = float(e.RightHandSide)
+    except Exception:
+        continue                                 # 已是表达式名，跳过
+    for target, rhs in links:                    # (2 * R_WEB, "2 * R_WEB") ...
+        if abs(val - target) < 1e-6:
+            e.RightHandSide = rhs
+```
+
+- 改参数后实体精确跟随（圆半径 → `R_WEB`，体积按解析值变化），且尺寸仍是驱动尺寸。
+- 同一草图多个尺寸时要成对链接直径/半径（`2 * R` 与 `R`），否则约束自相矛盾。
+- **草图点不可标注**：对单点跑 AutoDimension 产生 0 尺寸、dof 不变；NXOpen 也没有参数化点特征（`PointFeatureBuilder.Point` 只收字面 `Point3d`）→ 孔位无法用“草图点 + 尺寸”参数化。
+- 驱动参数必须真的接到几何上：接到会移动的边上时，先确认改参数不会让该边的主人变化（见 §4.3 的拓扑陷阱）。
+
 
 ### 4.3 草图尺寸与约束路线
 
-- 尺寸与约束：简单草图走 §4.2；实测轮廓走 `sk.CreateFixedConstraint(NXOpen.Sketch.ConstraintGeometry(c, NXOpen.Sketch.ConstraintPointType.NotSet, 0))` 逐条固定，dof 未归零时再对每条试 `ArcCenter / StartVertex / EndVertex`（无效点类型会抛异常，逐条 try 即可）。`ConstraintPointType` 的“无点”成员是 `NotSet`（不是 `None`）。
-- **非 XY 草图平面只能靠 Reattach**（NX12 批处理实测）：`PlaneReference` 无论配 `PlaneOption=ExistingPlane/NewPlane/NewCsys`、`PlaneCollection.CreatePlane(FixedY)`、`CreateFixedPlane` 还是 `CreateSketchInPlaceBuilder2` 都被忽略，提交后 `AttachPlane.Normal` 仍是 (0,0,1)。可行路线：
+- 尺寸与约束：简单草图走 §4.2；测量轮廓走 `sk.CreateFixedConstraint(NXOpen.Sketch.ConstraintGeometry(c, NXOpen.Sketch.ConstraintPointType.NotSet, 0))` 逐条固定，dof 未归零时再对每条试 `ArcCenter / StartVertex / EndVertex`（无效点类型会抛异常，逐条 try 即可）。`ConstraintPointType` 的“无点”成员是 `NotSet`（不是 `None`）。
+- **非 XY 草图平面只能靠 Reattach**（NX12 批处理已验证）：`PlaneReference` 无论配 `PlaneOption=ExistingPlane/NewPlane/NewCsys`、`PlaneCollection.CreatePlane(FixedY)`、`CreateFixedPlane` 还是 `CreateSketchInPlaceBuilder2` 都被忽略，提交后 `AttachPlane.Normal` 仍是 (0,0,1)。可行路线：
   ```python
   db = wp.Features.CreateDatumPlaneBuilder(NXOpen.Features.Feature.Null)   # ⚠ 参数是 Feature.Null
   db.SetPointAndDirection(wp.Points.CreatePoint(pt),
@@ -591,6 +615,9 @@ adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 - **AddGeometry 只收 NXOpen 对象**：UF `CreateArcThru3pts` 返回 tag，必须改用 `Curves.CreateArc(center, xaxis, yaxis, r, a0, a1)`；三点弧用外接圆公式自行求心（端点必须与相邻线严格重合，否则拉伸报 “Section curves are not connected each other”）。
 - **`RevolveBuilder` 对草图截面崩溃**（`memory access violation`）；改用 UF `Modl.CreateRevolved`（草图曲线可用，体积与解析值一致）。
 - `Sketch.CreateDimension` / `CreateRadialDimension`、`SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 批处理不可用（只读或 `No overload matches`），不要在这条路线上尝试。
+- **共面堆叠特征要用表达式定起点**：板顶上的垫环/筋/轮缘/缺口，拉伸起点写 `Limits.StartExtend.Value.RightHandSide = "T_PLATE - 15.875"`，不要写 `"0"`。写死 0 时改 `T_PLATE` 会让上层特征与板顶脱开或互相吞并，更新整体回滚。
+- **倒圆不要贴在会移动的边上**：沉孔上沿（z≈22.225，r 48.5..50.5）的 R1.524 倒圆在 `Z_PAD +10%` 后边的主人改变，整个更新回滚（“Update undo happened”）。要么把倒圆放到所有驱动参数之后，要么换一条不随参数移动的边。
+- **同一个 `FileNew` 只能建一个零件**：一个进程里第二次 `FileNew` 之后草图报 “Sketch is not initialized”、更新报 “Update undo happened”。批量跑多案例用进程级环境变量分流，一进程一案例。
 - 草图级镜像走不通（`SketchMirrorPatternBuilder.DirectionObject` 只读）；对称件用特征级 `MirrorFeatureBuilder`（§3.2）。
 - 面查询用 §5 的 `AskFaceData`（`Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在）。
 
