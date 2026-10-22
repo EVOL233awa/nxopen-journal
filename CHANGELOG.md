@@ -11,16 +11,16 @@
 - `references/modeling.md` §2.2b：同上重采样路线与体积校验；两段同面放样不能靠体积重叠合并（"intersection gaps"），改用连续放样+定位截面；`CreateUniteFeature` 与共面接触限制保留。
 - `references/modeling.md` §2.3：锥孔用 UF `CreateRevolved` 旋转凸梯形剖面再 `CreateSubtractFeature`；锥面按孔表面基准点（UF `AskFaceData` 的 point/radius）定位，不用包围盒中心（半径差可达 0.06 mm）；回读归一化到同一轴向站再比较。
 - `references/modeling.md` §3.3：更正旋转体限制——轴上边在凸剖面上可用，仅凹/台阶剖面失败。
-- `references/reverse-protocol.md` §3：臂类组件的门站含整件 z 站，检查点从上一组件检查点起建（`BASE ∪ 本组件`），门按 region 裁剪；孤立臂体在 z 站缺料是结构造成。
-- `references/reverse-protocol.md`：逆向复现协议——测量数据契约、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段、G0–G8 判据、双盲重放验收与失败归因。
-- `references/reverse-protocol.md` §2.1：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。
-- `references/reverse-protocol.md` §2.3：确定性序列化——排序键取到几何唯一、`-0.0` 归一、探针体积定小数位；判据是两个独立会话逐文件 sha256 相同。
-- `references/reverse-protocol.md` §2.5：小半径轮廓圆弧以面表半径为准（截面拟合可能偏 1 mm 以上）。
-- `references/reverse-protocol.md` §3：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
+- `references/reverse-engineering.md` §8：臂类组件的门站含整件 z 站，检查点从上一组件检查点起建（`BASE ∪ 本组件`），门按 region 裁剪；孤立臂体在 z 站缺料是结构造成。
+- `references/reverse-engineering.md` §10：测量链——探针与包围盒入口、测站按结构分界布置、`AskFeatureCurves`/`GetFaces` 顺序不稳定与排序规则、并查集特征分组、边界目录字段；§4 增加 G0–G8 验收项与失败归因。移除独立的逆向复现协议文件：技能输入统一为原件加一句重建要求，双盲重放属于验收流程，不作为技能入口。
+- `references/reverse-engineering.md` §10：包围盒入口在 `ufs.ModlGeneral`（`AskBoundingBox` / `AskBoundingBoxExact`），三种估计各有偏差，门比较改用两侧导出的 STL 顶点。
+- `references/reverse-engineering.md` §10：确定性序列化——排序键取到几何唯一、`-0.0` 归一、探针体积定小数位；判据是两个独立会话逐文件 sha256 相同。
+- `references/reverse-engineering.md` §10：小半径轮廓圆弧以面表半径为准（截面拟合可能偏 1 mm 以上）。
+- `references/reverse-engineering.md` §8：功能孔孔心/轴/半角取孔表；圆角双路线（轮廓小半径 + 边链 EdgeBlend）。
 - `references/modeling.md` §2.4：EdgeBlend 角点必须把同一顶点的相邻边放进同一 ChainSet。
 - `references/modeling.md` §2.2b：闭合环放样截面拆成“开链 + 接缝段”，避免 `ThroughCurves` 报 "Unable to reference edge"；截面面积突变时在突变处分段。
 - `references/reverse-engineering.md` §2.2：切向截面拓扑可从实心矩形变为工字型，先放样外轮廓再切腹板空腔，不跨拓扑直接放样。
-- `SKILL.md` §5：新增逆向复现协议路由；域文件计数改为九个。
+- `SKILL.md` §5：逆向重建路由并入测量链与验收项；域文件计数改为八个。
 
 - `references/reverse-engineering.md` §1：三个产物（基线 / 交付件 / 核验器）与证据优先级（面表 > 精确截面 > 渲染图）；分层实体只在自由曲面或扫描网格输入时兜底。
 - `references/reverse-engineering.md` §2.2：多截面放样路线——根部/中段/端部三站截面、端部形状进末截面、放样后按组件门验收。

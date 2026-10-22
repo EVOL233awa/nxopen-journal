@@ -255,7 +255,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 nxopen-journal/
 ├── SKILL.md                        ← 入口层：铁律 / 环境 / 脚本骨架 / 通用部件操作 / 日志导出 / 工作流 / 域路由
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog）
-├── references/                     ← 九个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / reverse-protocol
+├── references/                     ← 八个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
 ├── images/                         ← 实际运行产物图（上面九张）
 ├── scripts/
 │   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）
