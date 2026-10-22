@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：37 个用例（34 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA 与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：38 个用例（35 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -73,6 +73,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 35 | `35_assembly_preload.py` | `TEST35_DONE` | 预载+干涉：base+pin 悬空 5mm 装配后重开；不预载则 SimpleInterference 空跑 inst_bodies=0，重复加载幂等；实例体 2；SimpleInterference 0 对（悬空负例；判材料重叠须布尔交集） |
 | 36 | `36_motion_slider.py` | `BENCH_PASS` | 滑动副：3 Revolute+1 Slider，偏置曲柄滑块 r40/l120/e20；5 判据：721 帧、滑块 x 偏差 0.001316 mm、y 恒 20、杆长守恒 0.001303 mm（兼探针行主序，转置漂 14 mm）、线速度偏差 0.003213 mm/s |
 | 37 | `37_sketch_autodim_param.py` | `TEST37_DONE` | 自动尺寸→命名参数：不调 `GetStatus` 也出尺寸（3 个）、改指后 dof=0、R10×5 拉伸 V=1570.7963（解析同值）、`R_TEST`×1.5 后 V=3534.2917（2.25 倍）、还原 1570.7963；反面对照 AutoConstrain 先跑 → 0 尺寸（这才是“不出尺寸”的真因） |
+| 38 | `38_measure.py` | `TEST38_DONE` | 12 项只读测量链：块+Ø20 凸台+Ø10 通孔+90° 锪面+R2 圆角 → 面类型 16/17/19/22、孔组 D10 壁长 28（顶边被圆角吃掉 2）、锥半角 45°、截面 z=10 面积 5843.147（解析 5842.920，0.0039%）、自 IoU 1.0、自比对 0 未匹配且最大差 0 |
 
 ## 反向验证记录
 

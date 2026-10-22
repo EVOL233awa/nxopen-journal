@@ -7,6 +7,12 @@
 
 ### Added
 
+- `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
+- `scripts/tests/38_measure.py`：受控实体测量用例（`TEST38_DONE`）；`RUN_TESTS.bat` 与 `tests/README.md` 登记。
+- `references/reverse-engineering.md` §10.1：无外部检查包时的自检闭环（量原件→建→量自建件→比），含面表→结构假设与截面站选择。
+- `references/reverse-engineering.md` §2.2/§4.2：腰形凹腔按截面放样切除、端盖 B 曲面按 z 窗口收口，以及耳座圆柱/孔长/锥面/底板/clevis/端盖的症状→动作。
+- `references/reverse-engineering.md` §8：孔包入口固定延伸改独立圆柱、锪面孔深校验、入口锥与孔壁分开建。
+- `references/modeling.md` §2.1b/§2.3：独立圆柱凸台用 `Origin`+`Direction`、斜耳座绕孔轴回转、孔包延伸与锪面深度。
 - `references/modeling.md` §4.2：AutoDimension 不出尺寸的判据改为 AutoConstrain 抢占；`GetStatus()` 只读 dof。
 - `references/modeling.md` §4.2b：新增自动尺寸接命名参数配方（`GetAllExpressions` 按 RHS 匹配后改指）。
 - `references/modeling.md` §4.3：新增共面堆叠特征表达式起点、倒圆边归属、一进程一次 `FileNew` 三条约束。
@@ -32,6 +38,7 @@
 
 ### Changed
 
+- 用例计数 37→38、gate 34→35、`nxlib` 五域→六域（`SKILL.md`/`README.md`/`tests/README.md` 同步）。
 - 逆向重建交付路线改为结构特征优先：组件按自然成形方式建（回转/拉伸/放样/布尔/阵列），特征数与结构数同量级；验收新增结构语义（无逐层拉伸堆栈、每个结构可单独修改），与几何验收同时通过。
 - 截面验收由“覆盖组件与平面族”收紧为“每站 IoU ≥0.95、面积差 ≤5%”。
 - `SKILL.md` 路由表中的逆向重建描述改为“原件+一句重建要求→测量链→截面/放样→切除→验收项”。

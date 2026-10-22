@@ -22,11 +22,13 @@
   modeling —— 块/表达式/草图/拉伸/孔/倒圆/阵列/布尔/面查找/包盒
   assembly —— 组件添加/单位阵/原型面查找/Touch 约束网络
   drafting —— 视图查询/UF 表格/PDF 导出/剖视配方
+  measure  —— 只读面表/同轴分组/孔锥参数/STL 截面面积与 IoU/件间比对
 """
 from . import testing
 from . import session
 from . import modeling
 from . import assembly
 from . import drafting
+from . import measure
 
 NXLIB_VERSION = "0.1.0"

@@ -126,6 +126,7 @@ cut.CommitFeature(); cut.Destroy()
 - `Diameter`/`Height` 只读，`.Expression.RightHandSide` 可绑定（`cyl.Diameter.RightHandSide = "D_Base"`）。
 - Builder 首参传 `NXOpen.Features.Feature.Null`（Cylinder/Block 等）、`NXOpen.Features.Cone.Null`（Cone）；`None` 报 TypeError。`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
 - **斜轴孔/锥孔切除（已验证）**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。受控实验：100×100×20 方块上斜轴（0.7,−0.7,0.139）Ø10 圆柱切除后 1 实体、体积 200000→195068.79；Ø10→Ø6 高 20 锥孔切除后 1 实体、体积降 1026.02（=πh/3(R²+Rr+r²)）。
+- **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。受控实验：100×60×20 方块上 Ø20×10 凸台合并后体积 123141.593（=120000+π·10²·10），单实体。
 
 ### 2.2 拉伸（Section 路线）
 
@@ -199,6 +200,8 @@ wp.Features.CreateSubtractFeature(target, False, tool_bodies, False, True)
 - 凸梯形可以有两条边落在旋转轴上（验证过 360° 旋转成功）；凹剖面/带台阶剖面才报 "Cannot create Swept geometry"。
 - 切完用 `ufs.Modeling.AskFaceData` 回读锥面：type 17、`rad_data` 即半角（弧度）、`radius` 在面基准点处。与孔表比较半径时，把两侧都归一到同一轴向站（面基准点），不要直接比原始 `radius`——UF 的面基准点随修剪边界移动。
 - 旋转轴方向与孔表 axis 相反时，`AskFaceData` 的 dir 会翻转；比较轴向用绝对值点积。
+- **孔轴与板法向不同（斜耳孔）时，耳座绕孔轴回转成圆柱再并**：棱柱只建到耳座切点，圆柱半径与轴向区间取面表；把棱柱直接沿板宽拉伸会把圆耳座包成方块，端站截面多料。反例与判据见 `reverse-engineering.md` §2.2/§4.2。
+- **孔包的入口延伸与锪面深度**：`HolePackageBuilder` 的刀具在孔位前固定延伸约 2 mm，量得孔壁起点更靠近入口面时改用独立圆柱切除体按轴向区间建；锪面形式的孔深必须大于 `(锪径−孔径)/2/tan(半角)`，通孔已存在时也写成该值加 1 mm。细则见 `reverse-engineering.md` §8。
 
 十字辅助线：
 
