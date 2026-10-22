@@ -684,3 +684,82 @@ def section_iou(mesh_a, mesh_b, origin, normal, step=None, weld=1e-4):
         "area_union": area_union,
         "step": step,
     }
+
+
+_VIEWS = {"top": (0, 1), "front": (0, 2), "side": (1, 2)}
+
+
+def _project(mesh, iu, iv, nrm=None):
+    out = []
+    for _, v0, v1, v2 in mesh:
+        if nrm is None:
+            out.append(((v0[iu], v0[iv]), (v1[iu], v1[iv]),
+                        (v2[iu], v2[iv])))
+        else:
+            out.append(((_dot(v0, iu), _dot(v0, iv)),
+                        (_dot(v1, iu), _dot(v1, iv)),
+                        (_dot(v2, iu), _dot(v2, iv))))
+    return out
+
+
+def _tri_span(tri, y):
+    xs = []
+    for k in range(3):
+        a = tri[k]
+        b = tri[(k + 1) % 3]
+        if (a[1] > y) != (b[1] > y):
+            xs.append(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]))
+    if len(xs) < 2:
+        return None
+    return (min(xs), max(xs))
+
+
+def view_iou(mesh_a, mesh_b, view="top", step=None):
+    """两网格沿 view 方向的轮廓 IoU（三角面投影并集，扫描线）。
+
+    view 取 "top"（u=x,v=y）、"front"（u=x,v=z）、"side"（u=y,v=z），
+    或一个法向三元组（按该方向投影）。面积单位随部件。
+    """
+    if isinstance(view, str):
+        iu, iv = _VIEWS[view.lower()]
+        nrm = None
+    else:
+        e1, e2 = _basis(view)
+        iu, iv = e1, e2
+        nrm = _unit(view)
+    pa = _project(mesh_a, iu, iv, nrm)
+    pb = _project(mesh_b, iu, iv, nrm)
+    us, vs = [], []
+    for tri in pa + pb:
+        for u, v in tri:
+            us.append(u)
+            vs.append(v)
+    if not us:
+        return {"iou": 1.0, "area_a": 0.0, "area_b": 0.0,
+                "area_inter": 0.0, "area_union": 0.0, "step": 0.0}
+    umin, umax, vmin, vmax = min(us), max(us), min(vs), max(vs)
+    diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
+    if step is None:
+        step = max(diag / 400.0, 0.05)
+    nrows = max(1, int(math.ceil((vmax - vmin) / step)))
+    inter = union = 0.0
+    area_a = area_b = 0.0
+    for iy in range(nrows):
+        y = vmin + (iy + 0.5) * step
+        sa = _merge([s for s in (_tri_span(t, y) for t in pa) if s])
+        sb = _merge([s for s in (_tri_span(t, y) for t in pb) if s])
+        ia = _span_inter(sa, sb)
+        inter += ia
+        area_a += _span_len(sa)
+        area_b += _span_len(sb)
+        union += _span_len(sa) + _span_len(sb) - ia
+    area_inter = inter * step
+    area_union = union * step
+    return {
+        "iou": (area_inter / area_union) if area_union > 0.0 else 1.0,
+        "area_a": area_a * step,
+        "area_b": area_b * step,
+        "area_inter": area_inter,
+        "area_union": area_union,
+        "step": step,
+    }

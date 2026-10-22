@@ -45,7 +45,7 @@ from nxlib.modeling import block, boolean, blend_on_edges
 from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            export_mesh, face_table, group_coaxial, hole_params,
                            cone_params, measure_part, mesh_bbox, read_stl,
-                           section_area, section_iou)
+                           section_area, section_iou, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -276,6 +276,11 @@ def main():
     check("REG_SECTION_IOU_SELF", abs(iou["iou"] - 1.0) < 1e-9,
           "same mesh vs itself IoU=%.12f (step=%.3f)" %
           (iou["iou"], iou["step"]))
+    top = view_iou(mesh, mesh, "top")
+    check("REG_VIEW_IOU", abs(top["iou"] - 1.0) < 1e-9 and
+          abs(top["area_a"] - EXPECT_AREA) <= 0.005 * EXPECT_AREA,
+          "top view IoU=%.12f area=%.3f analytic=%.3f (step=%.3f)" %
+          (top["iou"], top["area_a"], EXPECT_AREA, top["step"]))
 
     # ------------------------------------------------------ self compare
     cmp = compare_parts(part_path, part_path)

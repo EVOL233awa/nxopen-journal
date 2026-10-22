@@ -9,6 +9,12 @@
 
 - `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
 - `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
+- `scripts/nxlib/measure.py`：`view_iou` 给 top/front/side/任意法向的轮廓 IoU（三角面投影并集），用于 G5 自检。
+- `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
+- `references/reverse-engineering.md` §2.2：端部最高点取端部截面族最外站，不取中间站。
+- `references/reverse-engineering.md` §4.2：锥孔孔心/轴取面表 `point/dir`，不从截面圆拟合。
+- `references/reverse-engineering.md` §7：G8 存活检查先 ×1.1，抛 `Update undo` 即 broken；参数留 10% 余量，命名不以 `p` 开头。
+- `references/reverse-engineering.md` §10.1：自检测站取原件结构分界全集；G5 用 `view_iou`。
 - `references/reverse-engineering.md` §1：动手前先出结构清单（原件功能组为建模与自检分母），结构尺寸先建命名表达式再绑定。
 - `references/reverse-engineering.md` §10.1：自检分母用原件、功能清单筛 `ref_a`、匹配成功不等于合格、G4 用 STL 包盒。
 - `references/reverse-engineering.md` §2.2：有孔分瓣截面凸包只补孔内桥接，外边界取两瓣外包络。
