@@ -11,6 +11,15 @@
 - `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
 - `scripts/nxlib/measure.py`：`view_iou` 给 top/front/side/任意法向的轮廓 IoU（三角面投影并集），用于 G5 自检。
 - `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
+- `references/reverse-engineering.md` §1.1：新增结构表模板（证据/成形方式/特征名/自检站）与基体→臂耳叉→孔系→圆角的阶段关卡。
+- `references/reverse-engineering.md` §1.5：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。
+- `references/reverse-engineering.md` §2.2：放样限定为变截面头部（5–6 张结构站）；整件剪影闭合旋转会把环/腔/槽填实，回转体只旋转功能回转体。
+- `references/reverse-engineering.md` §2.2：孔把截面切成两瓣的站跳过、由相邻站桥接；塔体截面取实测外环，不用凸包。
+- `references/reverse-engineering.md` §4.2：底板低 z 站面积偏大归因于板底拔模，按底站/z4 外环放样并另切窗口。
+- `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
+- `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
+- `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
+- `references/reverse-engineering.md` §7：字面值轮廓的倒角刀在父孔径 ×1.1 时回滚，改用边倒角或绑定父径表达式。
 - `references/reverse-engineering.md` §2.2：端部最高点取端部截面族最外站，不取中间站。
 - `references/reverse-engineering.md` §4.2：锥孔孔心/轴取面表 `point/dir`，不从截面圆拟合。
 - `references/reverse-engineering.md` §7：G8 存活检查先 ×1.1，抛 `Update undo` 即 broken；参数留 10% 余量，命名不以 `p` 开头。
