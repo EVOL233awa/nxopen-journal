@@ -10,3 +10,4 @@ __pycache__/
 # pass and fail; ignore them in case a run is interrupted mid-case).
 scripts/tests/_gate_*.log
 
+.zcode/

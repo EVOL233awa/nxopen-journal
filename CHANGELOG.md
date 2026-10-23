@@ -27,6 +27,9 @@
 - `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
 - `references/reverse-engineering.md` §7：字面值轮廓的倒角刀在父孔径 ×1.1 时回滚，改用边倒角或绑定父径表达式。
 - `references/reverse-engineering.md` §2.2：端部最高点取端部截面族最外站，不取中间站。
+- `references/reverse-engineering.md` §4.2：倒角半径已绑父径、改孔深仍回滚时，把孔口/孔底倒角切在孔特征之前（孔加深只会重切掉它，布尔仍有料）。
+- `references/reverse-engineering.md` §4.2：表达式表里“改了体积不变”的参数是死参数，接上驱动尺寸或删除，否则可编辑性检查判失败。
+- `references/reverse-engineering.md` §4.2：水平截面全对、竖直截面在臂端仍缺料 2–4 mm 是放样面尖角下垂，加密截面无效，按垂直臂长的截面沿臂宽拉伸成棱柱再并。
 - `references/reverse-engineering.md` §4.2：锥孔孔心/轴取面表 `point/dir`，不从截面圆拟合。
 - `references/reverse-engineering.md` §7：G8 存活检查先 ×1.1，抛 `Update undo` 即 broken；参数留 10% 余量，命名不以 `p` 开头。
 - `references/reverse-engineering.md` §10.1：自检测站取原件结构分界全集；G5 用 `view_iou`。
