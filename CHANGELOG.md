@@ -68,6 +68,11 @@
 - `references/modeling.md` §4.3：`RevolveBuilder` 对草图截面报 `memory access violation`，改用 UF `Modl.CreateRevolved`。
 - `references/modeling.md` §4.4：沉孔 HolePackage 配方（`GeneralHoleForm=HoleForms.Counterbored` + `GeneralCounterboreHole*` + `GeneralCounterbore*`），受控实验与解析值一致；直径/深度可传表达式名。
 - `SKILL.md` §3：`SaveAs` 到已存在路径报 `File already exists`，阶段件写新路径或先删目标。
+- `references/reverse-engineering.md` §2.2：等截面判据量化（底/中/顶三站面积差 ≤2% 且轮廓重合），面积随站位单调变化即按底站与中站分段成形，不用中间轮廓拉整厚。
+- `references/reverse-engineering.md` §4.1：阶段门与自检站是阻塞条件，低于阈值不进下一阶段、不带低站交付。
+- `references/reverse-engineering.md` §4.2：包盒单方向大 0.3–1 mm 且极值在凸角归因于未建倒圆/倒角，补局部倒角而非整件倒圆。
+- `references/reverse-engineering.md` §7：公式型表达式被逐项改数值的存活检查跳过、存活率到不了 1.0，交付件命名表达式一律写数值。
+- `references/reverse-engineering.md` §8：孔壁长度比原件长 0.5–1 mm 的整倍数归因于入口倒角未切，先建倒角再复测，不缩孔深。
 
 ### Changed
 
