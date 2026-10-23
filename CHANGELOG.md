@@ -73,6 +73,9 @@
 - `references/reverse-engineering.md` §4.2：包盒单方向大 0.3–1 mm 且极值在凸角归因于未建倒圆/倒角，补局部倒角而非整件倒圆。
 - `references/reverse-engineering.md` §7：公式型表达式被逐项改数值的存活检查跳过、存活率到不了 1.0，交付件命名表达式一律写数值。
 - `references/reverse-engineering.md` §8：孔壁长度比原件长 0.5–1 mm 的整倍数归因于入口倒角未切，先建倒角再复测，不缩孔深。
+- `references/reverse-engineering.md` §2：解析边界（圆角/圆孔/圆弧外缘）用精确圆弧 + 直线建截面，不按采样点逐段建线；判据是面类型直方图里圆柱/圆锥/B 曲面占圆弧边界。
+- `references/reverse-engineering.md` §10.1：交付前数拓扑（曲线数、面类型直方图、面数比原件），构造线删掉或隐藏；平面占八成即折线化。
+- `references/modeling.md` §2.2b：N 点折线是放样输入不是交付边界，放样后按面表半径重建解析圆弧。
 
 ### Changed
 
