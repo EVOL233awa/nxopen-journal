@@ -14,7 +14,13 @@
 - `references/reverse-engineering.md` §1.1：新增结构表模板（证据/成形方式/特征名/自检站）与基体→臂耳叉→孔系→圆角的阶段关卡。
 - `references/reverse-engineering.md` §1.5：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。
 - `references/reverse-engineering.md` §2.2：放样限定为变截面头部（5–6 张结构站）；整件剪影闭合旋转会把环/腔/槽填实，回转体只旋转功能回转体。
-- `references/reverse-engineering.md` §2.2：孔把截面切成两瓣的站跳过、由相邻站桥接；塔体截面取实测外环，不用凸包。
+- `references/reverse-engineering.md` §2.2：孔把截面切成两瓣的站按形心射线合成外包裹并取凸包（跳站会削掉凸台外侧瓣，自交截面让放样静默失效）；塔体截面取实测外环，不用整环凸包。
+- `references/reverse-engineering.md` §2.2：凸台端面垂直于斜孔轴时，水平截面族收不出端面，按端面截面沿轴拉伸有界棱柱再并。
+- `references/reverse-engineering.md` §4.2：沉孔底面是锥面时改“浅孔 + 45° 锥刀”，加实心锥会封孔并零壁厚回滚。
+- `references/reverse-engineering.md` §4.2：孔内浮环在大孔径下脱离孔壁致 `Update undo`，改三段同轴孔并绑定主径表达式。
+- `references/reverse-engineering.md` §4.2：修边盒按“区域”给大盒会切掉环/肋/根部凸台，只覆盖要修的 0.1–0.2 mm。
+- `references/reverse-engineering.md` §4.2：相邻两段放样首末截面来源不同会在接缝报 intersecting faces，同 z 带只用一套来源。
+- `references/reverse-engineering.md` §4.2：命名尺寸改后部分特征回滚说明该尺寸未被所有相关面引用，同轴/相邻面一律写成它的表达式。
 - `references/reverse-engineering.md` §4.2：底板低 z 站面积偏大归因于板底拔模，按底站/z4 外环放样并另切窗口。
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
 - `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
