@@ -76,6 +76,8 @@
 - `references/reverse-engineering.md` §2：解析边界（圆角/圆孔/圆弧外缘）用精确圆弧 + 直线建截面，不按采样点逐段建线；判据是面类型直方图里圆柱/圆锥/B 曲面占圆弧边界。
 - `references/reverse-engineering.md` §10.1：交付前数拓扑（曲线数、面类型直方图、面数比原件），构造线删掉或隐藏；平面占八成即折线化。
 - `references/modeling.md` §2.2b：N 点折线是放样输入不是交付边界，放样后按面表半径重建解析圆弧。
+- `references/reverse-engineering.md` §2：裸曲线轮廓的长/宽/圆角是静默死参数，改草图 + 驱动尺寸或特征化几何；拉伸后不删父曲线。
+- `references/reverse-engineering.md` §4.2：圆角/切角参数用体积 + 角部圆柱/环面半径复核，不用包盒。
 
 ### Changed
 
