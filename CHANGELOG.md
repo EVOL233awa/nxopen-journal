@@ -169,6 +169,9 @@
 - 维护规则：新知识按“结论/做法”模板入库，禁止日期与过程叙述；`check_repo.py` 新增 CONCISE 组自动拦截，并保留“先合并后追加”的增长纪律（不设体积硬上限）。
 - `references/assembly-drafting.md`：移动副改用两组平面 `Touch`；补轴环 + `Touch` 去轴向滑动；约束枚举补全并标注 `ValueOf` 非成员；`Matrix3x3` 字段组语义明确为局部轴分量。
 - `references/gb-drawing.md`：导入骨架改为绝对路径插入 `sys.path`；装配图尺寸增加 PDF 文本层数值复核硬步骤。
+- `references/reverse-engineering.md` §2.2：端部耳座沿臂轴先鼓后收，等分站插值会削平鼓包（150 站少 27%）并被孔座圆柱顶替；耳座按孔轴截面族放样，孔座圆柱只代表孔口包络。
+- `references/reverse-engineering.md` §4.2：自检站 IoU < 0.5 归因为结构缺失（端部/耳座/槽/孔），按结构补建而不是调截面。
+- `references/reverse-engineering.md` §10.1：交付前逐组件比轴向投影极值，差 >1 mm 即端部缺失或外推。
 - `references/modeling.md`：补相切工具体布尔失败；新增 §3.7 渐开线齿轮标准层入口。
 - `references/drafting-annotation.md`：剖视图 placement origin 与内容中心的偏移说明。
 - `nxlib.modeling.expressions` 增加 `unit_name` 参数，角度表达式可传 `"Angle"`（默认仍为 `"Length"`）。
