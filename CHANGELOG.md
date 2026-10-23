@@ -172,6 +172,8 @@
 - `references/reverse-engineering.md` §2.2：端部耳座沿臂轴先鼓后收，等分站插值会削平鼓包（150 站少 27%）并被孔座圆柱顶替；耳座按孔轴截面族放样，孔座圆柱只代表孔口包络。
 - `references/reverse-engineering.md` §4.2：自检站 IoU < 0.5 归因为结构缺失（端部/耳座/槽/孔），按结构补建而不是调截面。
 - `references/reverse-engineering.md` §10.1：交付前逐组件比轴向投影极值，差 >1 mm 即端部缺失或外推。
+- `references/reverse-engineering.md` §2.1：重建轮廓直接取 B-rep 精确截面段（线/弧判定、样条拟合到 0.02 mm、圆心投影保证端点相接），不从 STL 重采样。
+- `references/reverse-engineering.md` §2.1：批处理打开刚生成的 prt 报 `File already exists`，改从另一目录打开副本或先开原件。
 - `references/modeling.md`：补相切工具体布尔失败；新增 §3.7 渐开线齿轮标准层入口。
 - `references/drafting-annotation.md`：剖视图 placement origin 与内容中心的偏移说明。
 - `nxlib.modeling.expressions` 增加 `unit_name` 参数，角度表达式可传 `"Angle"`（默认仍为 `"Length"`）。
