@@ -18,6 +18,9 @@
 - `references/reverse-engineering.md` §1：动手前先出结构清单（原件功能组为建模与自检分母），结构尺寸先建命名表达式再绑定。
 - `references/reverse-engineering.md` §10.1：自检分母用原件、功能清单筛 `ref_a`、匹配成功不等于合格、G4 用 STL 包盒。
 - `references/reverse-engineering.md` §2.2：有孔分瓣截面凸包只补孔内桥接，外边界取两瓣外包络。
+- `references/reverse-engineering.md` §2.2：重采样点数按弦高定（`N ≥ π·sqrt(r_max/(2·tol))`）；端部收口沿用末站量得轮廓，不缩放极值截面。
+- `references/reverse-engineering.md` §4.2：俯视 `only_b` 偏大归因于开口被单环放样/凸包填实；包盒偏短归因于收口缩放或末站内移。
+- `references/reverse-engineering.md` §10.1：自检结论取整链布尔值（`pass` 且 `unmatched_a` 为空），`pairs` 数不作通过证据。
 - `references/reverse-engineering.md` §4.2：低 z 多料→底部让位结构或外圆锥形过渡。
 - `references/reverse-engineering.md` §7/§9：尺寸参数化属于交付件；圆角是交付前固定阶段。
 - `scripts/tests/38_measure.py`：受控实体测量用例（`TEST38_DONE`）；`RUN_TESTS.bat` 与 `tests/README.md` 登记。
