@@ -83,6 +83,7 @@
 - `references/reverse-engineering.md` §10.1：站表从面表生成（水平平面族、孔轴端点/中点/法向站、臂轴 0/0.5/1），只取 z 站的子集自检与整门结论相反。
 - `references/reverse-engineering.md` §10.1：每类失败只重建一次，非功能多出面不计缺陷，几何与结构门做齐后再评估圆角；`THRU_CURVE` 告警同样算 G8 失败。
 - `references/modeling.md` §1.7：参数命名不用 `p`/`P` 前缀，判据交叉引用 `reverse-engineering.md` §7。
+- `references/reverse-engineering.md` §9：交界交线平均段长 <1 mm 时 `EdgeBlend` 三种失败（终止/应用/滚过尖边）；根部 flare 放进末截面或先合并切向面。
 
 ### Changed
 
