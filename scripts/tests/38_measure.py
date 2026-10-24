@@ -21,6 +21,16 @@
 #           pairs with itself, so all deltas are zero and nothing is
 #           unmatched. That is the exact assertion a self-check makes after
 #           a rebuild.
+#
+#   deviation area-weighted surface samples -> exact point-triangle distance
+#           A plane lifted 2 mm gives RMS/P95 2.0 in both directions; the same
+#           mesh against itself gives zero, and the same seed reproduces the
+#           sample set.
+#
+#   stations plane families and cylinder/cone axes from the face table ->
+#           section IoU per station. The controlled part must yield the block
+#           bottom/top, boss top and the hole axes, and every self station
+#           must pass. verify_parts composes G0-G6 in one call.
 import math
 import os
 
@@ -45,7 +55,9 @@ from nxlib.modeling import block, boolean, blend_on_edges
 from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            export_mesh, face_table, group_coaxial, hole_params,
                            cone_params, measure_part, mesh_bbox, read_stl,
-                           section_area, section_iou, view_iou)
+                           mesh_deviation, sample_surface, section_area,
+                           section_iou, station_plan, station_report,
+                           verify_parts, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -317,6 +329,57 @@ def main():
           "inventory compare: %d cyl + %d cone groups, pass=%s" %
           (len(cmp_inv["cylinders"]["pairs"]),
            len(cmp_inv["cones"]["pairs"]), cmp_inv["pass"]))
+
+    # ------------------------------------------------- deviation + stations
+    pts_a = sample_surface(mesh, count=300, seed=11)
+    pts_b = sample_surface(mesh, count=300, seed=11)
+    pts_c = sample_surface(mesh, count=300, seed=12)
+    check("REG_SAMPLE_SEED",
+          len(pts_a) == 300 and pts_a == pts_b and pts_a != pts_c,
+          "deterministic samples=%d, different seed differs=%s" %
+          (len(pts_a), pts_a != pts_c))
+    dev_self = mesh_deviation(mesh, mesh, samples=800)
+    check("REG_DEVIATION_SELF",
+          dev_self["pass"] and dev_self["a_to_b"]["max"] < 1e-8 and
+          dev_self["b_to_a"]["max"] < 1e-8,
+          "self deviation max %.3e / %.3e" %
+          (dev_self["a_to_b"]["max"], dev_self["b_to_a"]["max"]))
+    nrm = [0.0, 0.0, 1.0]
+    plane_a = [(nrm, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0])]
+    plane_b = [(nrm, [0.0, 0.0, 2.0], [10.0, 0.0, 2.0], [0.0, 10.0, 2.0])]
+    dev_shift = mesh_deviation(plane_a, plane_b, samples=600, seed=5)
+    check("REG_DEVIATION_SHIFT",
+          abs(dev_shift["a_to_b"]["rms"] - 2.0) < 1e-6 and
+          abs(dev_shift["b_to_a"]["p95"] - 2.0) < 1e-6,
+          "2 mm plane shift: rms %.6f/%.6f p95 %.6f/%.6f" %
+          (dev_shift["a_to_b"]["rms"], dev_shift["b_to_a"]["rms"],
+           dev_shift["a_to_b"]["p95"], dev_shift["b_to_a"]["p95"]))
+
+    plan = station_plan(mp)
+    normals = [tuple(round(v, 3) for v in s["normal"])
+               for s in plan["stations"]]
+    check("REG_STATION_PLAN",
+          plan["count"] >= 7 and plan["axis_count"] >= 3 and
+          (0.0, 0.0, 1.0) in normals and
+          any(abs(s["offset"]) < 1e-6 for s in plan["stations"]),
+          "stations=%d plane=%d axis=%d normals=%s" %
+          (plan["count"], plan["plane_count"], plan["axis_count"],
+           sorted(set(normals))))
+    rep = station_report(mesh, mesh, plan)
+    check("REG_STATION_SELF",
+          rep["pass"] and rep["count"] == plan["count"] and
+          all(abs(r["iou"] - 1.0) < 1e-9 for r in rep["stations"]),
+          "self station report count=%d failed=%d" %
+          (rep["count"], len(rep["failed"])))
+
+    ver = verify_parts(part_path, part_path, samples=800, max_stations=48)
+    check("REG_VERIFY_SELF",
+          ver["pass"] and ver["gates"]["G1"]["pass"] and
+          ver["gates"]["G2"]["pass"] and ver["gates"]["G6"]["pass"],
+          "verify_parts self: gates=%s stations=%d" %
+          (dict((k, ver["gates"][k]["pass"]) for k in
+                ("G0", "G1", "G2", "G3", "G4", "G5", "G6")),
+           ver["stations"]["count"]))
 
     failed = [n for n, v in RESULTS if not v]
     say("TEST38_CASES=%d" % len(RESULTS))

@@ -122,6 +122,10 @@
 - `references/reverse-engineering.md` §4/§4.2/§10：删“阈值按任务确定”“铸件放宽 5%”“阈值与零件类型不匹配即改阈值”三处自定口径，结果不符先查测量口径与站表。
 - `references/reverse-engineering.md` §10.1：站表按每个结构自身轴取根/中/端、开口/槽取槽底与两端，不按全局三轴枚举。
 - `references/reverse-engineering.md` §10.1：一次性重建限缩为数值项，结构缺失回清单补建。
+- `scripts/nxlib/measure.py`：`mesh_deviation` 给双向面积加权点—面 RMS/P95（精确点到三角面距离、均匀网格索引、固定 seed）；`station_plan`/`station_report` 从面表平面族与圆柱/圆锥轴生成测站并逐站复算；`verify_parts` 汇总 G0–G6；`measure_part`/`compare_parts` 增加单位与毫米换算。
+- `scripts/tests/38_measure.py`：新增采样复现、已知 2 mm 平移偏差、偏差自比对、自动测站自比对与 `verify_parts` 自比对 5 项断言（15→21 项）。
+- `references/reverse-engineering.md` §10.1：新增 `verify_parts` 通用几何门汇总与 `mesh_deviation`/`station_plan` 用法。
+- `references/reverse-engineering.md` §4.1：G6 由相对比例改为双向 RMS ≤0.8 mm、P95 ≤1.8 mm。
 
 ### Changed
 

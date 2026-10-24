@@ -8,14 +8,19 @@
   截面  DexManager STL 导出（弦高 0.01 mm）后用平面切三角网格，环按外法
         向定向：外环正面积、孔环负面积，净面积取代数和。同一函数既能量
         原件也能量自建件，所以自检闭环是"量原件 → 建 → 量自建件 → 比"。
+  偏差  面积加权表面采样 + 精确点—三角面距离 + 均匀网格索引，两个方向
+        分别给 RMS/P95；测站由面表平面族和孔/锥轴生成，逐站复算面积与
+        IoU。`verify_parts` 把 G0–G6 汇总成一次调用。
 
 约定：
   圆柱=16、圆锥=17、圆环=19、平面=22（Parasolid 面类型）。
   圆锥半角对外用度；UF 的 rad_data 是弧度。
   长度单位随部件（mm）。
 """
+import bisect
 import math
 import os
+import random
 import struct
 import tempfile
 
@@ -33,6 +38,19 @@ _MESH_SEQ = [0]
 
 def _ufs():
     return NXOpen.UF.UFSession.GetUFSession()
+
+
+def part_length_scale(part):
+    """部件长度单位到毫米的倍率；未知单位按 1.0 并返回 "unknown"。"""
+    try:
+        pu = part.PartUnits
+        if pu == NXOpen.Part.Units.Inches:
+            return "inch", 25.4
+        if pu == NXOpen.Part.Units.Millimeters:
+            return "mm", 1.0
+    except Exception:
+        pass
+    return "unknown", 1.0
 
 
 def _unit(v):
@@ -289,11 +307,17 @@ def cone_params(group):
 
 
 def measure_part(path, with_edges=True):
-    """只读量一个部件：体积/体数/特征数/面表/圆柱组/圆锥组。"""
+    """只读量一个部件：体积/体数/特征数/面表/圆柱组/圆锥组。
+
+    长度量随部件单位；`length_scale` 是换算到毫米的倍率，体积已按 mm³ 返回。
+    """
     part = open_part(path)
+    units, scale = part_length_scale(part)
     faces = face_table(part, with_edges=with_edges)
     return {
         "path": part.FullPath,
+        "units": units,
+        "length_scale": scale,
         "volume": part_volume(part),
         "bodies": len(list(part.Bodies)),
         "features": len(list(part.Features)),
@@ -364,10 +388,24 @@ def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
     }
 
 
+def _scale_group(group, scale):
+    """组内长度量换到毫米；轴、半角与面 tag 不变。"""
+    if scale == 1.0:
+        return dict(group)
+    out = dict(group)
+    for key in ("radius", "length"):
+        out[key] = group[key] * scale
+    for key in ("point", "center", "bbox", "extent"):
+        out[key] = [v * scale for v in group[key]]
+    out["faces"] = list(group["faces"])
+    out["ends"] = [(tag, t * scale) for tag, t in group.get("ends", [])]
+    return out
+
+
 def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
                   axis_tol_deg=0.1, length_tol=0.1, half_angle_tol=0.1,
                   ref_a=None, ref_b=None):
-    """原件/自建件的 G2 口径比对。
+    """原件/自建件的 G2 口径比对（长度容差按毫米，组先换算单位）。
 
     匹配条件：半径差 ≤2×radius_tol、轴角 ≤axis_tol_deg、孔心（垂直于轴的
     平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度，圆锥再加半角。
@@ -387,18 +425,26 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
         keys = set(tuple(g["faces"]) for g in ref)
         return [g for g in groups if tuple(g["faces"]) in keys]
 
-    cyl = _match_groups(subset(a["cylinders"], ref_a),
-                        subset(b["cylinders"], ref_b), CYLINDER,
-                        radius_tol, center_tol, axis_tol_deg,
-                        length_tol, half_angle_tol)
-    cones = _match_groups(subset(a["cones"], ref_a),
-                          subset(b["cones"], ref_b), CONE,
-                          radius_tol, center_tol, axis_tol_deg,
-                          length_tol, half_angle_tol)
+    a_cyl = [_scale_group(g, a["length_scale"])
+             for g in subset(a["cylinders"], ref_a)]
+    a_con = [_scale_group(g, a["length_scale"])
+             for g in subset(a["cones"], ref_a)]
+    b_cyl = [_scale_group(g, b["length_scale"])
+             for g in subset(b["cylinders"], ref_b)]
+    b_con = [_scale_group(g, b["length_scale"])
+             for g in subset(b["cones"], ref_b)]
+    cyl = _match_groups(a_cyl, b_cyl, CYLINDER, radius_tol, center_tol,
+                        axis_tol_deg, length_tol, half_angle_tol)
+    cones = _match_groups(a_con, b_con, CONE, radius_tol, center_tol,
+                          axis_tol_deg, length_tol, half_angle_tol)
     return {
-        "a": {"path": a["path"], "volume": a["volume"],
+        "a": {"path": a["path"], "units": a["units"],
+              "length_scale": a["length_scale"],
+              "volume": a["volume"],
               "bodies": a["bodies"], "features": a["features"]},
-        "b": {"path": b["path"], "volume": b["volume"],
+        "b": {"path": b["path"], "units": b["units"],
+              "length_scale": b["length_scale"],
+              "volume": b["volume"],
               "bodies": b["bodies"], "features": b["features"]},
         "delta_volume": b["volume"] - a["volume"],
         "delta_volume_ratio": ((b["volume"] - a["volume"]) / a["volume"]
@@ -762,4 +808,418 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
         "area_inter": area_inter,
         "area_union": area_union,
         "step": step,
+    }
+
+
+def scale_mesh(mesh, factor):
+    """把网格顶点乘一个长度倍率（单位换算用）；法向只重归一化。"""
+    if factor == 1.0:
+        return list(mesh)
+    out = []
+    for nrm, v0, v1, v2 in mesh:
+        out.append((list(nrm),
+                    [v0[i] * factor for i in range(3)],
+                    [v1[i] * factor for i in range(3)],
+                    [v2[i] * factor for i in range(3)]))
+    return out
+
+
+def sample_surface(mesh, count=4000, seed=0):
+    """按面积加权在三角面上取点；同一 seed 与 count 输出逐点相同。"""
+    if not mesh:
+        return []
+    areas = []
+    total = 0.0
+    for _, v0, v1, v2 in mesh:
+        cr = _cross(_sub(v1, v0), _sub(v2, v0))
+        ar = 0.5 * math.sqrt(_dot(cr, cr))
+        total += ar
+        areas.append(total)
+    if total <= 1e-15:
+        return []
+    rnd = random.Random(seed)
+    pts = []
+    n = int(count)
+    for _ in range(n):
+        idx = bisect.bisect_left(areas, rnd.random() * total)
+        if idx >= len(mesh):
+            idx = len(mesh) - 1
+        _, v0, v1, v2 = mesh[idx]
+        u = rnd.random()
+        v = rnd.random()
+        if u + v > 1.0:
+            u = 1.0 - u
+            v = 1.0 - v
+        d1 = _sub(v1, v0)
+        d2 = _sub(v2, v0)
+        pts.append([v0[i] + u * d1[i] + v * d2[i] for i in range(3)])
+    return pts
+
+
+def point_triangle_distance(p, v0, v1, v2):
+    """点到三角面的精确最近距离（Ericson 区域判定）。"""
+    ab = _sub(v1, v0)
+    ac = _sub(v2, v0)
+    ap = _sub(p, v0)
+    d1 = _dot(ab, ap)
+    d2 = _dot(ac, ap)
+    if d1 <= 0.0 and d2 <= 0.0:
+        return math.sqrt(_dot(ap, ap))
+    bp = _sub(p, v1)
+    d3 = _dot(ab, bp)
+    d4 = _dot(ac, bp)
+    if d3 >= 0.0 and d4 <= d3:
+        return math.sqrt(_dot(bp, bp))
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        den = d1 - d3
+        t = d1 / den if abs(den) > 1e-30 else 0.0
+        q = [v0[i] + t * ab[i] for i in range(3)]
+        return math.sqrt(_dot(_sub(p, q), _sub(p, q)))
+    cp = _sub(p, v2)
+    d5 = _dot(ab, cp)
+    d6 = _dot(ac, cp)
+    if d6 >= 0.0 and d5 <= d6:
+        return math.sqrt(_dot(cp, cp))
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        den = d2 - d6
+        t = d2 / den if abs(den) > 1e-30 else 0.0
+        q = [v0[i] + t * ac[i] for i in range(3)]
+        return math.sqrt(_dot(_sub(p, q), _sub(p, q)))
+    va = d3 * d6 - d5 * d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        den = (d4 - d3) + (d5 - d6)
+        t = (d4 - d3) / den if abs(den) > 1e-30 else 0.0
+        q = [v1[i] + t * (v2[i] - v1[i]) for i in range(3)]
+        return math.sqrt(_dot(_sub(p, q), _sub(p, q)))
+    den = va + vb + vc
+    if abs(den) < 1e-30:
+        return min(_point_segment_distance(p, v0, v1),
+                   _point_segment_distance(p, v1, v2),
+                   _point_segment_distance(p, v2, v0))
+    v = vb / den
+    w = vc / den
+    q = [v0[i] + ab[i] * v + ac[i] * w for i in range(3)]
+    return math.sqrt(_dot(_sub(p, q), _sub(p, q)))
+
+
+def _point_segment_distance(p, a, b):
+    e = _sub(b, a)
+    ee = _dot(e, e)
+    if ee < 1e-30:
+        return math.sqrt(_dot(_sub(p, a), _sub(p, a)))
+    t = max(0.0, min(1.0, _dot(_sub(p, a), e) / ee))
+    q = [a[i] + t * e[i] for i in range(3)]
+    return math.sqrt(_dot(_sub(p, q), _sub(p, q)))
+
+
+def _tri_bounds(tri):
+    _, v0, v1, v2 = tri
+    lo = [min(v0[i], v1[i], v2[i]) for i in range(3)]
+    hi = [max(v0[i], v1[i], v2[i]) for i in range(3)]
+    return lo, hi
+
+
+def _mesh_grid(mesh, axis_cells=32):
+    """按三角面包盒把索引装进均匀网格；返回网格查询所需的全部数据。"""
+    if not mesh:
+        return None
+    boxes = [_tri_bounds(t) for t in mesh]
+    lo = [min(b[0][i] for b in boxes) for i in range(3)]
+    hi = [max(b[1][i] for b in boxes) for i in range(3)]
+    diag = math.sqrt(sum((hi[i] - lo[i]) ** 2 for i in range(3)))
+    cell = max(diag / float(axis_cells), 1e-6)
+    dims = [max(1, int(math.ceil((hi[i] - lo[i]) / cell))) for i in range(3)]
+    grid = {}
+    for idx, (blo, bhi) in enumerate(boxes):
+        i0 = max(0, min(dims[0] - 1, int(math.floor((blo[0] - lo[0]) / cell))))
+        i1 = max(0, min(dims[0] - 1, int(math.floor((bhi[0] - lo[0]) / cell))))
+        j0 = max(0, min(dims[1] - 1, int(math.floor((blo[1] - lo[1]) / cell))))
+        j1 = max(0, min(dims[1] - 1, int(math.floor((bhi[1] - lo[1]) / cell))))
+        k0 = max(0, min(dims[2] - 1, int(math.floor((blo[2] - lo[2]) / cell))))
+        k1 = max(0, min(dims[2] - 1, int(math.floor((bhi[2] - lo[2]) / cell))))
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                for k in range(k0, k1 + 1):
+                    grid.setdefault((i, j, k), []).append(idx)
+    return {"mesh": mesh, "lo": lo, "hi": hi, "cell": cell,
+            "dims": dims, "grid": grid}
+
+
+def _axis_cell_distance(p, lo, cell, idx):
+    c0 = lo + idx * cell
+    c1 = c0 + cell
+    if p < c0:
+        return c0 - p
+    if p > c1:
+        return p - c1
+    return 0.0
+
+
+def _ring_lower_bound(p, ci, lo, cell, dims, r):
+    """到 Chebyshev 环 r 的保守下界（环内至少有一轴落在 ci±r）。"""
+    if r == 0:
+        return math.sqrt(sum(_axis_cell_distance(p[i], lo[i], cell, ci[i]) ** 2
+                             for i in range(3)))
+    best = 1e300
+    for axis in range(3):
+        for side in (-r, r):
+            idx = ci[axis] + side
+            if 0 <= idx < dims[axis]:
+                best = min(best, _axis_cell_distance(p[axis], lo[axis],
+                                                     cell, idx))
+    return best if best < 1e300 else 0.0
+
+
+def _grid_distance(p, index):
+    if index is None:
+        return 0.0
+    lo, hi, cell, dims = (index["lo"], index["hi"], index["cell"],
+                          index["dims"])
+    ci = [max(0, min(dims[i] - 1, int(math.floor((p[i] - lo[i]) / cell))))
+          for i in range(3)]
+    best = 1e300
+    maxr = max(dims) + 2
+    for r in range(0, maxr + 1):
+        if best < 1e300:
+            bound = _ring_lower_bound(p, ci, lo, cell, dims, r)
+            if bound > best:
+                break
+        for di in range(-r, r + 1):
+            for dj in range(-r, r + 1):
+                for dk in range(-r, r + 1):
+                    if max(abs(di), abs(dj), abs(dk)) != r:
+                        continue
+                    i, j, k = ci[0] + di, ci[1] + dj, ci[2] + dk
+                    if not (0 <= i < dims[0] and 0 <= j < dims[1] and
+                            0 <= k < dims[2]):
+                        continue
+                    for idx in index["grid"].get((i, j, k), ()):
+                        _, a, b, c = index["mesh"][idx]
+                        d = point_triangle_distance(p, a, b, c)
+                        if d < best:
+                            best = d
+    if best >= 1e300:
+        for _, a, b, c in index["mesh"]:
+            d = point_triangle_distance(p, a, b, c)
+            if d < best:
+                best = d
+    return best
+
+
+def _distance_stats(vals):
+    vals = sorted(vals)
+    n = len(vals)
+    if n == 0:
+        return {"n": 0, "mean": 0.0, "rms": 0.0, "p50": 0.0,
+                "p95": 0.0, "max": 0.0}
+    total = sum(vals)
+    return {
+        "n": n,
+        "mean": total / n,
+        "rms": math.sqrt(sum(v * v for v in vals) / n),
+        "p50": vals[int(0.5 * (n - 1))],
+        "p95": vals[int(0.95 * (n - 1))],
+        "max": vals[-1],
+    }
+
+
+def mesh_deviation(mesh_a, mesh_b, samples=4000, seed=0,
+                   rms_max=0.8, p95_max=1.8):
+    """双向面积加权点—面偏差；两个方向都按同一采样口径统计。"""
+    out = {}
+    for label, src, dst in (("a_to_b", mesh_a, mesh_b),
+                            ("b_to_a", mesh_b, mesh_a)):
+        pts = sample_surface(src, count=samples, seed=seed)
+        index = _mesh_grid(dst)
+        vals = [_grid_distance(p, index) for p in pts]
+        out[label] = _distance_stats(vals)
+    ok = all(out[k]["rms"] <= rms_max and out[k]["p95"] <= p95_max
+             for k in ("a_to_b", "b_to_a"))
+    return {
+        "a_to_b": out["a_to_b"],
+        "b_to_a": out["b_to_a"],
+        "rms_max": rms_max,
+        "p95_max": p95_max,
+        "pass": ok,
+    }
+
+
+def station_plan(measure, max_stations=96, offset_tol=1e-4):
+    """由原件面表、孔/锥组生成测站（截面法向 + 位置）。
+
+    平行平面族每个不同偏距一站；每个圆柱/圆锥组沿自身轴取根、中、端附近
+    三站。站点以 (法向, 偏距) 去重；超过预算时保留全部孔站，再按偏距均匀
+    保留平面站，并在 dropped 中记数。
+    """
+    faces = measure["faces"]
+    groups = list(measure.get("cylinders", [])) + \
+        list(measure.get("cones", []))
+    acc = {}
+    order = []
+
+    def axis_key(d):
+        d = _canon(d)
+        return (round(d[0], 3), round(d[1], 3), round(d[2], 3))
+
+    def add(origin, normal, source):
+        n = _canon(normal)
+        off = _dot(origin, n)
+        key = (axis_key(n), round(off / max(offset_tol, 1e-9)))
+        if key in acc:
+            if source not in acc[key]["sources"]:
+                acc[key]["sources"].append(source)
+            return
+        rec = {"origin": [off * n[i] for i in range(3)],
+               "normal": list(n),
+               "offset": off,
+               "sources": [source],
+               "kind": "plane" if source.startswith("plane") else "axis"}
+        acc[key] = rec
+        order.append(key)
+
+    seen_planes = 0
+    for f in faces:
+        if f.get("type") != PLANE:
+            continue
+        add(f["point"], f["dir"], "plane#%d" % seen_planes)
+        seen_planes += 1
+    for gi, g in enumerate(groups):
+        lo, hi = g["extent"]
+        length = hi - lo
+        if length <= 1e-6:
+            continue
+        inset = min(0.5, 0.1 * length)
+        for t in (lo + inset, 0.5 * (lo + hi), hi - inset):
+            origin = [g["point"][i] + t * g["axis"][i] for i in range(3)]
+            add(origin, g["axis"], "axis#%d" % gi)
+
+    stations = [acc[k] for k in order]
+    plane_count = len([s for s in stations if s["kind"] == "plane"])
+    dropped = 0
+    if max_stations and len(stations) > max_stations:
+        axis = [s for s in stations if s["kind"] == "axis"]
+        plane = [s for s in stations if s["kind"] == "plane"]
+        keep_plane = max(0, int(max_stations) - len(axis))
+        if keep_plane < len(plane):
+            step = float(len(plane)) / max(1, keep_plane)
+            plane = [plane[int(i * step)] for i in range(keep_plane)]
+        stations = plane + axis
+        dropped = plane_count + len(axis) - len(stations)
+        plane_count = len(plane)
+    stations.sort(key=lambda s: (tuple(s["normal"]), s["offset"]))
+    return {
+        "stations": stations,
+        "count": len(stations),
+        "plane_count": plane_count,
+        "axis_count": len(stations) - plane_count,
+        "dropped": dropped,
+    }
+
+
+def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
+                   area_err_max_pct=5.0):
+    """逐站截面 IoU / 面积差；plan 取 station_plan 的返回值或其 stations。"""
+    stations = plan["stations"] if isinstance(plan, dict) else plan
+    rows = []
+    failed = []
+    for i, st in enumerate(stations):
+        res = section_iou(mesh_a, mesh_b, st["origin"], st["normal"])
+        aa, ab = res["area_a"], res["area_b"]
+        if abs(aa) > 1e-9:
+            err = abs(ab - aa) / abs(aa) * 100.0
+        else:
+            err = 0.0 if abs(ab) <= 1e-9 else 100.0
+        ok = res["iou"] >= iou_min and err <= area_err_max_pct
+        rows.append({
+            "index": i,
+            "origin": list(st["origin"]),
+            "normal": list(st["normal"]),
+            "sources": list(st.get("sources", [])),
+            "iou": res["iou"],
+            "area_a": aa,
+            "area_b": ab,
+            "area_err_pct": err,
+            "pass": ok,
+        })
+        if not ok:
+            failed.append(i)
+    return {
+        "stations": rows,
+        "count": len(rows),
+        "failed": failed,
+        "iou_min": iou_min,
+        "area_err_max_pct": area_err_max_pct,
+        "pass": not failed,
+    }
+
+
+def verify_parts(orig, built, samples=4000, max_stations=96,
+                 radius_tol=0.025, center_tol=0.05, axis_tol_deg=0.1,
+                 length_tol=0.1, half_angle_tol=0.1,
+                 volume_pct=0.1, bbox_pos_mm=0.05, bbox_size_mm=0.05,
+                 view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
+                 section_iou_min=0.95, section_area_pct=5.0):
+    """原件/自建件几何门 G0–G6 一次汇总（长度统一到毫米）。
+
+    G7 圆角为报告项；G8 表达式存活与 G9 结构语义仍需按 `modeling.md` §6
+    的编辑测试与特征树检查，本函数不作替代。
+    """
+    mo = measure_part(orig)
+    mb = measure_part(built)
+    part_o = open_part(orig)
+    mesh_o = read_stl(export_mesh(part_o))
+    part_b = open_part(built)
+    mesh_b = read_stl(export_mesh(part_b))
+    so, sb = mo["length_scale"], mb["length_scale"]
+    mesh_o_mm = scale_mesh(mesh_o, so)
+    mesh_b_mm = scale_mesh(mesh_b, sb)
+
+    plan = station_plan(mo, max_stations=max_stations)
+    sec = station_report(mesh_o, mesh_b, plan, section_iou_min,
+                         section_area_pct)
+    cmp = compare_parts(orig, built, radius_tol, center_tol, axis_tol_deg,
+                        length_tol, half_angle_tol)
+    vol_pct = abs(mb["volume"] - mo["volume"]) / mo["volume"] * 100.0 \
+        if mo["volume"] else 100.0
+    bb_o = mesh_bbox(mesh_o_mm)
+    bb_b = mesh_bbox(mesh_b_mm)
+    pos_d = max(abs(bb_o[i] - bb_b[i]) for i in range(6))
+    size_o = [bb_o[i + 3] - bb_o[i] for i in range(3)]
+    size_b = [bb_b[i + 3] - bb_b[i] for i in range(3)]
+    size_d = max(abs(size_o[i] - size_b[i]) for i in range(3))
+    views = {}
+    for name in ("top", "front", "side"):
+        views[name] = view_iou(mesh_o_mm, mesh_b_mm, name)
+    views["iso"] = view_iou(mesh_o_mm, mesh_b_mm, [1.0, 1.0, 1.0])
+    views_pass = all(v["iou"] >= view_iou_min for v in views.values())
+    dev = mesh_deviation(mesh_o_mm, mesh_b_mm, samples, 0,
+                         rms_max, p95_max)
+    gates = {
+        "G0": {"pass": bool(mesh_o and mesh_b and mo["bodies"] and
+                            mb["bodies"]),
+               "bodies": [mo["bodies"], mb["bodies"]]},
+        "G1": sec,
+        "G2": cmp,
+        "G3": {"pass": vol_pct <= volume_pct, "diff_pct": vol_pct,
+               "limit_pct": volume_pct},
+        "G4": {"pass": pos_d <= bbox_pos_mm and size_d <= bbox_size_mm,
+               "position_delta_mm": pos_d, "size_delta_mm": size_d,
+               "limits_mm": [bbox_pos_mm, bbox_size_mm]},
+        "G5": {"pass": views_pass, "views": views,
+               "iou_min": view_iou_min},
+        "G6": dev,
+    }
+    return {
+        "orig": {"path": mo["path"], "units": mo["units"],
+                 "length_scale": so, "volume": mo["volume"],
+                 "bodies": mo["bodies"]},
+        "built": {"path": mb["path"], "units": mb["units"],
+                  "length_scale": sb, "volume": mb["volume"],
+                  "bodies": mb["bodies"]},
+        "stations": plan,
+        "gates": gates,
+        "pass": all(gates[k]["pass"] for k in ("G0", "G1", "G2", "G3",
+                                               "G4", "G5", "G6")),
     }
