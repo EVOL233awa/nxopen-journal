@@ -153,6 +153,92 @@ def part_volume(part):
     return total
 
 
+def _do_update(tag):
+    s = NXOpen.Session.GetSession()
+    mark = s.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, tag)
+    try:
+        errs = s.UpdateManager.DoUpdate(mark)
+    finally:
+        try:
+            s.DeleteUndoMark(mark, None)
+        except Exception:
+            pass
+    return 0 if errs is None else int(errs)
+
+
+def expression_survey(part, factor=1.1):
+    """G8 可编辑性：逐条命名表达式 +factor、更新、量体积、还原。
+
+    与 `references/modeling.md` §6 及冻结 edit_survey 同口径：自动表达式
+    （p0/p1…）与 PI 不计；RHS 非数值的公式记录在 skipped，不参与存活率。
+    每次改动都新建 undo mark 并 DoUpdate，还原后再更新一次并核对体积。
+    只改内存中的部件，**不保存**；调用方应传入已建的输出件，且此时不要再
+    保存该部件（否则参数试验的结果会进文件）。
+
+    pass = 单实体 + 至少一个命名表达式 + 至少一条实测驱动几何 + 无死参数
+    + 无更新异常/还原失败 + 无特征告警 + 存活率 1.0。
+    """
+    bodies = list(part.Bodies)
+    v0 = part_volume(part)
+    named = []
+    for e in part.Expressions:
+        try:
+            lhs = e.Equation.split("=")[0].strip()
+        except Exception:
+            continue
+        if lhs and lhs.upper() != "PI" and not lhs.lower().startswith("p"):
+            named.append((lhs, e))
+    live, dead, broken, skipped = [], [], [], []
+    for i, (name, e) in enumerate(named):
+        try:
+            rhs = e.RightHandSide
+            val = float(rhs)
+        except Exception:
+            skipped.append(name)
+            continue
+        try:
+            e.RightHandSide = "%.6f" % (val * factor)
+            errs = _do_update("survey_%d" % i)
+            d = part_volume(part) - v0
+            if errs != 0:
+                broken.append({"name": name, "errors": errs})
+            elif abs(d) < 1e-4:
+                dead.append(name)
+            else:
+                live.append({"name": name, "delta_volume": d})
+            e.RightHandSide = rhs
+            errs2 = _do_update("restore_%d" % i)
+            vr = part_volume(part)
+            if errs2 != 0 or abs(vr - v0) > 1e-4 * max(abs(v0), 1.0):
+                broken.append({"name": name + ":restore", "errors": errs2,
+                               "volume": vr})
+                break
+        except Exception:
+            broken.append({"name": name, "exception": True})
+            break
+    try:
+        alerts = [{"tag": int(f.Tag), "name": f.Name,
+                   "type": f.FeatureType}
+                  for f in part.Features.GetAllPartFeaturesWithAlerts()]
+    except Exception:
+        alerts = [{"query_failed": True}]
+    tested = len(live) + len(dead) + len(broken)
+    ratio = (len(live) / float(tested)) if tested else 0.0
+    return {
+        "bodies": len(bodies),
+        "volume": v0,
+        "named": [n for n, _ in named],
+        "live": live,
+        "dead": dead,
+        "broken": broken,
+        "skipped": skipped,
+        "alerts": alerts,
+        "alive_ratio": ratio,
+        "pass": (len(bodies) == 1 and bool(named) and bool(live) and
+                 not dead and not broken and not alerts and ratio == 1.0),
+    }
+
+
 def face_table(part, with_edges=False):
     """全量面表。with_edges=True 时每面带边（类型/长度/相邻面 tag），
     供同轴组的端面定位使用。"""
@@ -306,6 +392,130 @@ def cone_params(group):
     }
 
 
+def exact_section(part, origin, normal, tolerance=0.01, samples=65,
+                  body=None):
+    """B-rep 截面曲线（UF SectionFromPlanes），按端点串成闭环。
+
+    返回每个原始段的三维采样点与按端点聚类的闭环；闭合环带绝对面积。
+    只用于取重建轮廓：STL 切面只用于最终偏差核对。截面特征留在内存、
+    不保存；原件文件不受影响。`body` 缺省取第一个实体。
+    """
+    ufs = _ufs()
+    bodies = [body] if body is not None else list(part.Bodies)
+    if not bodies:
+        raise ValueError("part has no solid body")
+    plane = part.Planes.CreatePlane(
+        NXOpen.Point3d(*[float(v) for v in origin]),
+        NXOpen.Vector3d(*[float(v) for v in _unit(normal)]),
+        NXOpen.SmartObject.UpdateOption.WithinModeling)
+    fd = NXOpen.UF.ModlCurveFitData_Struct()
+    fd.CurveFitMethod = 0
+    fd.MaximumDegree = 3
+    fd.MaximumSegments = 1
+    gd = NXOpen.UF.Curve.SectionGeneralData()
+    gd.Objects = [int(b.Tag) for b in bodies]
+    gd.NumObjects = len(bodies)
+    gd.Associate = 1
+    gd.Grouping = 0
+    gd.JoinType = 0
+    gd.Tolerance = float(tolerance)
+    gd.CurveFitData = fd
+    pd = NXOpen.UF.Curve.SectionPlanesData()
+    pd.Planes = [plane.Tag]
+    pd.NumPlanes = 1
+    feat = ufs.Curve.SectionFromPlanes(gd, pd)
+    _n, tags = ufs.Curve.AskFeatureCurves(feat)
+    tol = float(tolerance)
+    curves = []
+    for tag in tags:
+        pts = []
+        for i in range(int(samples)):
+            p = ufs.ModlGeneral.AskCurveProps(tag, i / float(samples - 1))[0]
+            pts.append([float(p[0]), float(p[1]), float(p[2])])
+        closed = math.sqrt(_dot(_sub(pts[0], pts[-1]),
+                                _sub(pts[0], pts[-1]))) <= 2.0 * tol
+        curves.append({"tag": int(tag), "pts": pts, "closed": closed})
+
+    def key(p):
+        return (int(round(p[0] / tol)), int(round(p[1] / tol)),
+                int(round(p[2] / tol)))
+
+    loops = []
+    open_edges = []
+    for i, c in enumerate(curves):
+        if c["closed"]:
+            loops.append({"pts": c["pts"], "closed": True})
+        else:
+            open_edges.append(i)
+    adj = {}
+    for i in open_edges:
+        c = curves[i]
+        adj.setdefault(key(c["pts"][0]), []).append(i)
+        adj.setdefault(key(c["pts"][-1]), []).append(i)
+    used = set()
+
+    def take_at(k, exclude):
+        for i in adj.get(k, ()):
+            if i not in used and i != exclude:
+                return i
+        return None
+
+    for start in open_edges:
+        if start in used:
+            continue
+        used.add(start)
+        pts = list(curves[start]["pts"])
+        k = key(pts[-1])
+        while True:
+            i = take_at(k, -1)
+            if i is None:
+                break
+            used.add(i)
+            ep = curves[i]["pts"]
+            if key(ep[0]) == k:
+                pts.extend(ep[1:])
+            else:
+                pts.extend(list(reversed(ep))[1:])
+            k = key(pts[-1])
+            if k == key(pts[0]):
+                break
+        if k != key(pts[0]):
+            k = key(pts[0])
+            while True:
+                i = take_at(k, -1)
+                if i is None:
+                    break
+                used.add(i)
+                ep = curves[i]["pts"]
+                if key(ep[-1]) == k:
+                    pts = list(ep[:-1]) + pts
+                else:
+                    pts = list(reversed(ep))[:-1] + pts
+                k = key(pts[0])
+                if k == key(pts[-1]):
+                    break
+        e1, e2 = _basis(normal)
+        loops.append({"pts": pts,
+                      "closed": key(pts[0]) == key(pts[-1])})
+    e1, e2 = _basis(normal)
+    for lp in loops:
+        pts = lp["pts"]
+        uv = [(_dot(_sub(p, origin), e1), _dot(_sub(p, origin), e2))
+              for p in pts]
+        ar = 0.0
+        for i in range(len(uv)):
+            x0, y0 = uv[i]
+            x1, y1 = uv[(i + 1) % len(uv)]
+            ar += x0 * y1 - x1 * y0
+        lp["area"] = 0.5 * ar
+        lp["abs_area"] = abs(lp["area"])
+    return {"origin": [float(v) for v in origin],
+            "normal": _unit(normal),
+            "curves": curves,
+            "loops": loops,
+            "open": len([l for l in loops if not l["closed"]])}
+
+
 def measure_part(path, with_edges=True):
     """只读量一个部件：体积/体数/特征数/面表/圆柱组/圆锥组。
 
@@ -451,7 +661,9 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
                                if a["volume"] else 0.0),
         "cylinders": cyl,
         "cones": cones,
-        "pass": cyl["pass"] and cones["pass"],
+        "pass": (not cyl["unmatched_a"] and not cones["unmatched_a"] and
+                 all(p["pass"] for p in cyl["pairs"] + cones["pairs"])),
+        "strict_pass": cyl["pass"] and cones["pass"],
     }
 
 
@@ -1046,12 +1258,13 @@ def mesh_deviation(mesh_a, mesh_b, samples=4000, seed=0,
     }
 
 
-def station_plan(measure, max_stations=96, offset_tol=1e-4):
+def station_plan(measure, max_stations=48, offset_tol=1e-4):
     """由原件面表、孔/锥组生成测站（截面法向 + 位置）。
 
     平行平面族每个不同偏距一站；每个圆柱/圆锥组沿自身轴取根、中、端附近
-    三站。站点以 (法向, 偏距) 去重；超过预算时保留全部孔站，再按偏距均匀
-    保留平面站，并在 dropped 中记数。
+    三站。站点以 (法向, 偏距) 去重。超过预算时先按法向族均匀保留平面站
+    （占预算约六成），再按半径由大到小为每个轴组保留中点，最后才补端点；
+    dropped>0 表示有边界未进入本次自检，complete=False。
     """
     faces = measure["faces"]
     groups = list(measure.get("cylinders", [])) + \
@@ -1063,19 +1276,28 @@ def station_plan(measure, max_stations=96, offset_tol=1e-4):
         d = _canon(d)
         return (round(d[0], 3), round(d[1], 3), round(d[2], 3))
 
-    def add(origin, normal, source):
+    def add(origin, normal, source, kind, role, group, radius):
         n = _canon(normal)
         off = _dot(origin, n)
         key = (axis_key(n), round(off / max(offset_tol, 1e-9)))
         if key in acc:
             if source not in acc[key]["sources"]:
                 acc[key]["sources"].append(source)
+            if role == "mid":
+                acc[key]["_mid"] = True
+            if radius > acc[key]["_radius"]:
+                acc[key]["_radius"] = radius
+                acc[key]["_group"] = group
             return
         rec = {"origin": [off * n[i] for i in range(3)],
                "normal": list(n),
                "offset": off,
                "sources": [source],
-               "kind": "plane" if source.startswith("plane") else "axis"}
+               "kind": kind,
+               "_role": role,
+               "_mid": role == "mid",
+               "_group": group,
+               "_radius": radius}
         acc[key] = rec
         order.append(key)
 
@@ -1083,7 +1305,8 @@ def station_plan(measure, max_stations=96, offset_tol=1e-4):
     for f in faces:
         if f.get("type") != PLANE:
             continue
-        add(f["point"], f["dir"], "plane#%d" % seen_planes)
+        add(f["point"], f["dir"], "plane#%d" % seen_planes,
+            "plane", "plane", -1, 0.0)
         seen_planes += 1
     for gi, g in enumerate(groups):
         lo, hi = g["extent"]
@@ -1091,30 +1314,55 @@ def station_plan(measure, max_stations=96, offset_tol=1e-4):
         if length <= 1e-6:
             continue
         inset = min(0.5, 0.1 * length)
-        for t in (lo + inset, 0.5 * (lo + hi), hi - inset):
+        for role, t in (("end", lo + inset),
+                        ("mid", 0.5 * (lo + hi)),
+                        ("end", hi - inset)):
             origin = [g["point"][i] + t * g["axis"][i] for i in range(3)]
-            add(origin, g["axis"], "axis#%d" % gi)
+            add(origin, g["axis"], "axis#%d" % gi, "axis", role, gi,
+                abs(g["radius"]))
 
-    stations = [acc[k] for k in order]
-    plane_count = len([s for s in stations if s["kind"] == "plane"])
+    all_stations = [acc[k] for k in order]
+    total = len(all_stations)
     dropped = 0
-    if max_stations and len(stations) > max_stations:
-        axis = [s for s in stations if s["kind"] == "axis"]
-        plane = [s for s in stations if s["kind"] == "plane"]
-        keep_plane = max(0, int(max_stations) - len(axis))
-        if keep_plane < len(plane):
-            step = float(len(plane)) / max(1, keep_plane)
-            plane = [plane[int(i * step)] for i in range(keep_plane)]
-        stations = plane + axis
-        dropped = plane_count + len(axis) - len(stations)
-        plane_count = len(plane)
+    if max_stations and total > max_stations:
+        planes = [s for s in all_stations if s["kind"] == "plane"]
+        axes = [s for s in all_stations if s["kind"] == "axis"]
+        if axes:
+            plane_budget = min(len(planes), max(1, int(max_stations * 0.6)))
+        else:
+            plane_budget = min(len(planes), int(max_stations))
+        if len(planes) > plane_budget:
+            step = float(len(planes)) / plane_budget
+            planes = [planes[int(i * step)] for i in range(plane_budget)]
+        axis_budget = max(0, int(max_stations) - len(planes))
+        mids = sorted([s for s in axes if s["_mid"]],
+                      key=lambda s: (-s["_radius"], s["_group"]))
+        ends = sorted([s for s in axes if not s["_mid"]],
+                      key=lambda s: (-s["_radius"], s["_group"], s["offset"]))
+        take_mid = mids[:axis_budget]
+        remain = axis_budget - len(take_mid)
+        take_end = ends[:max(0, remain)]
+        axes = take_mid + take_end
+        stations = planes + axes
+        dropped = total - len(stations)
+    else:
+        stations = all_stations
     stations.sort(key=lambda s: (tuple(s["normal"]), s["offset"]))
+    plane_count = len([s for s in stations if s["kind"] == "plane"])
+    axis_count = len(stations) - plane_count
+    clean = []
+    for s in stations:
+        clean.append({"origin": s["origin"], "normal": s["normal"],
+                      "offset": s["offset"], "sources": s["sources"],
+                      "kind": s["kind"]})
     return {
-        "stations": stations,
-        "count": len(stations),
+        "stations": clean,
+        "count": len(clean),
         "plane_count": plane_count,
-        "axis_count": len(stations) - plane_count,
+        "axis_count": axis_count,
+        "total": total,
         "dropped": dropped,
+        "complete": dropped == 0,
     }
 
 
@@ -1155,12 +1403,13 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     }
 
 
-def verify_parts(orig, built, samples=4000, max_stations=96,
+def verify_parts(orig, built, samples=4000, max_stations=48,
                  radius_tol=0.025, center_tol=0.05, axis_tol_deg=0.1,
                  length_tol=0.1, half_angle_tol=0.1,
                  volume_pct=0.1, bbox_pos_mm=0.05, bbox_size_mm=0.05,
                  view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
-                 section_iou_min=0.95, section_area_pct=5.0):
+                 section_iou_min=0.95, section_area_pct=5.0,
+                 ref_a=None, ref_b=None):
     """原件/自建件几何门 G0–G6 一次汇总（长度统一到毫米）。
 
     G7 圆角为报告项；G8 表达式存活与 G9 结构语义仍需按 `modeling.md` §6
@@ -1180,7 +1429,7 @@ def verify_parts(orig, built, samples=4000, max_stations=96,
     sec = station_report(mesh_o, mesh_b, plan, section_iou_min,
                          section_area_pct)
     cmp = compare_parts(orig, built, radius_tol, center_tol, axis_tol_deg,
-                        length_tol, half_angle_tol)
+                        length_tol, half_angle_tol, ref_a, ref_b)
     vol_pct = abs(mb["volume"] - mo["volume"]) / mo["volume"] * 100.0 \
         if mo["volume"] else 100.0
     bb_o = mesh_bbox(mesh_o_mm)

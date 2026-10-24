@@ -51,9 +51,10 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 
 from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
-from nxlib.modeling import block, boolean, blend_on_edges
+from nxlib.modeling import block, boolean, blend_on_edges, expressions
 from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
-                           export_mesh, face_table, group_coaxial, hole_params,
+                           exact_section, export_mesh, expression_survey,
+                           face_table, group_coaxial, hole_params,
                            cone_params, measure_part, mesh_bbox, read_stl,
                            mesh_deviation, sample_surface, section_area,
                            section_iou, station_plan, station_report,
@@ -380,6 +381,51 @@ def main():
           (dict((k, ver["gates"][k]["pass"]) for k in
                 ("G0", "G1", "G2", "G3", "G4", "G5", "G6")),
            ver["stations"]["count"]))
+
+    fake_faces = [{"type": PLANE, "point": [0.0, 0.0, float(i)],
+                   "dir": [0.0, 0.0, 1.0]} for i in range(40)]
+    fake_groups = [{"point": [float(i), 0.0, 0.0], "axis": [1.0, 0.0, 0.0],
+                    "extent": [0.0, 20.0], "radius": 1.0 + i,
+                    "faces": [i]} for i in range(20)]
+    thin = station_plan({"faces": fake_faces, "cylinders": fake_groups,
+                         "cones": []}, max_stations=12)
+    check("REG_STATION_BUDGET",
+          thin["count"] <= 12 and thin["plane_count"] >= 1 and
+          thin["axis_count"] >= 1 and not thin["complete"] and
+          thin["dropped"] > 0,
+          "budget=12 stations=%d plane=%d axis=%d dropped=%d" %
+          (thin["count"], thin["plane_count"], thin["axis_count"],
+           thin["dropped"]))
+
+    # B-rep section, not STL: block minus two D10 holes at z=10.
+    bs = exact_section(part, (0.0, 0.0, SECTION_Z), (0.0, 0.0, 1.0))
+    closed = sorted([l for l in bs["loops"] if l["closed"]],
+                    key=lambda l: -l["abs_area"])
+    check("REG_EXACT_SECTION",
+          len(closed) == 3 and
+          abs(closed[0]["abs_area"] - BLOCK_X * BLOCK_Y) <= 0.01 and
+          all(abs(l["abs_area"] - math.pi * HOLE_R ** 2) <= 0.5
+              for l in closed[1:]),
+          "B-rep section loops=%d areas=%s open=%d" %
+          (len(closed), ["%.3f" % l["abs_area"] for l in closed],
+           bs["open"]))
+
+    # Editability: one named expression must drive real geometry, restore to
+    # the same volume, and the part must stay single-body/alive.
+    expressions(part, [("TEST_L", 20.0)])
+    before = set(b.Tag for b in part.Bodies)
+    block(part, NXOpen.Point3d(90.0, 10.0, 0.0), "TEST_L", "20.0", "18.0")
+    extra = [b for b in part.Bodies if b.Tag not in before][0]
+    body = [b for b in part.Bodies if b.Tag in before][0]
+    boolean(part, body, extra, NXOpen.Features.Feature.BooleanType.Unite)
+    survey = expression_survey(part)
+    check("REG_EXPRESSION_SURVEY",
+          survey["pass"] and survey["named"] == ["TEST_L"] and
+          [x["name"] for x in survey["live"]] == ["TEST_L"] and
+          not survey["dead"] and not survey["broken"],
+          "survey named=%s live=%d dead=%d ratio=%.2f bodies=%d" %
+          (survey["named"], len(survey["live"]), len(survey["dead"]),
+           survey["alive_ratio"], survey["bodies"]))
 
     failed = [n for n, v in RESULTS if not v]
     say("TEST38_CASES=%d" % len(RESULTS))

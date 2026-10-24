@@ -8,6 +8,8 @@
 ### Added
 
 - `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
+- `scripts/nxlib/measure.py`：`expression_survey` 批量可编辑性检查——逐条命名表达式 ×1.1、DoUpdate、量体积、还原复核，返回 named/live/dead/broken/skipped/alerts/alive_ratio/pass，不保存。
+- `scripts/tests/38_measure.py`：新增 `REG_EXPRESSION_SURVEY`（23→24 项）。
 - `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
 - `scripts/nxlib/measure.py`：`view_iou` 给 top/front/side/任意法向的轮廓 IoU（三角面投影并集），用于 G5 自检。
 - `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
@@ -123,6 +125,8 @@
 - `references/reverse-engineering.md` §10.1：站表按每个结构自身轴取根/中/端、开口/槽取槽底与两端，不按全局三轴枚举。
 - `references/reverse-engineering.md` §10.1：一次性重建限缩为数值项，结构缺失回清单补建。
 - `scripts/nxlib/measure.py`：`mesh_deviation` 给双向面积加权点—面 RMS/P95（精确点到三角面距离、均匀网格索引、固定 seed）；`station_plan`/`station_report` 从面表平面族与圆柱/圆锥轴生成测站并逐站复算；`verify_parts` 汇总 G0–G6；`measure_part`/`compare_parts` 增加单位与毫米换算。
+- `scripts/nxlib/measure.py`：新增 `exact_section` 从 B-rep 取截面曲线并按端点串成闭环；`station_plan` 的预算改为先保留平面族、再按半径保留轴中点/端点，`dropped`/`complete` 明示未测边界；`compare_parts.pass` 只要求原件功能组全匹配，`strict_pass` 才要求双向全匹配。
+- `scripts/tests/38_measure.py`：新增 B-rep 截面面积与测站预算断言（21→23 项）。
 - `scripts/tests/38_measure.py`：新增采样复现、已知 2 mm 平移偏差、偏差自比对、自动测站自比对与 `verify_parts` 自比对 5 项断言（15→21 项）。
 - `references/reverse-engineering.md` §10.1：新增 `verify_parts` 通用几何门汇总与 `mesh_deviation`/`station_plan` 用法。
 - `references/reverse-engineering.md` §4.1：G6 由相对比例改为双向 RMS ≤0.8 mm、P95 ≤1.8 mm。
