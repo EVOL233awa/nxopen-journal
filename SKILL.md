@@ -203,7 +203,7 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 | 装配（加组件/配对约束/组件阵列/引用集/装配质量属性/运动连接） | `references/assembly.md` |
 | 工程图（图纸/三视图/投影视图/局部放大/剖视图/PDF 导出/装配图路线） | `references/drafting.md` |
 | 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线/球标） | `references/drafting-annotation.md` |
-| **逆向重建**（原件+一句重建要求→测量链→截面/放样→孔系/凹槽切除→验收项与双向偏差） | `references/reverse-engineering.md` |
+| **逆向重建**（原件+一句重建要求→结构表→测量链→按结构建特征→验收门；构造配方在 `modeling.md`） | `references/reverse-engineering.md` |
 | **国标成套出图**（GB 图框/标题栏/技术要求/尺寸道位一张图到位） | `scripts/gb_drawing.py` + `references/gb-drawing.md`（验收=33 号用例） |
 | 有限元（CAD→FEM→SIM→求解→后处理；实体 CTETRA 与 2D 壳/PSHELL、模态 SOL103） | `references/fea.md` |
 | 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md` |

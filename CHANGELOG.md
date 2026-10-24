@@ -102,6 +102,22 @@
 - `references/modeling.md` §4.2b：新增系统式保留、位置量用字面值两条。
 - `references/modeling.md` §2.1b/§2.2b/§4.2：受控实验措辞改验收值，删放样读数。
 
+- `references/reverse-engineering.md` 文件头：新增按阶段跳转的索引（结构表/测量/成形/归因/收尾分别读哪节）。
+- `references/reverse-engineering.md` §2：双瓣耳与拔模窗口改为逆向判据 + `modeling.md` 指针；锥孔方向并入带拔模拉伸。
+- `references/reverse-engineering.md` §2.1：删与精确截面重建重复的平滑重建条。
+- `references/reverse-engineering.md` §2.2：剪影/等截面、外环/凸包、端部收口、多闭环、端部截面族、截面叠图各并为一条；放样提交校验指向 `modeling.md` §2.2b；门站条归 §4.2。
+- `references/reverse-engineering.md` §3：约束由 8 条压到 4 条，Tag 识别移 `modeling.md` §2.5。
+- `references/reverse-engineering.md` §4.1：门阻塞与冻结阈值并为一条，证明路线与 G9 并为一条。
+- `references/reverse-engineering.md` §4.2：按基体/臂耳/孔系/圆角参数四组归并，40 条压到 24 条。
+- `references/reverse-engineering.md` §7：按体拆名、位置量、共面堆叠三条归 `modeling.md`，公式型表达式改为交付判据。
+- `references/reverse-engineering.md` §8：组件门站/region、孔包入口/入口锥、孔表/独立切除体各并为一条。
+- `references/reverse-engineering.md` §10.1：分母/功能清单、匹配/整链布尔、截面站/站表各并为一条，删重复的验收条。
+- `references/modeling.md` §2.2：接收拔模 `MultiDraft` 配方。
+- `references/modeling.md` §2.2b：合并重叠/体数断言并入合并条，补 intersection gaps 折线减点与封口面错开 0.1 mm。
+- `references/modeling.md` §2.3：新增锥底沉孔 45° 锥刀配方。
+- `references/modeling.md` §2.5：新增布尔目标/刀具按 Tag 识别。
+- `SKILL.md` 路由表：逆向重建描述改为“结构表→测量链→按结构建特征→验收门”，构造配方指向 `modeling.md`。
+
 ### Changed
 
 - 用例计数 37→38、gate 34→35、`nxlib` 五域→六域（`SKILL.md`/`README.md`/`tests/README.md` 同步）。

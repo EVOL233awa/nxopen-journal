@@ -141,6 +141,7 @@ cut.CommitFeature(); cut.Destroy()
 - **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔。100×100 方形 + 64 边形 r10 内环、拉伸 10：体积 96863.45（解析 96858.41，差值为多边形化）。
 - **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心（体积 96863→100000）；外环留 0.03 mm 缝时链被错误闭合，体积涨到 4,000,000 量级。截面环拼接后要校验首末点重合。
 - **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
+- **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`；`DraftOption = SimpleDraftSimpleDraftType.SimpleFromStart`，`DraftAngle.RightHandSide = "<deg>"`；正值向拉伸端收缩。
 - `helpPoint` 取料内一点；落在曲线上的点不可用。
 
 ### 2.2b 多截面放样（ThroughCurves）
@@ -167,7 +168,7 @@ tb.CommitFeature(); tb.Destroy()
 - **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做。
 - **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低；在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，首站即可恢复。
 - **`BodyPreference=Solid` 也可能出片体**：提交后查 `IsSolidBody`；片体不可与实体合并（"Cannot add solids and sheets"）。
-- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。共面接触被拒（"zero wall thickness"/"completely outside"）。两段在同一区域体积重叠但侧面是同一张放样面时也失败（"Intersecting target and tool faces may have problems that cause intersection gaps"），此时不要加偏置领圈硬拼，改做一张连续放样；定位截面（上一条）是替代方案。
+- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。共面接触被拒（"zero wall thickness"/"completely outside"）。两段在同一区域体积重叠但侧面是同一张放样面时也失败（"Intersecting target and tool faces may have problems that cause intersection gaps"），此时不要加偏置领圈硬拼，改做一张连续放样；定位截面（上一条）是替代方案。合并前给 0.5–1 mm 重叠，合并后断言体数 = 1 且体积单调增加。合并报 intersection gaps 时把截面折线减到只保留棱线点（或改一条光滑闭合样条）；共面报 zero wall thickness 时把人工封口面错开 0.1 mm。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
 - 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
 
@@ -204,6 +205,7 @@ wp.Features.CreateSubtractFeature(target, False, tool_bodies, False, True)
 - 旋转轴方向与孔表 axis 相反时，`AskFaceData` 的 dir 会翻转；比较轴向用绝对值点积。
 - **孔轴与板法向不同（斜耳孔）时，耳座绕孔轴回转成圆柱再并**：棱柱只建到耳座切点，圆柱半径与轴向区间取面表；把棱柱直接沿板宽拉伸会把圆耳座包成方块，端站截面多料。反例与判据见 `reverse-engineering.md` §2.2/§4.2。
 - **孔包的入口延伸与锪面深度**：`HolePackageBuilder` 的刀具在孔位前固定延伸约 2 mm，量得孔壁起点更靠近入口面时改用独立圆柱切除体按轴向区间建；锪面形式的孔深必须大于 `(锪径−孔径)/2/tan(半角)`，通孔已存在时也写成该值加 1 mm。细则见 `reverse-engineering.md` §8。
+- **锥底沉孔**：沉孔底面是锥面时，把沉孔深度减 `t`，用一把 45° 锥刀（底径 = 孔壁 − 2·t、顶径 = 孔壁、高 `t`）切底；不加实心锥填角，会堵孔并报 "zero wall thickness"。
 
 十字辅助线：
 
@@ -264,6 +266,8 @@ builder.Destroy(); collector.Destroy()
 ### 2.5 布尔与孔壁识别
 
 **布尔路线**：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)` → `SetBooleanOperationAndTarget(Subtract/Unite, target)` → `CommitFeature()` → 断言体数。方块布尔只用这条入口；`BooleanOption.Type`+`SetTargetBodies` 会静默不生效（体数 1→2）。
+
+- **目标体与刀具按 Tag 识别**：每次访问 `part.Bodies` 返回新的包装对象，用 `is` 比较会选错体；操作前记下 tag 集，操作后取新增 tag 的体作为结果，刀具只取本次新建的体。
 
 - 工具体与目标体必须**真正体积相交**；面/点/线接触会静默留两个体，工具体在外报 `Tool body completely outside target body`。
 - 相切工具体被拒（`... zero wall thickness.`）：留间隙或先合并；Ø60 凸台改 Ø56（留 4 mm）。
