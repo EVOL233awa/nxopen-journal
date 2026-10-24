@@ -78,6 +78,11 @@
 - `references/modeling.md` §2.2b：N 点折线是放样输入不是交付边界，放样后按面表半径重建解析圆弧。
 - `references/reverse-engineering.md` §2：裸曲线轮廓的长/宽/圆角是静默死参数，改草图 + 驱动尺寸或特征化几何；拉伸后不删父曲线。
 - `references/reverse-engineering.md` §4.2：圆角/切角参数用体积 + 角部圆柱/环面半径复核，不用包盒。
+- `references/reverse-engineering.md` §7：表达式名禁用 `p`/`P` 前缀（大小写都算），与自动表达式 `p0`/`p1` 同前缀会被可编辑性检查一并过滤。
+- `references/reverse-engineering.md` §10.1：圆锥组按 (轴, 半角) 分桶，圆截面放样把一个锥面拆成多组同轴锥；先改单段直线剖面回转或单个圆锥体再比孔锥参数。
+- `references/reverse-engineering.md` §10.1：站表从面表生成（水平平面族、孔轴端点/中点/法向站、臂轴 0/0.5/1），只取 z 站的子集自检与整门结论相反。
+- `references/reverse-engineering.md` §10.1：每类失败只重建一次，非功能多出面不计缺陷，几何与结构门做齐后再评估圆角；`THRU_CURVE` 告警同样算 G8 失败。
+- `references/modeling.md` §1.7：参数命名不用 `p`/`P` 前缀，判据交叉引用 `reverse-engineering.md` §7。
 
 ### Changed
 
