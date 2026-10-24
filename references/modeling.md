@@ -37,6 +37,7 @@
 ### 1.7 参数化与命名
 
 - 顶层参数表达式化（`L_Plate=100`、`D_Bore=8`）；≥2 次出现或可能被改即表达式；次级尺寸派生（§4.1）。参数名不用 `p`/`P` 前缀——自动表达式是 `p0`、`p1`，同前缀会被可编辑性检查一并过滤（判据见 `reverse-engineering.md` §7）。
+- 一个表达式只驱动一个结构/一个体；多个体共用同一名字时按体拆名，否则改值的体积响应会叠加。
 - 需回看才能认出的特征 `SetName`；常见项目做模板。
 - 图层：Solids 1-10 / Sheets 11-20 / Sketches 21-40 / Curves 41-60 / Datums 61-80；Layer Category 整层开关。
 
@@ -125,8 +126,8 @@ cut.CommitFeature(); cut.Destroy()
 - 无 UF `CreateCone`/`CreateCylinder`；圆锥用 `ConeBuilder.Types.DiametersAndHeight` + `Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`。
 - `Diameter`/`Height` 只读，`.Expression.RightHandSide` 可绑定（`cyl.Diameter.RightHandSide = "D_Base"`）。
 - Builder 首参传 `NXOpen.Features.Feature.Null`（Cylinder/Block 等）、`NXOpen.Features.Cone.Null`（Cone）；`None` 报 TypeError。`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
-- **斜轴孔/锥孔切除（已验证）**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。受控实验：100×100×20 方块上斜轴（0.7,−0.7,0.139）Ø10 圆柱切除后 1 实体、体积 200000→195068.79；Ø10→Ø6 高 20 锥孔切除后 1 实体、体积降 1026.02（=πh/3(R²+Rr+r²)）。
-- **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。受控实验：100×60×20 方块上 Ø20×10 凸台合并后体积 123141.593（=120000+π·10²·10），单实体。
+- **斜轴孔/锥孔切除（已验证）**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。验收值：100×100×20 方块上斜轴（0.7,−0.7,0.139）Ø10 圆柱切除后 1 实体、体积 200000→195068.79；Ø10→Ø6 高 20 锥孔切除后 1 实体、体积降 1026.02（=πh/3(R²+Rr+r²)）。
+- **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。验收值：100×60×20 方块上 Ø20×10 凸台合并后体积 123141.593（=120000+π·10²·10），单实体。
 
 ### 2.2 拉伸（Section 路线）
 
@@ -139,6 +140,7 @@ cut.CommitFeature(); cut.Destroy()
 - **截面必须在新建件里建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`。在打开的原件上下文里对同一组曲线调 `AddToSection` 抛 `NXException: Internal error`（与 helpPoint 无关，换料内点同样报错）。
 - **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔。100×100 方形 + 64 边形 r10 内环、拉伸 10：体积 96863.45（解析 96858.41，差值为多边形化）。
 - **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心（体积 96863→100000）；外环留 0.03 mm 缝时链被错误闭合，体积涨到 4,000,000 量级。截面环拼接后要校验首末点重合。
+- **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
 - `helpPoint` 取料内一点；落在曲线上的点不可用。
 
 ### 2.2b 多截面放样（ThroughCurves）
@@ -162,8 +164,8 @@ tb.CommitFeature(); tb.Destroy()
 - 段数/类型不一致的截面先重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。这条折线是放样输入，不是交付边界：放样后按面表半径重建解析圆弧，等截面件直接用直线 + 圆弧建截面（见 `reverse-engineering.md` §2）。参数化按截面相似度选：
   - 弧长等分 + 起点对齐上一站：相邻两站形状相近时用。
   - 绕形心等角：面积/拓扑变化大时用。面内取 N 条等角射线与闭合环求交，每角取最外交点；索引 k 即固定角度，无需起点对齐。基向量必须是测站平面内的两轴（常半径站族的法向是径向，面内轴为切向与 z）。该参数化只对星形截面保形，凹口会被最外交点填平；保留凹口时先放样外轮廓再切凹入区。
-- **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做（120→145 两站：弧长体积 0，等角 34015）。
-- **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低（首站面积可少 8%）。在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，9 站一次放样首站 IoU 0.9995。
+- **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做。
+- **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低；在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，首站即可恢复。
 - **`BodyPreference=Solid` 也可能出片体**：提交后查 `IsSolidBody`；片体不可与实体合并（"Cannot add solids and sheets"）。
 - 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。共面接触被拒（"zero wall thickness"/"completely outside"）。两段在同一区域体积重叠但侧面是同一张放样面时也失败（"Intersecting target and tool faces may have problems that cause intersection gaps"），此时不要加偏置领圈硬拼，改做一张连续放样；定位截面（上一条）是替代方案。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
@@ -255,6 +257,8 @@ builder.Destroy(); collector.Destroy()
 
 - ⚠ `Edge.GetVertices()` 返回 `Point3d` 列表。
 - 角点处的边不能逐条倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"；重建件上后补圆角受相邻拓扑影响大，能在截面轮廓里带的圆角（腔口/槽口小半径）优先画进轮廓。
+- **双瓣耳/眼**：矩形块沿孔轴拉伸，平台两侧各一条顶边倒 `R_EYE`，肩面应得到解析圆柱（类型 16）；平台半宽用系统式（`W_HALF = H_LOBE + R_EYE`）。端面整圈倒 `R_END` 得到环面（major = R_EYE − R_END、minor = R_END）。
+- **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
 - 验证：Ø12 孔口 dV=−39.794；直边 dV=−60.000；面数 = 双棱边 2、单直边 1；倒角锥面 type **17**、直边倒角平面 22。
 
 ### 2.5 布尔与孔壁识别
@@ -572,8 +576,8 @@ adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 sk.GetStatus()
 ```
 
-- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**（受控实验 `scripts/tests/37_sketch_autodim_param.py`）：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
-- **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出（同用例第 1 条断言）。把 0 尺寸归因于少调 `GetStatus` 是错归因——同一实验里另一个变量是 AutoConstrain。
+- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**（用例 37）：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
+- **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出（同用例第 1 条断言）。把 0 尺寸归因于少调 `GetStatus` 是错归因——同一用例里另一个变量是 AutoConstrain。
 - ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小 R3 弧）会被拉到自交，拉伸体体积从 2 507 变 956 671 mm³。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
 - **适用边界（已验证）**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；26 曲线轮毂轮廓出 108 个尺寸、dof=6，尺寸是线长/角度而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
 
@@ -592,6 +596,7 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 
 - 改参数后实体精确跟随（圆半径 → `R_WEB`，体积按解析值变化），且尺寸仍是驱动尺寸。
 - 同一草图多个尺寸时要成对链接直径/半径（`2 * R` 与 `R`），否则约束自相矛盾。
+- **系统式与位置量**：联动尺寸可以写成系统式（`W_HALF = H_LOBE + R_EYE`），但每个独立结构尺寸都要有数值参数入口；块原点、圆柱轴心在批处理只收字面值，列入不可参数化清单，不伪装成命名表达式。
 - **草图点不可标注**：对单点跑 AutoDimension 产生 0 尺寸、dof 不变；NXOpen 也没有参数化点特征（`PointFeatureBuilder.Point` 只收字面 `Point3d`）→ 孔位无法用“草图点 + 尺寸”参数化。
 - 驱动参数必须真的接到几何上：接到会移动的边上时，先确认改参数不会让该边的主人变化（见 §4.3 的拓扑陷阱）。
 
@@ -658,7 +663,7 @@ b.Validate(); b.CommitFeature()
 | 类型 | 必须给什么 | 结果 |
 | --- | --- | --- |
 | `GeneralHole` | `GeneralSimpleHoleDiameter / GeneralSimpleHoleDepth / GeneralTipAngle` | Ø10 × 15 精确；**首选** |
-| `GeneralHole` + 沉孔 | `GeneralHoleForm=HoleForms.Counterbored` + 通孔 `GeneralCounterboreHoleDiameter/Depth` + 沉孔 `GeneralCounterboreDiameter/Depth` | 受控实验：60×60×10 块，Ø10 通孔 + Ø20×4 沉孔，去料 1 727.876 = 解析值 |
+| `GeneralHole` + 沉孔 | `GeneralHoleForm=HoleForms.Counterbored` + 通孔 `GeneralCounterboreHoleDiameter/Depth` + 沉孔 `GeneralCounterboreDiameter/Depth` | 验收值：60×60×10 块，Ø10 通孔 + Ø20×4 沉孔，去料 1 727.876 = 解析值 |
 | `DrillSizeHole` | `DrillSizeStandard="ISO"` + `DrillSizeFitOption="Exact"` + `DrillSize` 标签（`"10"`）**且** `DrillSizeHoleDiameter/Depth` | 只给标签 → 默认 Ø11 贯通；只给 Expression → `Standard data not found` |
 | `ScrewClearanceHole` | `ScrewStandard="ISO"` + `ScrewType="General Screw Clearance"` + `ScrewSize="M10"` + `ScrewFitOption="Normal (H13)"` | 过孔 **Ø11** |
 

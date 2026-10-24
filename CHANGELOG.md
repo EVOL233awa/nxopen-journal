@@ -84,6 +84,23 @@
 - `references/reverse-engineering.md` §10.1：每类失败只重建一次，非功能多出面不计缺陷，几何与结构门做齐后再评估圆角；`THRU_CURVE` 告警同样算 G8 失败。
 - `references/modeling.md` §1.7：参数命名不用 `p`/`P` 前缀，判据交叉引用 `reverse-engineering.md` §7。
 - `references/reverse-engineering.md` §9：交界交线平均段长 <1 mm 时 `EdgeBlend` 三种失败（终止/应用/滚过尖边）；根部 flare 放进末截面或先合并切向面。
+- `references/reverse-engineering.md` §2：耳/眼端部按双瓣截形建——矩形块 + 两肩倒 `R_EYE`、平台半宽 `W_HALF = H_LOBE + R_EYE`、端面整圈 `R_END` 得环面。
+- `references/reverse-engineering.md` §2：锥孔收敛方向按沿孔轴 ≥3 站的半径 `r(s)` 符号定，起刀面取外端面、轴向起止取面表区间两端。
+- `references/reverse-engineering.md` §2：拔模窗口起剖面取中面外偏 `h/2·tanθ`；口部圆角在减料后加，先下口后上口。
+- `references/reverse-engineering.md` §2：重复结构先在规范坐标系建一件，其余方位按量得旋转角与平移量复制同一特征。
+- `references/reverse-engineering.md` §2：扇环窗口端壁按两端角弧中心连线建，两端角弧半径可不同。
+- `references/reverse-engineering.md` §2.2：耳座由“绕耳孔轴回转圆柱”改为“双瓣截形”；孔座圆柱只代表孔口包络。
+- `references/reverse-engineering.md` §4.2：新增四条症状→动作——端壁差 0.5–1 mm、中截面系统偏小、锥孔方向反、重复结构仅一个方位对上。
+- `references/reverse-engineering.md` §7：公式型表达式保留为系统式，每个结构尺寸另给数值参数入口；新增按体拆名、×1.1 面数不变、位置量不列表达式三条。
+- `references/reverse-engineering.md` §10：B 曲面（类型 43）的 `AskFaceData` 参考点恒为 (0,0,0)，区域筛选用 `box` 与邻接边。
+- `references/reverse-engineering.md` §10.1：标题改为“测量与比对”，闭环措辞改为核验/比对，去掉“无外部检查包”前提。
+- `references/reverse-engineering.md` §2.1/§2.2/§4.1/§4.2/§8/§9：去掉过程读数与零件量值，保留判据、配方与症状→动作。
+- `references/reverse-engineering.md` §4.1：单轮验收的过程叙述改写为门判据与阻塞规则。
+- `references/modeling.md` §1.7：一个表达式只驱动一个结构/一个体，多个体共用同一名字时按体拆名。
+- `references/modeling.md` §2.2：新增拔模拉伸的起剖面偏置 `h/2·tanθ`，中面截面作验收站。
+- `references/modeling.md` §2.4：新增双瓣耳（块 + 两肩倒圆）与口部圆角先下口后上口的顺序。
+- `references/modeling.md` §4.2b：新增系统式保留、位置量用字面值两条。
+- `references/modeling.md` §2.1b/§2.2b/§4.2：受控实验措辞改验收值，删放样读数。
 
 ### Changed
 
