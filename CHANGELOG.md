@@ -10,8 +10,15 @@
 - `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
 - `scripts/nxlib/measure.py`：`expression_survey` 批量可编辑性检查——逐条命名表达式 ×1.1、DoUpdate、量体积、还原复核，返回 named/live/dead/broken/skipped/alerts/alive_ratio/pass，不保存。
 - `scripts/tests/38_measure.py`：新增 `REG_EXPRESSION_SURVEY`（23→24 项）。
+- `scripts/tests/38_measure.py`：新增 `REG_UNITS` 并扩展测站自比对（24→25 项）。
+- `scripts/nxlib/measure.py`：`part_length_scale` 改用 `NXOpen.BasePart.Units`（原 `NXOpen.Part.Units` 与运行时类型不等，曾把所有部件判为 unknown）。
+- `scripts/nxlib/measure.py`：`exact_section` 每个环给 `gap`，未闭环缺口汇总为 `open_gaps`，用于区分真实开口与拟合误差。
+- `scripts/nxlib/measure.py`：`station_report` 每站增加 `area_inter/area_union/only_a/only_b`，自检可按缺料/多料定位结构。
 - `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
 - `scripts/nxlib/measure.py`：`view_iou` 给 top/front/side/任意法向的轮廓 IoU（三角面投影并集），用于 G5 自检。
+- `references/reverse-engineering.md` §2.3：开链缺口大于 2×tolerance 是真实开口，禁止放宽容差闭合；叉/耳双圆柱是两块耳板，不得整宽桥接；低 z 内环高 z 消失的窗口单独切除。
+- `references/reverse-engineering.md` §4.2：G2 半径/孔心/轴全对而长度差过渡段时按同轴半径分桶逐段建孔，不用总深单孔。
+- `references/reverse-engineering.md` §10.1：自检未过不得交付；按 only_a/only_b 排序修结构，G6 大偏差先修结构再补圆角。
 - `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
 - `references/reverse-engineering.md` §1.1：新增结构表模板（证据/成形方式/特征名/自检站）与基体→臂耳叉→孔系→圆角的阶段关卡。
 - `references/reverse-engineering.md` §1.5：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。

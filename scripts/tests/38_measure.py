@@ -321,6 +321,9 @@ def main():
            max(deltas) if deltas else 0.0, cmp["delta_volume"], cmp["pass"]))
 
     mp = measure_part(part_path)
+    check("REG_UNITS",
+          mp["units"] == "mm" and abs(mp["length_scale"] - 1.0) < 1e-12,
+          "units=%s scale=%.6f" % (mp["units"], mp["length_scale"]))
     inv = mp["cylinders"] + mp["cones"]
     cmp_inv = compare_parts(part_path, part_path, ref_a=inv)
     check("REG_COMPARE_INVENTORY",
@@ -369,9 +372,14 @@ def main():
     rep = station_report(mesh, mesh, plan)
     check("REG_STATION_SELF",
           rep["pass"] and rep["count"] == plan["count"] and
-          all(abs(r["iou"] - 1.0) < 1e-9 for r in rep["stations"]),
-          "self station report count=%d failed=%d" %
-          (rep["count"], len(rep["failed"])))
+          all(abs(r["iou"] - 1.0) < 1e-9 and
+              r["only_a"] <= max(1.0, 0.01 * abs(r["area_a"])) and
+              r["only_b"] <= max(1.0, 0.01 * abs(r["area_b"]))
+              for r in rep["stations"]),
+          "self station report count=%d failed=%d max only=%.3e/%.3e" %
+          (rep["count"], len(rep["failed"]),
+           max(r["only_a"] for r in rep["stations"]),
+           max(r["only_b"] for r in rep["stations"])))
 
     ver = verify_parts(part_path, part_path, samples=800, max_stations=48)
     check("REG_VERIFY_SELF",
@@ -405,10 +413,12 @@ def main():
           len(closed) == 3 and
           abs(closed[0]["abs_area"] - BLOCK_X * BLOCK_Y) <= 0.01 and
           all(abs(l["abs_area"] - math.pi * HOLE_R ** 2) <= 0.5
-              for l in closed[1:]),
-          "B-rep section loops=%d areas=%s open=%d" %
+              for l in closed[1:]) and
+          not bs["open_gaps"] and
+          all(l["gap"] < 1e-6 for l in closed),
+          "B-rep section loops=%d areas=%s open=%d gaps=%s" %
           (len(closed), ["%.3f" % l["abs_area"] for l in closed],
-           bs["open"]))
+           bs["open"], bs["open_gaps"]))
 
     # Editability: one named expression must drive real geometry, restore to
     # the same volume, and the part must stay single-body/alive.

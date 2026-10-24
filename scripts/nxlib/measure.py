@@ -44,9 +44,9 @@ def part_length_scale(part):
     """部件长度单位到毫米的倍率；未知单位按 1.0 并返回 "unknown"。"""
     try:
         pu = part.PartUnits
-        if pu == NXOpen.Part.Units.Inches:
+        if pu == NXOpen.BasePart.Units.Inches:
             return "inch", 25.4
-        if pu == NXOpen.Part.Units.Millimeters:
+        if pu == NXOpen.BasePart.Units.Millimeters:
             return "mm", 1.0
     except Exception:
         pass
@@ -397,6 +397,8 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
     """B-rep 截面曲线（UF SectionFromPlanes），按端点串成闭环。
 
     返回每个原始段的三维采样点与按端点聚类的闭环；闭合环带绝对面积。
+    每个环带 `gap`（首尾距离），`open_gaps` 汇总未闭环的缺口；缺口大于
+    容差是真实开口/槽，不是拟合误差，不要靠放宽容差把它闭合成实体。
     只用于取重建轮廓：STL 切面只用于最终偏差核对。截面特征留在内存、
     不保存；原件文件不受影响。`body` 缺省取第一个实体。
     """
@@ -440,11 +442,15 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
         return (int(round(p[0] / tol)), int(round(p[1] / tol)),
                 int(round(p[2] / tol)))
 
+    def gap(pts):
+        d = _sub(pts[0], pts[-1])
+        return math.sqrt(_dot(d, d))
+
     loops = []
     open_edges = []
     for i, c in enumerate(curves):
         if c["closed"]:
-            loops.append({"pts": c["pts"], "closed": True})
+            loops.append({"pts": c["pts"], "closed": True, "gap": 0.0})
         else:
             open_edges.append(i)
     adj = {}
@@ -496,7 +502,8 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
                     break
         e1, e2 = _basis(normal)
         loops.append({"pts": pts,
-                      "closed": key(pts[0]) == key(pts[-1])})
+                      "closed": key(pts[0]) == key(pts[-1]),
+                      "gap": gap(pts)})
     e1, e2 = _basis(normal)
     for lp in loops:
         pts = lp["pts"]
@@ -509,11 +516,13 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
             ar += x0 * y1 - x1 * y0
         lp["area"] = 0.5 * ar
         lp["abs_area"] = abs(lp["area"])
+    open_gaps = [l["gap"] for l in loops if not l["closed"]]
     return {"origin": [float(v) for v in origin],
             "normal": _unit(normal),
             "curves": curves,
             "loops": loops,
-            "open": len([l for l in loops if not l["closed"]])}
+            "open": len(open_gaps),
+            "open_gaps": open_gaps}
 
 
 def measure_part(path, with_edges=True):
@@ -1368,7 +1377,12 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
 
 def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
                    area_err_max_pct=5.0):
-    """逐站截面 IoU / 面积差；plan 取 station_plan 的返回值或其 stations。"""
+    """逐站截面 IoU / 面积差 / 缺料与多料面积；plan 取 station_plan 的返回值。
+
+    `only_a` 是原件有、自建件缺的面积，`only_b` 是自建件多出的面积
+    （单位随网格）。面积差只能说明总量，修结构时按 `only_a/only_b` 区分
+    漏建与过建。
+    """
     stations = plan["stations"] if isinstance(plan, dict) else plan
     rows = []
     failed = []
@@ -1388,6 +1402,10 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             "iou": res["iou"],
             "area_a": aa,
             "area_b": ab,
+            "area_inter": res["area_inter"],
+            "area_union": res["area_union"],
+            "only_a": max(0.0, aa - res["area_inter"]),
+            "only_b": max(0.0, ab - res["area_inter"]),
             "area_err_pct": err,
             "pass": ok,
         })
