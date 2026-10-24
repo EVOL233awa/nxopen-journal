@@ -118,7 +118,8 @@
 - `references/modeling.md` §2.5：新增布尔目标/刀具按 Tag 识别。
 - `SKILL.md` 路由表：逆向重建描述改为“结构表→测量链→按结构建特征→验收门”，构造配方指向 `modeling.md`。
 - `references/reverse-engineering.md` §1.1：清单与站表互查（每张站写出负责结构，写不出即补结构行）；同阶段主结构先建全再逐个修门。
-- `references/reverse-engineering.md` §4.1：放宽阈值需在开工前写明并全程用同一档；交付说明逐门列 PASS/FAIL，缺结构补建。
+- `references/reverse-engineering.md` §4.1：验收基准为原件本身（站表按 §10.1 生成、阈值取默认档），任务无容差时按默认档执行；交付说明逐门列 PASS/FAIL，缺结构补建。
+- `references/reverse-engineering.md` §4/§4.2/§10：删“阈值按任务确定”“铸件放宽 5%”“阈值与零件类型不匹配即改阈值”三处自定口径，结果不符先查测量口径与站表。
 - `references/reverse-engineering.md` §10.1：站表按每个结构自身轴取根/中/端、开口/槽取槽底与两端，不按全局三轴枚举。
 - `references/reverse-engineering.md` §10.1：一次性重建限缩为数值项，结构缺失回清单补建。
 
