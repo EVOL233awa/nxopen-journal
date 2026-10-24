@@ -117,6 +117,10 @@
 - `references/modeling.md` §2.3：新增锥底沉孔 45° 锥刀配方。
 - `references/modeling.md` §2.5：新增布尔目标/刀具按 Tag 识别。
 - `SKILL.md` 路由表：逆向重建描述改为“结构表→测量链→按结构建特征→验收门”，构造配方指向 `modeling.md`。
+- `references/reverse-engineering.md` §1.1：清单与站表互查（每张站写出负责结构，写不出即补结构行）；同阶段主结构先建全再逐个修门。
+- `references/reverse-engineering.md` §4.1：放宽阈值需在开工前写明并全程用同一档；交付说明逐门列 PASS/FAIL，缺结构补建。
+- `references/reverse-engineering.md` §10.1：站表按每个结构自身轴取根/中/端、开口/槽取槽底与两端，不按全局三轴枚举。
+- `references/reverse-engineering.md` §10.1：一次性重建限缩为数值项，结构缺失回清单补建。
 
 ### Changed
 
