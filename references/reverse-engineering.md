@@ -205,8 +205,8 @@ for ct in curves:
 - 锥面未匹配、轴向区间或半角差 → 按面表 `point/radius/rad_data` 反算轴向起止，半角用 `rad_data` 的弧度值；孔心与轴取面表组的 `point/dir`，不从截面圆拟合（§8）。
 - 锥面半径/半角/轴全对、离中面远的截面偏小 → 锥孔收敛方向反了；按沿轴 ≥3 站半径的符号重建。
 - 沉孔底面是锥面 → 不加实心锥填角；按 `modeling.md` §2.3 的 45° 锥刀切底（深度减 `t`、底径 = 孔壁 − 2·t）。
-- 改孔径后 `Update undo happened` → 孔内“先通孔再补一圈料”的浮环脱离孔壁；减径段改成三段同轴孔（大-小-大），半径写成主直径表达式。倒角已绑父径、改孔深仍回滚 → 倒角刀切在孔后被吞；把孔口/孔底倒角切在孔特征之前。 扩径仍回滚且失败特征是底部锥口切除 → 锥口必须先于底部凹槽环切（扩径越过槽内半径后锥体落入槽腔悬空）；通孔下端直接下延穿出底面，孔底不要停在槽顶高度。
-- 面表圆柱/圆锥的 `point` 是**轴上锚点**（孔轴过 point 沿 dir），`center` 只是 bbox 中心；拿 center/面采样点当轴锚孔轴会偏几毫米到几十毫米。`point==center` 的孔可自证在轴上。自算面簇质心不是轴线（弧段不对称会偏），轴向以面表 point 或横截面圆拟合为准。
+- 扩径后 `Update undo happened`、失败特征是某把切除刀 → 该刀在它的历史位置已无材料可切（完全落入孔/槽空腔）：孔内“先通孔再补一圈料”的浮环脱离孔壁（减径段改三段同轴孔，大-小-大，半径由主直径表达式驱动）；孔口/孔底倒角建在孔后会随孔径扩大被吞掉（倒角切在孔前）；底部锥口建在环槽后会让锥刀落进槽腔（锥口切在环槽前）。通孔下端穿出底面是几何要求（孔底不要停在槽顶），但不解决锥刀悬空。
+- 面表圆柱/圆锥的 `point` 是**轴上锚点**（孔轴过 point 沿 dir），`center` 只是 bbox 中心；拿 center/面采样点当轴锚孔轴会偏几毫米到几十毫米。`point==center` 的孔可自证在轴上。面簇 bbox 中心/采样质心不是轴线（弧段不对称会偏），轴向以面表 point 或横截面圆拟合为准。
 - 外缘圆柱面 `concave=true` 且截面叠图该处全空 → 是缺口（notch）不是凸台：缺口弧并进所在站的外轮廓，勿建 unite。
 - 薄壁贯通切除会静默把件切成多体（Subtract 返回成功、体数变 2）→ 刀具沿壁收进留皮（如 ±(半宽−1)）保单实体，留皮位置按原件壁厚证据；每次布尔后强制校验体数。
 - 斜臂下缘随半径上升，水平站是等 z 轮廓、表达不了斜下缘 → 斜结构轮廓以沿特征轴的纵剖面 z(r) 为权威，不用水平站外环。
@@ -237,8 +237,8 @@ for ct in curves:
 - 交付前跑表达式存活率：逐个命名表达式**先 ×1.1**，`DoUpdate` 后体积必须变；抛 `Update undo happened.` 即 broken，×0.9 通过不算。参数上限留 10% 余量，或把受限尺寸拆成独立参数/字面值；命名不要以 `p`/`P` 开头（大小写都排除：自动表达式是 `p0`、`p1`，`P_D_BORE` 会被一并过滤，named 判 0 而模型本身逐参数有效），参数名用 `D_`、`R_`、`Z_`、`ANG_` 前缀。体积不变的是死参数（特征里用了字面值），接进特征后再交付；多体共用同名表达式时先按体拆名（`modeling.md` §1.7）。
 - **公式型表达式不算数值入口**：`A = B + 1.27` 这类右值会被逐项改数值的存活检查跳过；联动可保留系统式，但每个独立结构尺寸都要有数值参数入口（`W_HALF = H_LOBE + R_EYE` 时 `H_LOBE`、`R_EYE` 各自可改，绑定见 `modeling.md` §4.2b）。
 - **缩放后保持同一拓扑**：参数 ×1.1 后特征数与面数应不变；面数变化说明圆角滚动/合并，几何已不是同一结构，缩小测试步长或改绑方式。
-- **字面值轮廓的倒角刀会在父孔径放大时回滚**：孔口倒角若用独立回转体、轮廓半径写死，父孔 ×1.1 后刀具体整个落进孔内，特征抛 `Update undo`。改用挂在父孔边上的边倒角特征，让倒角随父边更新；或把倒角半径绑到父径表达式。
-- **更新失败先用 Suppress 模式拿失败特征**：`SetDefaultUpdateFailureAction(FailureOption.Suppress)` 后再 `DoUpdate` 不回滚，返回错误数；`UpdateManager.ErrorList` 给出 Description（如 "Tool body completely outside target body."），被自动抑制的特征（`f.Suppressed` 为真）就是失败特征；试完还原 RHS、Unsuppress 全部再 DoUpdate。（`FailureOption` 只有 Undo/Interrupt/Suppress，无 Accept。）Undo 模式只抛 `Update undo happened.`，日志里没有失败特征。
+- **倒角刀完全落入扩大后的孔内时回滚**：孔口倒角若用独立回转体、轮廓半径写死，扩径量超过倒角径向宽度后刀具体整个落进孔内，特征抛 `Update undo`；×1.1 是否触发取决于倒角宽度，不是固定阈值。改用挂在父孔边上的边倒角（随父边更新，扩径后仍存活），或把倒角切在孔特征之前。
+- **更新失败定位用 Suppress 或 Accept 模式**：`UpdateManager.SetDefaultUpdateFailureAction(FailureOption.Suppress)` 后 `DoUpdate` 不回滚，返回错误数；`UpdateManager.ErrorList` 用 `Length` + `GetErrorInfo(i)` 读（不可枚举），`Description` 给原因（如 "Tool body completely outside target body."），`ErrorObject/ErrorObjectDescription` 给失败特征，被自动抑制的特征 `f.Suppressed` 为真。`FailureOption` 含 Undo/Interrupt/Suppress/SuppressAll/Accept/AcceptAll/Delete/DeleteDependents/NoOption；Accept 同样能定位失败特征。试完还原 RHS、Unsuppress 全部再 DoUpdate；Undo 模式只抛 `Update undo happened.`，拿不到失败特征。
 - **孔深落进后续锥面切削区时表达式必死**（×1.1 后切削区被吞、体积不变）：该深度用字面值，不留死表达式。
 
 ## 8. 组件闭合与切除边界

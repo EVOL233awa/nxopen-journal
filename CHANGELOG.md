@@ -31,12 +31,12 @@
 - `references/reverse-engineering.md` §4.2：相邻两段放样首末截面来源不同会在接缝报 intersecting faces，同 z 带只用一套来源。
 - `references/reverse-engineering.md` §4.2：命名尺寸改后部分特征回滚说明该尺寸未被所有相关面引用，同轴/相邻面一律写成它的表达式。
 - `references/reverse-engineering.md` §4.2：底板低 z 站面积偏大归因于板底拔模，按底站/z4 外环放样并另切窗口。
-- `references/reverse-engineering.md` §4.2：更新失败定位改 Suppress 模式（`FailureOption` 无 Accept），`ErrorList` + 被抑制特征给出失败点。
-- `references/reverse-engineering.md` §4.2：孔底锥口切除必须先于底部凹槽环切，扩径后锥体悬空会致父径更新回滚。
+- `references/reverse-engineering.md` §4.2：更新失败定位用 Suppress/Accept 模式 + `ErrorList`（`Length`/`GetErrorInfo`）+ 被抑制特征给出失败点；`FailureOption` 枚举含 Accept。
+- `references/reverse-engineering.md` §4.2：孔底锥口切除必须先于底部凹槽环切，扩径后锥体悬空会致父径更新回滚；通孔下延是几何要求，不是回滚解药。
 - `references/reverse-engineering.md` §4.2：面表圆柱 `point` 是轴上锚点、`center` 只是 bbox 中心，孔轴按"过 point 沿 dir"建。
 - `references/reverse-engineering.md` §4.2：外缘圆柱 `concave=true` 且截面叠图全空是缺口不是凸台，勿建 unite。
 - `references/modeling.md` §2.2：拉伸拔模必须先设 `DraftOption`（`SimpleDraft.SimpleDraftType`）再设角度，只设角度静默无效；受控实验修正"批处理下拔模无效"的错误归因。
-- `references/reverse-engineering.md` §4.2：自算面簇质心不是轴线，轴向以面表 point 或横截面圆拟合为准。
+- `references/reverse-engineering.md` §4.2：面簇 bbox 中心/采样质心不是轴线，轴向以面表 point 或横截面圆拟合为准。
 - `references/reverse-engineering.md` §4.2：薄壁贯通切除会静默切成多体（Subtract 成功、体数 2），刀具沿壁留皮保单实体，布尔后校验体数。
 - `references/reverse-engineering.md` §4.2：斜结构轮廓以沿特征轴纵剖面 z(r) 为权威，水平站表达不了斜下缘。
 - `references/reverse-engineering.md` §7：孔深落进后续锥面切削区时表达式必死，该深度用字面值。
@@ -44,9 +44,9 @@
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
 - `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
 - `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
-- `references/reverse-engineering.md` §7：字面值轮廓的倒角刀在父孔径 ×1.1 时回滚，改用边倒角或绑定父径表达式。
+- `references/reverse-engineering.md` §7：倒角刀在扩径超过倒角径向宽度、完全落入孔内时回滚（×1.1 不是固定阈值）；改用随边更新的边倒角或把倒角切在孔前。
 - `references/reverse-engineering.md` §2.2：端部最高点取端部截面族最外站，不取中间站。
-- `references/reverse-engineering.md` §4.2：倒角半径已绑父径、改孔深仍回滚时，把孔口/孔底倒角切在孔特征之前（孔加深只会重切掉它，布尔仍有料）。
+- `references/reverse-engineering.md` §4.2：孔口/孔底倒角切在孔特征之前，避免倒角刀被扩大后的孔吞掉。
 - `references/reverse-engineering.md` §4.2：表达式表里“改了体积不变”的参数是死参数，接上驱动尺寸或删除，否则可编辑性检查判失败。
 - `references/reverse-engineering.md` §4.2：水平截面全对、竖直截面在臂端仍缺料 2–4 mm 是放样面尖角下垂，加密截面无效，按垂直臂长的截面沿臂宽拉伸成棱柱再并。
 - `references/reverse-engineering.md` §4.2：锥孔孔心/轴取面表 `point/dir`，不从截面圆拟合。
