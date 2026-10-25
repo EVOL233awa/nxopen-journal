@@ -41,6 +41,7 @@
 - `references/reverse-engineering.md` §4.2：斜结构轮廓以沿特征轴纵剖面 z(r) 为权威，水平站表达不了斜下缘。
 - `references/reverse-engineering.md` §7：孔深落进后续锥面切削区时表达式必死，该深度用字面值。
 - `references/reverse-engineering.md` §10.1：局部差异先做角度-半径剖面定位方位；测站避开台阶高度伪影，层叠结构按层取截面。
+- `references/reverse-engineering.md` §10.1：面表每张平面（含斜平面）的法向站按原件 point/normal 原样复算，不得按台阶伪影剔除或偏移；斜面轮廓端点用相邻平面交线解析求，STL 采样会让位置差远小于 G4 容差却使整面站归零。
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
 - `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
 - `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
