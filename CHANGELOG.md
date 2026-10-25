@@ -36,6 +36,11 @@
 - `references/reverse-engineering.md` §4.2：面表圆柱 `point` 是轴上锚点、`center` 只是 bbox 中心，孔轴按"过 point 沿 dir"建。
 - `references/reverse-engineering.md` §4.2：外缘圆柱 `concave=true` 且截面叠图全空是缺口不是凸台，勿建 unite。
 - `references/modeling.md` §2.2：拉伸拔模必须先设 `DraftOption`（`SimpleDraft.SimpleDraftType`）再设角度，只设角度静默无效；受控实验修正"批处理下拔模无效"的错误归因。
+- `references/reverse-engineering.md` §4.2：自算面簇质心不是轴线，轴向以面表 point 或横截面圆拟合为准。
+- `references/reverse-engineering.md` §4.2：薄壁区贯通切除切出浮离体，刀具沿壁留皮保单实体；肇事工具按报错 PIECE box 指认。
+- `references/reverse-engineering.md` §4.2：对角臂/斜轮廓以沿特征轴纵剖面为唯一权威，水平站 1 mm 下缘差会逐层放大。
+- `references/reverse-engineering.md` §7：孔深落进后续锥面切削区时表达式必死，该深度用字面值。
+- `references/reverse-engineering.md` §10.1：局部差异先做角度-半径剖面定位方位；测站避开台阶高度伪影，层叠结构按层取截面。
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
 - `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
 - `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
