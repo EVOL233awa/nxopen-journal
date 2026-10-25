@@ -37,8 +37,8 @@
 - `references/reverse-engineering.md` §4.2：外缘圆柱 `concave=true` 且截面叠图全空是缺口不是凸台，勿建 unite。
 - `references/modeling.md` §2.2：拉伸拔模必须先设 `DraftOption`（`SimpleDraft.SimpleDraftType`）再设角度，只设角度静默无效；受控实验修正"批处理下拔模无效"的错误归因。
 - `references/reverse-engineering.md` §4.2：自算面簇质心不是轴线，轴向以面表 point 或横截面圆拟合为准。
-- `references/reverse-engineering.md` §4.2：薄壁区贯通切除切出浮离体，刀具沿壁留皮保单实体；肇事工具按报错 PIECE box 指认。
-- `references/reverse-engineering.md` §4.2：对角臂/斜轮廓以沿特征轴纵剖面为唯一权威，水平站 1 mm 下缘差会逐层放大。
+- `references/reverse-engineering.md` §4.2：薄壁贯通切除会静默切成多体（Subtract 成功、体数 2），刀具沿壁留皮保单实体，布尔后校验体数。
+- `references/reverse-engineering.md` §4.2：斜结构轮廓以沿特征轴纵剖面 z(r) 为权威，水平站表达不了斜下缘。
 - `references/reverse-engineering.md` §7：孔深落进后续锥面切削区时表达式必死，该深度用字面值。
 - `references/reverse-engineering.md` §10.1：局部差异先做角度-半径剖面定位方位；测站避开台阶高度伪影，层叠结构按层取截面。
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
