@@ -11,8 +11,9 @@
 - `scripts/nxlib/measure.py`：`expression_survey` 批量可编辑性检查——逐条命名表达式 ×1.1、DoUpdate、量体积、还原复核，返回 named/live/dead/broken/skipped/alerts/alive_ratio/pass，不保存。
 - `scripts/tests/38_measure.py`：新增 `REG_EXPRESSION_SURVEY`（23→24 项）。
 - `scripts/tests/38_measure.py`：新增 `REG_UNITS` 并扩展测站自比对（24→25 项）。
-- `scripts/nxlib/measure.py`：新增 `functional_hole_groups`（凹面且至少一个垂直端面），`verify_parts` 未给 `ref_a` 时用它作 G2 分母，圆角/凸台/外轮廓转角不计入。
-- `scripts/nxlib/measure.py`：`compare_parts` 增加 `applicable`/`verdict`，原件无功能圆柱/锥面时 G2 记 N/A；`scripts/tests/38_measure.py` 新增 `REG_COMPARE_NA`（25→26 项）。
+- `scripts/nxlib/measure.py`：新增 `functional_hole_groups`（轴向截面内环筛功能孔），`verify_parts` 未给 `ref_a` 时用它作 G2 分母，圆角/凸台/外轮廓转角不计入。
+- `scripts/nxlib/measure.py`：`exact_section` 用完按 undo mark 回滚截面特征与临时平面，避免把临时截面留在内存部件里；`scripts/tests/38_measure.py` 新增 `REG_SECTION_CLEANUP`（26→27 项）。
+- `scripts/nxlib/measure.py`：`compare_parts` 增加 `applicable`/`verdict`，原件无功能孔时 G2 记 N/A；`scripts/tests/38_measure.py` 新增 `REG_COMPARE_NA`（25→26 项）。
 - `scripts/nxlib/measure.py`：新增 `brep_section_iou`/`station_report_hybrid`，`verify_parts` 的面表平面站改用 B-rep 精确截面、轴站仍用 STL，阈值不变；`references/reverse-engineering.md` §4.1/§10.1 同步为“STL 共面切面不作形状判据”。
 - `scripts/nxlib/measure.py`：`part_length_scale` 改用 `NXOpen.BasePart.Units`（原 `NXOpen.Part.Units` 与运行时类型不等，曾把所有部件判为 unknown）。
 - `scripts/nxlib/measure.py`：`exact_section` 每个环给 `gap`，未闭环缺口汇总为 `open_gaps`，用于区分真实开口与拟合误差。

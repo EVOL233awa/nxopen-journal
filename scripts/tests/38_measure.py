@@ -324,7 +324,7 @@ def main():
     check("REG_UNITS",
           mp["units"] == "mm" and abs(mp["length_scale"] - 1.0) < 1e-12,
           "units=%s scale=%.6f" % (mp["units"], mp["length_scale"]))
-    inv = functional_hole_groups(mp)
+    inv = functional_hole_groups(mp, part)
     inv_cyl = [g for g in inv if g["kind"] == CYLINDER]
     inv_con = [g for g in inv if g["kind"] == CONE]
     cmp_inv = compare_parts(part_path, part_path, ref_a=inv)
@@ -417,7 +417,9 @@ def main():
            thin["dropped"]))
 
     # B-rep section, not STL: block minus two D10 holes at z=10.
+    feat_before = len(list(part.Features))
     bs = exact_section(part, (0.0, 0.0, SECTION_Z), (0.0, 0.0, 1.0))
+    feat_after = len(list(part.Features))
     closed = sorted([l for l in bs["loops"] if l["closed"]],
                     key=lambda l: -l["abs_area"])
     check("REG_EXACT_SECTION",
@@ -430,6 +432,9 @@ def main():
           "B-rep section loops=%d areas=%s open=%d gaps=%s" %
           (len(closed), ["%.3f" % l["abs_area"] for l in closed],
            bs["open"], bs["open_gaps"]))
+    check("REG_SECTION_CLEANUP", feat_after == feat_before,
+          "section feature/plane cleanup: features %d->%d" %
+          (feat_before, feat_after))
 
     # Editability: one named expression must drive real geometry, restore to
     # the same volume, and the part must stay single-body/alive.

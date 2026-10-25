@@ -399,13 +399,16 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
     返回每个原始段的三维采样点与按端点聚类的闭环；闭合环带绝对面积。
     每个环带 `gap`（首尾距离），`open_gaps` 汇总未闭环的缺口；缺口大于
     容差是真实开口/槽，不是拟合误差，不要靠放宽容差把它闭合成实体。
-    只用于取重建轮廓：STL 切面只用于最终偏差核对。截面特征留在内存、
-    不保存；原件文件不受影响。`body` 缺省取第一个实体。
+    只用于取重建轮廓：STL 切面只用于最终偏差核对。截面特征与临时基准面
+    在取点后按 undo mark 回滚，不留在内存部件里；`body` 缺省取第一个实体。
     """
     ufs = _ufs()
     bodies = [body] if body is not None else list(part.Bodies)
     if not bodies:
         raise ValueError("part has no solid body")
+    session = NXOpen.Session.GetSession()
+    mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
+                               "exact_section")
     plane = part.Planes.CreatePlane(
         NXOpen.Point3d(*[float(v) for v in origin]),
         NXOpen.Vector3d(*[float(v) for v in _unit(normal)]),
@@ -517,6 +520,13 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
         lp["area"] = 0.5 * ar
         lp["abs_area"] = abs(lp["area"])
     open_gaps = [l["gap"] for l in loops if not l["closed"]]
+    try:
+        session.UndoToMark(mark, None)
+    finally:
+        try:
+            session.DeleteUndoMark(mark, None)
+        except Exception:
+            pass
     return {"origin": [float(v) for v in origin],
             "normal": _unit(normal),
             "curves": curves,
@@ -546,15 +556,86 @@ def measure_part(path, with_edges=True):
     }
 
 
-def functional_hole_groups(measure):
-    """圆柱/锥组中的功能孔：凹面且至少一个垂直端面。
+def _fit_circle(pts):
+    """二维点集的圆心/半径/径向离散度（质心法，整圆才可靠）。"""
+    n = len(pts)
+    cu = sum(p[0] for p in pts) / float(n)
+    cv = sum(p[1] for p in pts) / float(n)
+    rs = [math.hypot(p[0] - cu, p[1] - cv) for p in pts]
+    return cu, cv, sum(rs) / float(n), max(rs) - min(rs)
 
-    `measure_part` 需 with_edges=True 才有 `ends`。沉孔/锪面锥与孔壁各只
-    接一个平面端面，仍属同一功能孔；圆角无垂直端面、凸台为凸面，均不计入。
-    穿过曲面的孔若连一个平面端面都没有，需再用截面内环补筛。
+
+def _point_in_poly(pt, poly):
+    x, y = pt
+    inside = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y):
+            if x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _inner_ring(part, group):
+    """组轴向 1/3、2/3 截面上，组半径处是否有被外环包住的内环。"""
+    d = group["axis"]
+    p0 = group["point"]
+    lo, hi = group["extent"]
+    r0 = group["radius"]
+    tan = math.tan(math.radians(group.get("half_angle_deg", 0.0)))
+    ra, rb = r0 + tan * lo, r0 + tan * hi
+    rmin, rmax = min(ra, rb), max(ra, rb)
+    tol_r = max(0.01 * max(abs(rmin), abs(rmax), 1.0), 0.05)
+    for frac in (1.0 / 3.0, 2.0 / 3.0):
+        t = lo + (hi - lo) * frac
+        origin = [p0[k] + d[k] * t for k in range(3)]
+        try:
+            sec = exact_section(part, origin, d)
+        except Exception:
+            continue
+        e1, e2 = _basis(d)
+        polys = []
+        for lp in sec["loops"]:
+            if not lp.get("closed"):
+                continue
+            pts = []
+            for p in lp["pts"]:
+                w = _sub(p, origin)
+                pts.append((_dot(w, e1), _dot(w, e2)))
+            if len(pts) >= 8:
+                polys.append(pts)
+        if len(polys) < 2:
+            continue
+        for i, pts in enumerate(polys):
+            cu, cv, rfit, spread = _fit_circle(pts)
+            if spread > max(0.05 * rfit, 0.5):
+                continue
+            if not (rmin - tol_r <= rfit <= rmax + tol_r):
+                continue
+            center3 = [origin[k] + cu * e1[k] + cv * e2[k]
+                       for k in range(3)]
+            w = _sub(center3, group["center"])
+            h = _sub(w, [d[k] * _dot(w, d) for k in range(3)])
+            if math.sqrt(_dot(h, h)) > max(0.05 * max(rfit, 1.0), 0.5):
+                continue
+            if any(j != i and _point_in_poly(pts[0], other)
+                   for j, other in enumerate(polys)):
+                return True
+    return False
+
+
+def functional_hole_groups(measure, part):
+    """圆柱/锥组中的功能孔：凹面，且轴向截面在组半径处出现内环。
+
+    内环是被外轮廓包住的闭合环——孔壁/沉孔在截面里是独立整圆；内圆角、
+    凸台、外轮廓转角在截面里只是外轮廓的一段弧，不产生内环。原件没有
+    功能孔时 G2 记 N/A，不要求为了过门强行建这些结构。
     """
     return [g for g in measure["cylinders"] + measure["cones"]
-            if g.get("concave") and len(g.get("ends", [])) >= 1]
+            if g.get("concave") and _inner_ring(part, g)]
 
 
 def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
@@ -643,11 +724,10 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
     是“原件有、自建件没有”的结构，必须逐项建或写入简化清单。
 
     ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单（按 faces
-    tag 识别）。原件侧用 `functional_hole_groups`（凹面且至少两个垂直
-    端面）或截面圆孔环筛出功能孔清单再传 ref_a；不筛时圆角/凸台的圆柱
-    组也会算进未匹配项。
+    tag 识别）。原件侧用 `functional_hole_groups`（截面内环筛出的功能孔）
+    或孔表筛出比对清单再传 ref_a；圆角/凸台/外轮廓转角不计入。
 
-    `applicable=False` 表示原件没有功能圆柱/锥面组，G2 记 N/A；此时 `pass`
+    `applicable=False` 表示原件没有功能孔，G2 记 N/A；此时 `pass`
     仍为 True（空分母不阻塞整件），报告按 `verdict` 写 N/A 而不是通过。
     """
     a = measure_part(path_a)
@@ -1581,7 +1661,7 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
                                 section_iou_min, section_area_pct)
     if ref_a is None:
-        ref_a = functional_hole_groups(mo)
+        ref_a = functional_hole_groups(mo, part_o)
     cmp = compare_parts(orig, built, radius_tol, center_tol, axis_tol_deg,
                         length_tol, half_angle_tol, ref_a, ref_b)
     vol_pct = abs(mb["volume"] - mo["volume"]) / mo["volume"] * 100.0 \
