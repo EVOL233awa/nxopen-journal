@@ -141,7 +141,7 @@ cut.CommitFeature(); cut.Destroy()
 - **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔。100×100 方形 + 64 边形 r10 内环、拉伸 10：体积 96863.45（解析 96858.41，差值为多边形化）。
 - **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心（体积 96863→100000）；外环留 0.03 mm 缝时链被错误闭合，体积涨到 4,000,000 量级。截面环拼接后要校验首末点重合。
 - **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
-- **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`；`DraftOption = SimpleDraftSimpleDraftType.SimpleFromStart`，`DraftAngle.RightHandSide = "<deg>"`；正值向拉伸端收缩。
+- **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`。**必须先设拔模类型再设角度**：`d.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart`（或 `SimpleFromProfile`），再 `d.SetDraftAngle("<deg>")`，正值向拉伸端收缩。**只设角度不设类型 = 静默无效**：角度 RHS 接受、提交成功、无告警，但体积与直壁版逐位相同——默认 `DraftOption=0` 无拔模类型，角度被忽略（r10 h20 圆柱 5° 实测：不设类型 6283.19 与直壁逐位相同；设 SimpleFromStart / SimpleFromProfile 均 5247.89 ≈ 解析圆台 5251.2）。交付前用体积对比确认拔模真的生效。
 - `helpPoint` 取料内一点；落在曲线上的点不可用。
 
 ### 2.2b 多截面放样（ThroughCurves）

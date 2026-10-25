@@ -205,7 +205,9 @@ for ct in curves:
 - 锥面未匹配、轴向区间或半角差 → 按面表 `point/radius/rad_data` 反算轴向起止，半角用 `rad_data` 的弧度值；孔心与轴取面表组的 `point/dir`，不从截面圆拟合（§8）。
 - 锥面半径/半角/轴全对、离中面远的截面偏小 → 锥孔收敛方向反了；按沿轴 ≥3 站半径的符号重建。
 - 沉孔底面是锥面 → 不加实心锥填角；按 `modeling.md` §2.3 的 45° 锥刀切底（深度减 `t`、底径 = 孔壁 − 2·t）。
-- 改孔径后 `Update undo happened` → 孔内“先通孔再补一圈料”的浮环脱离孔壁；减径段改成三段同轴孔（大-小-大），半径写成主直径表达式。倒角已绑父径、改孔深仍回滚 → 倒角刀切在孔后被吞；把孔口/孔底倒角切在孔特征之前。
+- 改孔径后 `Update undo happened` → 孔内“先通孔再补一圈料”的浮环脱离孔壁；减径段改成三段同轴孔（大-小-大），半径写成主直径表达式。倒角已绑父径、改孔深仍回滚 → 倒角刀切在孔后被吞；把孔口/孔底倒角切在孔特征之前。 扩径仍回滚且失败特征是底部锥口切除 → 锥口还必须先于底部凹槽环切（扩径越过槽内半径后锥体整体落入槽腔悬空，"completely outside"）；通孔下端直接下延穿出底面，孔底不要停在槽顶高度。
+- 面表圆柱/圆锥的 `point` 是**轴上锚点**（孔轴过 point 沿 dir），`center` 只是 bbox 中心；拿 center/面采样点当轴锚会让孔轴偏几毫米到几十毫米（实测 sink 偏 19 mm、锥销孔轴整组判反）。验证法：某条孔的 point==center 时必在轴上。
+- 外缘圆柱面 `concave=true` 且截面叠图该处全空 → 是缺口（notch）不是凸台：缺口弧并进所在站的外轮廓即可，勿建 unite（建了就是多料，体积差十万级）。
 
 **圆角 / 端盖 / 参数**：
 
@@ -234,7 +236,7 @@ for ct in curves:
 - **公式型表达式不算数值入口**：`A = B + 1.27` 这类右值会被逐项改数值的存活检查跳过；联动可保留系统式，但每个独立结构尺寸都要有数值参数入口（`W_HALF = H_LOBE + R_EYE` 时 `H_LOBE`、`R_EYE` 各自可改，绑定见 `modeling.md` §4.2b）。
 - **缩放后保持同一拓扑**：参数 ×1.1 后特征数与面数应不变；面数变化说明圆角滚动/合并，几何已不是同一结构，缩小测试步长或改绑方式。
 - **字面值轮廓的倒角刀会在父孔径放大时回滚**：孔口倒角若用独立回转体、轮廓半径写死，父孔 ×1.1 后刀具体整个落进孔内，特征抛 `Update undo`。改用挂在父孔边上的边倒角特征，让倒角随父边更新；或把倒角半径绑到父径表达式。
-- **更新失败先用 Accept 模式拿失败特征**：`SetDefaultUpdateFailureAction(FailureOption.Accept)` 后再 `DoUpdate`，`GetAllPartFeaturesWithAlerts()` 才会给出失败特征；Undo 模式只抛 `Update undo happened.`，日志里没有失败特征。
+- **更新失败先用 Suppress 模式拿失败特征**：`SetDefaultUpdateFailureAction(FailureOption.Suppress)` 后再 `DoUpdate` 不回滚，返回错误数；`UpdateManager.ErrorList` 给出 Description（如 "Tool body completely outside target body."），被自动抑制的特征（`f.Suppressed` 为真）就是失败特征；试完还原 RHS、Unsuppress 全部再 DoUpdate。（`FailureOption` 只有 Undo/Interrupt/Suppress，无 Accept。）Undo 模式只抛 `Update undo happened.`，日志里没有失败特征。
 
 ## 8. 组件闭合与切除边界
 

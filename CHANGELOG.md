@@ -31,6 +31,11 @@
 - `references/reverse-engineering.md` §4.2：相邻两段放样首末截面来源不同会在接缝报 intersecting faces，同 z 带只用一套来源。
 - `references/reverse-engineering.md` §4.2：命名尺寸改后部分特征回滚说明该尺寸未被所有相关面引用，同轴/相邻面一律写成它的表达式。
 - `references/reverse-engineering.md` §4.2：底板低 z 站面积偏大归因于板底拔模，按底站/z4 外环放样并另切窗口。
+- `references/reverse-engineering.md` §4.2：更新失败定位改 Suppress 模式（`FailureOption` 无 Accept），`ErrorList` + 被抑制特征给出失败点。
+- `references/reverse-engineering.md` §4.2：孔底锥口切除必须先于底部凹槽环切，扩径后锥体悬空会致父径更新回滚。
+- `references/reverse-engineering.md` §4.2：面表圆柱 `point` 是轴上锚点、`center` 只是 bbox 中心，孔轴按"过 point 沿 dir"建。
+- `references/reverse-engineering.md` §4.2：外缘圆柱 `concave=true` 且截面叠图全空是缺口不是凸台，勿建 unite。
+- `references/modeling.md` §2.2：拉伸拔模必须先设 `DraftOption`（`SimpleDraft.SimpleDraftType`）再设角度，只设角度静默无效；受控实验修正"批处理下拔模无效"的错误归因。
 - `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
 - `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
 - `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
