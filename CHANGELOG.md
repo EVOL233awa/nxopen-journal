@@ -11,6 +11,9 @@
 - `scripts/nxlib/measure.py`：`expression_survey` 批量可编辑性检查——逐条命名表达式 ×1.1、DoUpdate、量体积、还原复核，返回 named/live/dead/broken/skipped/alerts/alive_ratio/pass，不保存。
 - `scripts/tests/38_measure.py`：新增 `REG_EXPRESSION_SURVEY`（23→24 项）。
 - `scripts/tests/38_measure.py`：新增 `REG_UNITS` 并扩展测站自比对（24→25 项）。
+- `scripts/nxlib/measure.py`：新增 `functional_hole_groups`（凹面且至少一个垂直端面），`verify_parts` 未给 `ref_a` 时用它作 G2 分母，圆角/凸台/外轮廓转角不计入。
+- `scripts/nxlib/measure.py`：`compare_parts` 增加 `applicable`/`verdict`，原件无功能圆柱/锥面时 G2 记 N/A；`scripts/tests/38_measure.py` 新增 `REG_COMPARE_NA`（25→26 项）。
+- `scripts/nxlib/measure.py`：新增 `brep_section_iou`/`station_report_hybrid`，`verify_parts` 的面表平面站改用 B-rep 精确截面、轴站仍用 STL，阈值不变；`references/reverse-engineering.md` §4.1/§10.1 同步为“STL 共面切面不作形状判据”。
 - `scripts/nxlib/measure.py`：`part_length_scale` 改用 `NXOpen.BasePart.Units`（原 `NXOpen.Part.Units` 与运行时类型不等，曾把所有部件判为 unknown）。
 - `scripts/nxlib/measure.py`：`exact_section` 每个环给 `gap`，未闭环缺口汇总为 `open_gaps`，用于区分真实开口与拟合误差。
 - `scripts/nxlib/measure.py`：`station_report` 每站增加 `area_inter/area_union/only_a/only_b`，自检可按缺料/多料定位结构。
@@ -154,6 +157,8 @@
 - 用例计数 37→38、gate 34→35、`nxlib` 五域→六域（`SKILL.md`/`README.md`/`tests/README.md` 同步）。
 - 逆向重建交付路线改为结构特征优先：组件按自然成形方式建（回转/拉伸/放样/布尔/阵列），特征数与结构数同量级；验收新增结构语义（无逐层拉伸堆栈、每个结构可单独修改），与几何验收同时通过。
 - 截面验收由“覆盖组件与平面族”收紧为“每站 IoU ≥0.95、面积差 ≤5%”。
+- `references/reverse-engineering.md` §4.1/§10.1、`references/modeling.md`：G 编号退为机器键，验收表与正文改用具体指标名（单实体可读、截面轮廓重合度、圆柱/锥面参数一致性、体积相对差、包盒位置与尺寸差、四视图投影重合度、双向表面偏差、圆角覆盖、表达式可编辑性、特征树结构）；§4.1 的 G5 原写“同站截面”，与 `verify_parts`/冻结 QA 的四视图 G5 不一致，改为“四视图投影重合度”（top/front/side/iso 轮廓 IoU ≥0.99），逐站截面仍由“截面轮廓重合度”把关。
+- `references/reverse-engineering.md` §4.1：增加指标适用条件——原件无功能圆柱/锥面或圆角时，圆柱/锥面参数一致性与圆角覆盖记 N/A，不记失败；补充包盒位置与尺寸差（整件全局包盒）和双向表面偏差（缺料/多料双向 RMS/P95）的说明。
 - `SKILL.md` 路由表中的逆向重建描述改为“原件+一句重建要求→测量链→截面/放样→切除→验收项”。
 
 ### Fixed

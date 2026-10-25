@@ -274,7 +274,7 @@ builder.Destroy(); collector.Destroy()
 - 孔壁识别：遍历 `GetFeatures()` 找 `FeatureType == "SUBTRACT"` 后取 `GetFaces()`，或 Hole 特征用 `AskFaceData` 按半径过滤（§5）；不要按"所有圆柱面"过滤。
 - 依次合并每步接触当前材料；命名体数与实际体数不符时查孤立体。
 - **切孔的验收看面表，不看体积差**：锥座若落在已挖空的腔里，切除仍会小降体积（数百 mm³）却不产生锥面。每把刀提交后按半径/半角/孔心核对新增面，再进入下一把。
-- **失败的布尔要包 undo mark**：合并重试的分支失败后若不 `UndoToMark`，失败特征会留在树上变成告警；R4 的 20 条告警中 13 条是 UNITE、7 条是 EXTRUDE，G8 直接不过。
+- **失败的布尔要包 undo mark**：合并重试的分支失败后若不 `UndoToMark`，失败特征会留在树上变成告警；R4 的 20 条告警中 13 条是 UNITE、7 条是 EXTRUDE，表达式可编辑性直接不过。
 
 ## 3. 阵列 / 镜像 / 旋转 / 衍生特征
 

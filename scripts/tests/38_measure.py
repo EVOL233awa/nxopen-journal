@@ -54,11 +54,11 @@ from nxlib.session import new_part
 from nxlib.modeling import block, boolean, blend_on_edges, expressions
 from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            exact_section, export_mesh, expression_survey,
-                           face_table, group_coaxial, hole_params,
-                           cone_params, measure_part, mesh_bbox, read_stl,
-                           mesh_deviation, sample_surface, section_area,
-                           section_iou, station_plan, station_report,
-                           verify_parts, view_iou)
+                           face_table, functional_hole_groups, group_coaxial,
+                           hole_params, cone_params, measure_part, mesh_bbox,
+                           read_stl, mesh_deviation, sample_surface,
+                           section_area, section_iou, station_plan,
+                           station_report, verify_parts, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -324,15 +324,22 @@ def main():
     check("REG_UNITS",
           mp["units"] == "mm" and abs(mp["length_scale"] - 1.0) < 1e-12,
           "units=%s scale=%.6f" % (mp["units"], mp["length_scale"]))
-    inv = mp["cylinders"] + mp["cones"]
+    inv = functional_hole_groups(mp)
+    inv_cyl = [g for g in inv if g["kind"] == CYLINDER]
+    inv_con = [g for g in inv if g["kind"] == CONE]
     cmp_inv = compare_parts(part_path, part_path, ref_a=inv)
     check("REG_COMPARE_INVENTORY",
-          cmp_inv["pass"] and
-          len(cmp_inv["cylinders"]["pairs"]) == len(mp["cylinders"]) and
-          len(cmp_inv["cones"]["pairs"]) == len(mp["cones"]),
-          "inventory compare: %d cyl + %d cone groups, pass=%s" %
-          (len(cmp_inv["cylinders"]["pairs"]),
-           len(cmp_inv["cones"]["pairs"]), cmp_inv["pass"]))
+          cmp_inv["pass"] and len(inv) >= 1 and
+          len(cmp_inv["cylinders"]["pairs"]) == len(inv_cyl) and
+          len(cmp_inv["cones"]["pairs"]) == len(inv_con),
+          "inventory compare: functional=%d (%d cyl + %d cone), pass=%s" %
+          (len(inv), len(inv_cyl), len(inv_con), cmp_inv["pass"]))
+    cmp_na = compare_parts(part_path, part_path, ref_a=[], ref_b=[])
+    check("REG_COMPARE_NA",
+          cmp_na["applicable"] is False and cmp_na["verdict"] == "N/A" and
+          cmp_na["pass"],
+          "empty inventory: applicable=%s verdict=%s pass=%s" %
+          (cmp_na["applicable"], cmp_na["verdict"], cmp_na["pass"]))
 
     # ------------------------------------------------- deviation + stations
     pts_a = sample_surface(mesh, count=300, seed=11)
@@ -384,11 +391,15 @@ def main():
     ver = verify_parts(part_path, part_path, samples=800, max_stations=48)
     check("REG_VERIFY_SELF",
           ver["pass"] and ver["gates"]["G1"]["pass"] and
-          ver["gates"]["G2"]["pass"] and ver["gates"]["G6"]["pass"],
-          "verify_parts self: gates=%s stations=%d" %
+          ver["gates"]["G1"].get("brep_plane_count", 0) >= 1 and
+          ver["gates"]["G2"]["pass"] and
+          ver["gates"]["G2"].get("applicable") is True and
+          ver["gates"]["G6"]["pass"],
+          "verify_parts self: gates=%s stations=%d brep_planes=%d" %
           (dict((k, ver["gates"][k]["pass"]) for k in
                 ("G0", "G1", "G2", "G3", "G4", "G5", "G6")),
-           ver["stations"]["count"]))
+           ver["stations"]["count"],
+           ver["gates"]["G1"].get("brep_plane_count", 0)))
 
     fake_faces = [{"type": PLANE, "point": [0.0, 0.0, float(i)],
                    "dir": [0.0, 0.0, 1.0]} for i in range(40)]

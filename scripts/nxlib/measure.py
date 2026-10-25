@@ -546,6 +546,17 @@ def measure_part(path, with_edges=True):
     }
 
 
+def functional_hole_groups(measure):
+    """圆柱/锥组中的功能孔：凹面且至少一个垂直端面。
+
+    `measure_part` 需 with_edges=True 才有 `ends`。沉孔/锪面锥与孔壁各只
+    接一个平面端面，仍属同一功能孔；圆角无垂直端面、凸台为凸面，均不计入。
+    穿过曲面的孔若连一个平面端面都没有，需再用截面内环补筛。
+    """
+    return [g for g in measure["cylinders"] + measure["cones"]
+            if g.get("concave") and len(g.get("ends", [])) >= 1]
+
+
 def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
                   length_tol, half_angle_tol):
     used = set()
@@ -632,8 +643,12 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
     是“原件有、自建件没有”的结构，必须逐项建或写入简化清单。
 
     ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单（按 faces
-    tag 识别）。原件侧应先用截面圆孔环筛出功能孔清单再传 ref_a；不筛时
-    圆角/凸台的圆柱组也会算进未匹配项。
+    tag 识别）。原件侧用 `functional_hole_groups`（凹面且至少两个垂直
+    端面）或截面圆孔环筛出功能孔清单再传 ref_a；不筛时圆角/凸台的圆柱
+    组也会算进未匹配项。
+
+    `applicable=False` 表示原件没有功能圆柱/锥面组，G2 记 N/A；此时 `pass`
+    仍为 True（空分母不阻塞整件），报告按 `verdict` 写 N/A 而不是通过。
     """
     a = measure_part(path_a)
     b = measure_part(path_b)
@@ -656,6 +671,9 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
                         axis_tol_deg, length_tol, half_angle_tol)
     cones = _match_groups(a_con, b_con, CONE, radius_tol, center_tol,
                           axis_tol_deg, length_tol, half_angle_tol)
+    applicable = bool(a_cyl or a_con)
+    groups_pass = (not cyl["unmatched_a"] and not cones["unmatched_a"] and
+                   all(p["pass"] for p in cyl["pairs"] + cones["pairs"]))
     return {
         "a": {"path": a["path"], "units": a["units"],
               "length_scale": a["length_scale"],
@@ -670,8 +688,10 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
                                if a["volume"] else 0.0),
         "cylinders": cyl,
         "cones": cones,
-        "pass": (not cyl["unmatched_a"] and not cones["unmatched_a"] and
-                 all(p["pass"] for p in cyl["pairs"] + cones["pairs"])),
+        "applicable": applicable,
+        "verdict": ("N/A" if not applicable else
+                    ("PASS" if groups_pass else "FAIL")),
+        "pass": groups_pass,
         "strict_pass": cyl["pass"] and cones["pass"],
     }
 
@@ -1421,6 +1441,119 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     }
 
 
+def _exact_loops_2d(sec, origin, normal):
+    """B-rep 截面环投到测站平面二维坐标。"""
+    e1, e2 = _basis(normal)
+    polys = []
+    for lp in sec["loops"]:
+        pts = []
+        for p in lp["pts"]:
+            pts.append((_dot(_sub(p, origin), e1),
+                        _dot(_sub(p, origin), e2)))
+        if len(pts) < 3:
+            continue
+        if pts[0] != pts[-1]:
+            pts.append(pts[0])
+        polys.append(pts)
+    return polys
+
+
+def _polygons_iou(pa, pb):
+    """二维环集合的扫描线 IoU/面积；奇偶填充，孔环按内点消除。"""
+    us, vs = [], []
+    for poly in pa + pb:
+        for u, v in poly:
+            us.append(u)
+            vs.append(v)
+    if not us:
+        return {"iou": 1.0, "area_a": 0.0, "area_b": 0.0,
+                "area_inter": 0.0, "area_union": 0.0, "step": 0.0}
+    umin, umax = min(us), max(us)
+    vmin, vmax = min(vs), max(vs)
+    diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
+    step = max(diag / 300.0, 0.02)
+    nrows = max(1, int(math.ceil((vmax - vmin) / step)))
+    inter = union = aa = ab = 0.0
+    for iy in range(nrows):
+        y = vmin + (iy + 0.5) * step
+        sa = _merge(_row_spans([{"pts": poly} for poly in pa], y))
+        sb = _merge(_row_spans([{"pts": poly} for poly in pb], y))
+        ia = _span_inter(sa, sb)
+        la = _span_len(sa)
+        lb = _span_len(sb)
+        aa += la
+        ab += lb
+        inter += ia
+        union += la + lb - ia
+    return {"iou": inter / union if union > 0 else 1.0,
+            "area_a": aa * step, "area_b": ab * step,
+            "area_inter": inter * step, "area_union": union * step,
+            "step": step}
+
+
+def brep_section_iou(part_a, part_b, origin, normal,
+                     iou_min=0.95, area_err_max_pct=5.0):
+    """同站 B-rep 精确截面 IoU；用于面表平面站，避免 STL 共面切面伪影。"""
+    sa = exact_section(part_a, origin, normal)
+    sb = exact_section(part_b, origin, normal)
+    ca = _polygons_iou(_exact_loops_2d(sa, origin, normal),
+                       _exact_loops_2d(sb, origin, normal))
+    aa, ab = ca["area_a"], ca["area_b"]
+    if abs(aa) > 1e-9:
+        err = abs(ab - aa) / abs(aa) * 100.0
+    else:
+        err = 0.0 if abs(ab) <= 1e-9 else 100.0
+    ok = ca["iou"] >= iou_min and err <= area_err_max_pct
+    return {
+        "iou": ca["iou"],
+        "area_a": aa,
+        "area_b": ab,
+        "area_inter": ca["area_inter"],
+        "area_union": ca["area_union"],
+        "only_a": max(0.0, aa - ca["area_inter"]),
+        "only_b": max(0.0, ab - ca["area_inter"]),
+        "area_err_pct": err,
+        "step": ca["step"],
+        "open_a": sa["open"],
+        "open_b": sb["open"],
+        "gaps_a": list(sa["open_gaps"]),
+        "gaps_b": list(sb["open_gaps"]),
+        "pass": ok,
+    }
+
+
+def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
+                          iou_min=0.95, area_err_max_pct=5.0):
+    """逐站截面：面表平面站用 B-rep 精确截面，其余站用 STL 截面。
+
+    STL 切面在切平面与模型平面共面时会漏/重算三角面，不能把该站读数
+    当形状判据；B-rep 原样站位（不偏移）才是平面站的判定口径。两者
+    使用同一组阈值。
+    """
+    base = station_report(mesh_a, mesh_b, plan, iou_min, area_err_max_pct)
+    rows = base["stations"]
+    stations = plan["stations"] if isinstance(plan, dict) else plan
+    brep_count = 0
+    for row in rows:
+        st = stations[row["index"]]
+        if not any(str(s).startswith("plane#")
+                   for s in st.get("sources", [])):
+            row["section_mode"] = "stl"
+            continue
+        row.update(brep_section_iou(part_a, part_b, st["origin"],
+                                    st["normal"], iou_min,
+                                    area_err_max_pct))
+        row["section_mode"] = "brep"
+        brep_count += 1
+    failed = [r["index"] for r in rows if not r["pass"]]
+    base["stations"] = rows
+    base["failed"] = failed
+    base["pass"] = not failed
+    base["brep_plane_count"] = brep_count
+    base["stl_axis_count"] = len(rows) - brep_count
+    return base
+
+
 def verify_parts(orig, built, samples=4000, max_stations=48,
                  radius_tol=0.025, center_tol=0.05, axis_tol_deg=0.1,
                  length_tol=0.1, half_angle_tol=0.1,
@@ -1430,8 +1563,9 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  ref_a=None, ref_b=None):
     """原件/自建件几何门 G0–G6 一次汇总（长度统一到毫米）。
 
-    G7 圆角为报告项；G8 表达式存活与 G9 结构语义仍需按 `modeling.md` §6
-    的编辑测试与特征树检查，本函数不作替代。
+    G1 的面表平面站用 B-rep 精确截面复核，其余站用 STL 截面；两者阈值
+    相同。G7 圆角为报告项；G8 表达式存活与 G9 结构语义仍需按
+    `modeling.md` §6 的编辑测试与特征树检查，本函数不作替代。
     """
     mo = measure_part(orig)
     mb = measure_part(built)
@@ -1444,8 +1578,10 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     mesh_b_mm = scale_mesh(mesh_b, sb)
 
     plan = station_plan(mo, max_stations=max_stations)
-    sec = station_report(mesh_o, mesh_b, plan, section_iou_min,
-                         section_area_pct)
+    sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
+                                section_iou_min, section_area_pct)
+    if ref_a is None:
+        ref_a = functional_hole_groups(mo)
     cmp = compare_parts(orig, built, radius_tol, center_tol, axis_tol_deg,
                         length_tol, half_angle_tol, ref_a, ref_b)
     vol_pct = abs(mb["volume"] - mo["volume"]) / mo["volume"] * 100.0 \
