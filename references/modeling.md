@@ -263,6 +263,33 @@ builder.Destroy(); collector.Destroy()
 - **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
 - 验收：孔口倒圆/倒角后体积下降；双棱边产生 2 个面、单直边 1 个面；倒角锥面 type **17**、直边倒角平面 22。
 
+**开放链圆角刀（EdgeBlend 的替代）**：边不闭合（端缘折面链、开放轮廓边）时 `EdgeBlend` 提交会存下 `Unable to terminate the blend faces`，且没有 API 能清——不要在真实零件上试。改成"角区减切圆"的刀具：
+
+```python
+session = NXOpen.Session.GetSession()
+mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, "roll")
+# 截面建在垂直于边的平面内，局部系 e1 = sgn*n0（sgn=-1 凸边 / +1 凹边），
+# e2 = d × e1；滚心 o 满足 o·u_i = R（u_i 为两面的方向余弦），
+# 切点 t_i = o - R*u_i；多边形 = 角区内缩点 + 两切点沿面外扩 0.5R + 16 点圆弧
+pts = [...]
+cs = [line(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
+ee = min(0.8, 0.25 * length)
+f = extrude(cs, NXOpen.Vector3d(*d), str(length + 2 * ee), str(ee),
+            NXOpen.Point3d(*centroid))      # 起点沿 -d 外移 ee，两端穿出
+if convex:
+    subtract(f, "roll")                     # 凸边减
+else:
+    unite(f, "roll")                        # 凹边加
+```
+
+- 判凸凹先看两面法向夹角与边方向（`cross(n0, n1)·d` 的符号）；方向确定就只做一次布尔。方向不确定时才用体积判定：先减、`dv ≈ 截面面积×边长` 才接受，否则回滚重试加。
+- 截面与拉伸必须在 mark 内建，布尔失败立刻 `UndoToMark` + `DeleteUndoMark` + `UpdateManager.ClearErrorList()`，然后重新取实体（`part.Bodies` 的包装对象已失效）。
+- **已成功提交的圆角不要回滚**：回滚后实体 out-of-date，质量属性读 0，下一次布尔报 `Tool body completely outside target body`。逐条滚时"成功就留在树上"。
+- 候选边先筛：两面都是平面（type 22）、夹角 30°–150°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。
+- 端缘是 2–5 mm 折面链时逐段滚，长度下限放到 1.2R，两端仍各穿出 0.8；相邻两段的刀具有重叠，顶点处自然形成过渡，不必另建球面。
+- 每条边记中点（四舍五入到 0.01），被拒的边不再重试，否则重扫循环不收敛。
+- 验收：滚出的圆角面是类型 16（直边）或 19（`rad_data` = 圆角半径、`radius` = 主半径）；开放链的端点在布尔后应残留一圈小过渡面，体积按"截面面积 × 边长"校验在 35% 以内。
+
 ### 2.5 布尔与孔壁识别
 
 **布尔路线**：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)` → `SetBooleanOperationAndTarget(Subtract/Unite, target)` → `CommitFeature()` → 断言体数。方块布尔只用这条入口；`BooleanOption.Type`+`SetTargetBodies` 会静默不生效（体数 1→2）。

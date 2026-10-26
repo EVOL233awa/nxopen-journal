@@ -287,12 +287,14 @@ def face_table(part, with_edges=False):
     return rows
 
 
-def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3):
+def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3,
+                  cluster_tol=None):
     """把面表聚成同轴组。
 
     圆柱按 (轴, 半径) 分桶，圆锥按 (轴, 半角) 分桶；桶内再按到轴线的距离
     聚簇，距离上限取 2r+2（同一孔的上下两段圆柱不会被拆开，不同孔不会被
-    并在一起）。返回组的 axis/point/extent/length/center/radius/faces。
+    并在一起），cluster_tol 给定时改用它。返回组的
+    axis/point/extent/length/center/radius/faces。
     """
     kind = _kind_value(kind)
     picked = [f for f in faces if f.get("type") == kind]
@@ -309,7 +311,8 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3):
     groups = []
     for key, fs in buckets.items():
         d = _canon(fs[0]["dir"])
-        tol = max(2.0 * max(abs(f.get("radius", 0.0)) for f in fs) + 2.0, 5.0)
+        tol = cluster_tol if cluster_tol is not None else max(
+            2.0 * max(abs(f.get("radius", 0.0)) for f in fs) + 2.0, 5.0)
         clusters = []
         for f in fs:
             for cl in clusters:
@@ -390,6 +393,137 @@ def cone_params(group):
         "extent": list(group["extent"]),
         "faces": list(group["faces"]),
     }
+
+
+def _bbox_union(faces):
+    return [min(f["box"][k] for f in faces) for k in range(3)] + \
+           [max(f["box"][k + 3] for f in faces) for k in range(3)]
+
+
+def torus_groups(faces, center_tol=40.0):
+    """环面按 (major, minor) 分桶，桶内按包围盒就近聚簇。
+
+    圆角的环面常被布尔切成多片，同一圆角带的分片包围盒彼此邻近；
+    不同结构上的同参数环面（如两只耳的根部圆角）相距远，不会被并组。
+    """
+    picked = [f for f in faces if f.get("type") == TORUS]
+    buckets = {}
+    for f in picked:
+        key = (round(f.get("radius", 0.0), 3), round(f.get("rad_data", 0.0), 3))
+        buckets.setdefault(key, []).append(f)
+    out = []
+    for key, fs in buckets.items():
+        clusters = []
+        for f in fs:
+            c = list(f["box"][:3]) + list(f["box"][3:])
+            for cl in clusters:
+                if math.sqrt(sum((cl["c"][i] - c[i]) ** 2
+                                for i in range(6))) <= center_tol:
+                    cl["faces"].append(f)
+                    break
+            else:
+                clusters.append({"c": c, "faces": [f]})
+        for cl in clusters:
+            out.append({"major": key[0], "minor": key[1],
+                        "nfaces": len(cl["faces"]),
+                        "bbox": _bbox_union(cl["faces"]),
+                        "faces": [f["tag"] for f in cl["faces"]]})
+    return sorted(out, key=lambda r: (r["minor"], -r["major"]))
+
+
+def plane_families(faces, digits=2):
+    """平面按 (单位法向, 沿法向的偏置) 分族：共面片归一族，平行异面不并。"""
+    picked = [f for f in faces if f.get("type") == PLANE]
+    buckets = {}
+    for f in picked:
+        n = _canon(f.get("dir", [0.0, 0.0, 1.0]))
+        off = _dot(f.get("point", [0.0, 0.0, 0.0]), n)
+        key = (tuple(round(x, digits) for x in n), round(off, digits))
+        buckets.setdefault(key, []).append(f)
+    out = []
+    for key, fs in buckets.items():
+        out.append({"normal": list(key[0]), "offset": key[1],
+                    "nfaces": len(fs), "bbox": _bbox_union(fs),
+                    "faces": [x["tag"] for x in fs]})
+    return sorted(out, key=lambda r: -r["nfaces"])
+
+
+def structure_directory(faces, cluster_tol=8.0, axis_digits=3):
+    """面表 → 结构目录：同轴圆柱/圆锥组、环面组、平面族。
+
+    每组给几何参数（轴/参考点/半径/半角/轴向区间/包围盒/凹性/面 tag），是
+    "每个功能面组只属于一个结构"的机器可读底表：孔/座/窗取 cylinders 与
+    cones 的轴向区间，圆角面另由 `fillet_map` 按半径单列。
+    cluster_tol 是桶内轴向聚簇的垂距上限，取"同一孔的两段不拆、两个孔不并"
+    的量级（数量级约等于 2×最大半径+2）。
+    """
+    groups = group_coaxial(faces, CYLINDER, axis_digits=axis_digits,
+                           cluster_tol=cluster_tol)
+    groups += group_coaxial(faces, CONE, axis_digits=axis_digits,
+                            cluster_tol=cluster_tol)
+    return {
+        "cylinders": [g for g in groups if g["kind"] == CYLINDER],
+        "cones": [g for g in groups if g["kind"] == CONE],
+        "torus_groups": torus_groups(faces, cluster_tol * 5.0),
+        "plane_families": plane_families(faces),
+    }
+
+
+def fillet_map(faces, radii=None, tol=0.002, max_ratio=0.25,
+               min_faces=2):
+    """面表 → 圆角地图：按半径的面组 + 每面支撑面（边邻接统计）。
+
+    radii 给定时按该半径集合分桶（圆柱半径、环面 minor、球半径）；为 None
+    时取"小半径"组自动识别：半径 ≤ max_ratio×最大面半径且至少 min_faces 个面。
+    自动识别只是起点——倒角/小孔也会落进来，判据是支撑面：圆角面夹在两片
+    支撑面之间，且支撑面的半径与它不同。
+    """
+    usable = [f for f in faces if f.get("type") in (CYLINDER, CONE, TORUS, 18)]
+    by_tag = dict((f["tag"], f) for f in faces)
+    if radii is None:
+        hist = {}
+        for f in usable:
+            r = abs(f.get("radius", 0.0))
+            hist[round(r, 3)] = hist.get(round(r, 3), 0) + 1
+        rmax = max(hist) if hist else 0.0
+        radii = sorted(r for r, n in hist.items()
+                       if n >= min_faces and r <= max_ratio * rmax)
+    out = []
+    for r in radii:
+        picked = []
+        for f in usable:
+            got = (abs(f.get("rad_data", 0.0)) if f["type"] == TORUS
+                   else abs(f.get("radius", 0.0)))
+            if abs(got - r) <= tol:
+                picked.append(f)
+        if not picked:
+            continue
+        supports = []
+        for f in picked:
+            cnt = {}
+            for e in f.get("edges", []):
+                for nt in e.get("faces", []):
+                    if nt == f["tag"]:
+                        continue
+                    nf = by_tag.get(nt)
+                    if nf is None:
+                        continue
+                    key = (nf["type"],
+                           round(abs(nf.get("radius", 0.0)), 3),
+                           round(abs(nf.get("rad_data", 0.0)), 3))
+                    cnt[key] = cnt.get(key, 0) + 1
+            supports.append({
+                "tag": f["tag"], "type": f["type"],
+                "bbox": list(f["box"]),
+                "supports": ["%d/R%.3f/A%.3f x%d" % (k[0], k[1], k[2], v)
+                             for k, v in sorted(cnt.items(),
+                                                key=lambda kv: -kv[1])[:4]],
+            })
+        out.append({"radius": r, "nfaces": len(picked),
+                    "bbox": _bbox_union(picked),
+                    "faces": [f["tag"] for f in picked],
+                    "face_supports": supports})
+    return out
 
 
 def exact_section(part, origin, normal, tolerance=0.01, samples=65,

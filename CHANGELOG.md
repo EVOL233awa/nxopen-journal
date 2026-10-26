@@ -3,6 +3,18 @@
 本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- `scripts/nxlib/measure.py`：新增 `structure_directory`（同轴圆柱/圆锥组 + 环面组 + 平面族）与 `fillet_map`（按半径分桶、每面带支撑面）；配套 `group_coaxial` 的 `cluster_tol`、`torus_groups`、`plane_families`、`_bbox_union`。
+- `scripts/tests/39_reverse_route.py`：新增结构目录与圆角地图用例（9 项：结构分组、孔/锥/平面族参数、环面主半径、圆角支撑面、`rad_data` 口径、孔壁≠圆角的支撑面判别、单实体）；`RUN_TESTS.bat` 登记 `TEST39_DONE`。
+- `references/reverse-engineering.md` §1/§1.1：结构目录与圆角地图列为开工产物；结构表证据列增加支撑面类型对与圆角组。
+- `references/reverse-engineering.md` §2.3/§2.4/§2.5：新增斜置杆、双瓣眼、口部圆角带三条选择判据（纵剖面权威、瓣心圆拟合、锥壁+圆角带三件套）。
+- `references/reverse-engineering.md` §9：重写为圆角地图 + 三档成形（闭合链 `EdgeBlend` / 开放链圆角刀 / 端缘折面逐段滚）+ 刀具记账纪律 + 极值退缩 `R(2−√2)` 定量判据 + 覆盖率分母核对。
+- `references/reverse-engineering.md` §4.2：新增四条归因——端缘缺滚圆的定量判据、耳顶混合冠的 0.1–0.2 mm 残差、杆端方肩多料、口部圆角带半径/顺序。
+- `references/modeling.md` §2.4：新增开放链圆角刀配方（截面求滚心、沿边拉伸穿出、凸减凹加、undo mark 纪律、候选筛选、逐段记账、验收口径）。
+
 ## [1.3.0] - 2026-10-26
 
 ### Added
