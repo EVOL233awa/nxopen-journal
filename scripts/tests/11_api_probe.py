@@ -7,7 +7,6 @@
 # check_journal: allow-probes  （一次性 API 探针，故意演示坑位，静态检查豁免）
 
 import os
-import sys
 import traceback
 
 import NXOpen

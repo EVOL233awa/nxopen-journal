@@ -27,9 +27,6 @@ import NXOpen.CAE
 import NXOpen.Features
 import NXOpen.UF
 
-
-import sys
-
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
 except NameError:

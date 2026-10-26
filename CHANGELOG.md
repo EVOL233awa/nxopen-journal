@@ -3,7 +3,7 @@
 本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 
-## [Unreleased]
+## [1.3.0] - 2026-10-26
 
 ### Added
 
@@ -161,6 +161,7 @@
 - `references/reverse-engineering.md` §4.1/§10.1、`references/modeling.md`：G 编号退为机器键，验收表与正文改用具体指标名（单实体可读、截面轮廓重合度、圆柱/锥面参数一致性、体积相对差、包盒位置与尺寸差、四视图投影重合度、双向表面偏差、圆角覆盖、表达式可编辑性、特征树结构）；§4.1 的 G5 原写“同站截面”，与 `verify_parts`/冻结 QA 的四视图 G5 不一致，改为“四视图投影重合度”（top/front/side/iso 轮廓 IoU ≥0.99），逐站截面仍由“截面轮廓重合度”把关。
 - `references/reverse-engineering.md` §4.1：增加指标适用条件——原件无功能圆柱/锥面或圆角时，圆柱/锥面参数一致性与圆角覆盖记 N/A，不记失败；补充包盒位置与尺寸差（整件全局包盒）和双向表面偏差（缺料/多料双向 RMS/P95）的说明。
 - `SKILL.md` 路由表中的逆向重建描述改为“原件+一句重建要求→测量链→截面/放样→切除→验收项”。
+- FEA/Motion/Drafting/GB 文档删除零件专属实验读数与视图编号/比例系数个例，保留判据、阈值与校准常数。
 
 ### Fixed
 
@@ -169,6 +170,14 @@
 - 布尔顺序：切除刀具穿过目标面，补孔排在整圆盘并集之后。
 - 圆角选边改用 exact，避免 ring 带入曲面缝边。
 - 孔轴判读、堆叠层截面、凸台顶面与板顶面的区分。
+- `references/assembly.md` §A.2/§A.5：`Concentric` 孔口圆边的静态 DOF 读数不可靠，转动副改以拖动后的几何与沿轴滑动行为判定。
+- `references/motion.md` §M.8：四杆静不定计数由 `6×5−5×4` 改为 `6×3−5×4`。
+- `references/drafting.md`：视图判据改为 `AskVisibleObjects()>0`，比例核对统一用 `AskViewScale`；删除与 §B.1 重复的空视图说明和不可复现的比例系数。
+- `references/drafting-annotation.md`：字号断言示例改为非默认值 4.0；删除重复且含未定义变量的完整表格代码块。
+- `scripts/gb_drawing.py`：`model_bbox` 返回值说明改为嵌套 tuple；删除 `detail_rect` 冗余 import。
+- `scripts/nxlib/drafting.py`：`sxline_legs` 报错文案改为与实际字段数条件一致。
+- `scripts/nxlib/__init__.py`：补 `__all__`，模块引导行数说明与示例一致。
+- 测试代码：删除未使用的 import/局部变量与重复 `sys` 导入，`ruff --select F` 归零。
 
 ## [1.2.0] - 2026-10-20
 

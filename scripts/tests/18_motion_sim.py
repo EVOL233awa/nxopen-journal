@@ -285,13 +285,11 @@ def _main():
         say("TEST18_DONE")
         return
 
-    # 恒速驱动：真实步长应 = 360°/(nfr-1)。整周 360° 由 nfr-1 个步长覆盖。
-    per_frame_rad = (2.0 * math.pi) / float(nfr - 1)
+    # 整周 360° 由 nfr-1 个步长覆盖。
     crank = crank_raw
     rocker = rocker_raw
     nused = min(len(crank), len(rocker))
     crank, rocker = crank[:nused], rocker[:nused]
-    per_frame = math.degrees(per_frame_rad)
     say("FRAMES_USED=%d" % nused)
 
     # 恒速检验：每个相邻步长都应等于「指令速率换算到每帧」的值。

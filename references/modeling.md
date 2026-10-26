@@ -1,6 +1,6 @@
 # 建模域：方法论 + 可复现路线（NX 12 本机批处理）
 
-> 先读 SKILL.md。§1 方法论；§2-§6 路线（⚠ 已验证）。示例 `scripts/tests/01-03`；§3.4-§3.6 抽壳/拔模/质量属性/去参，§4.4 螺纹。
+> 先读 SKILL.md。§1 方法论；§2-§6 路线。示例 `scripts/tests/01-03`；§3.4-§3.6 抽壳/拔模/质量属性/去参，§4.4 螺纹。
 
 ## 1. 建模方法论（风格约定，非 API）
 
@@ -126,8 +126,8 @@ cut.CommitFeature(); cut.Destroy()
 - 无 UF `CreateCone`/`CreateCylinder`；圆锥用 `ConeBuilder.Types.DiametersAndHeight` + `Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`。
 - `Diameter`/`Height` 只读，`.Expression.RightHandSide` 可绑定（`cyl.Diameter.RightHandSide = "D_Base"`）。
 - Builder 首参传 `NXOpen.Features.Feature.Null`（Cylinder/Block 等）、`NXOpen.Features.Cone.Null`（Cone）；`None` 报 TypeError。`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
-- **斜轴孔/锥孔切除（已验证）**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。验收值：100×100×20 方块上斜轴（0.7,−0.7,0.139）Ø10 圆柱切除后 1 实体、体积 200000→195068.79；Ø10→Ø6 高 20 锥孔切除后 1 实体、体积降 1026.02（=πh/3(R²+Rr+r²)）。
-- **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。验收值：100×60×20 方块上 Ø20×10 凸台合并后体积 123141.593（=120000+π·10²·10），单实体。
+- **斜轴孔/锥孔切除**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。验收：1 实体，圆柱切除体积按 πr²h、锥孔按 πh/3(R²+Rr+r²) 下降。
+- **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。验收：合并后单实体，体积 = 基体 + πr²h。
 
 ### 2.2 拉伸（Section 路线）
 
@@ -138,8 +138,8 @@ cut.CommitFeature(); cut.Destroy()
 - `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
 - **截面必须在新建件里建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`。在打开的原件上下文里对同一组曲线调 `AddToSection` 抛 `NXException: Internal error`（与 helpPoint 无关，换料内点同样报错）。
-- **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔。100×100 方形 + 64 边形 r10 内环、拉伸 10：体积 96863.45（解析 96858.41，差值为多边形化）。
-- **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心（体积 96863→100000）；外环留 0.03 mm 缝时链被错误闭合，体积涨到 4,000,000 量级。截面环拼接后要校验首末点重合。
+- **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔；体积与解析值比较时扣掉多边形化误差。
+- **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心；外环留 0.03 mm 缝时链被错误闭合，体积异常增大。截面环拼接后要校验首末点重合。
 - **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
 - **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`；先 `d.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart`（或 `SimpleFromProfile`）再 `d.SetDraftAngle("<deg>")`，正值向拉伸端收缩。只设角度不设类型 = 静默无效：提交成功、无告警、体积与直壁逐位相同；生效判据 = 体积显著低于直壁。
 - `helpPoint` 取料内一点；落在曲线上的点不可用。
@@ -183,7 +183,7 @@ hb.HoleLocation = NXOpen.Point3d(x, y, z)
 hb.CommitFeature(); hb.Destroy()
 ```
 
-⚠ **孔位贴边 = 零壁厚**（`... zero wall thickness`）；孔边至少留壁厚（≥10 mm）。
+⚠ **孔位贴边 = 零壁厚**（`... zero wall thickness`）；孔边与轮廓之间留出壁厚，不要把孔放到轮廓边上。
 
 锥孔（functional cone）用 UF 旋转一条凸梯形剖面切成型，不用 Hole 特征：
 
@@ -200,7 +200,7 @@ feats = ufs.Modl.CreateRevolved(tag_list, ["0.0", "360.0"], c, a,
 wp.Features.CreateSubtractFeature(target, False, tool_bodies, False, True)
 ```
 
-- 凸梯形可以有两条边落在旋转轴上（验证过 360° 旋转成功）；凹剖面/带台阶剖面才报 "Cannot create Swept geometry"。
+- 凸梯形可以有两条边落在旋转轴上（360° 旋转可用）；凹剖面/带台阶剖面才报 "Cannot create Swept geometry"。
 - 切完用 `ufs.Modeling.AskFaceData` 回读锥面：type 17、`rad_data` 即半角（弧度）、`radius` 在面基准点处。与孔表比较半径时，把两侧都归一到同一轴向站（面基准点），不要直接比原始 `radius`——UF 的面基准点随修剪边界移动。
 - 旋转轴方向与孔表 axis 相反时，`AskFaceData` 的 dir 会翻转；比较轴向用绝对值点积。
 - **孔轴与板法向不同（斜耳孔）时，耳座绕孔轴回转成圆柱再并**：棱柱只建到耳座切点，圆柱半径与轴向区间取面表；把棱柱直接沿板宽拉伸会把圆耳座包成方块，端站截面多料。反例与判据见 `reverse-engineering.md` §2.2/§4.2。
@@ -261,7 +261,7 @@ builder.Destroy(); collector.Destroy()
 - 角点处的边不能逐条倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"；重建件上后补圆角受相邻拓扑影响大，能在截面轮廓里带的圆角（腔口/槽口小半径）优先画进轮廓。
 - **双瓣耳/眼**：矩形块沿孔轴拉伸，平台两侧各一条顶边倒 `R_EYE`，肩面应得到解析圆柱（类型 16）；平台半宽用系统式（`W_HALF = H_LOBE + R_EYE`）。端面整圈倒 `R_END` 得到环面（major = R_EYE − R_END、minor = R_END）。
 - **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
-- 验证：Ø12 孔口 dV=−39.794；直边 dV=−60.000；面数 = 双棱边 2、单直边 1；倒角锥面 type **17**、直边倒角平面 22。
+- 验收：孔口倒圆/倒角后体积下降；双棱边产生 2 个面、单直边 1 个面；倒角锥面 type **17**、直边倒角平面 22。
 
 ### 2.5 布尔与孔壁识别
 
@@ -270,11 +270,11 @@ builder.Destroy(); collector.Destroy()
 - **目标体与刀具按 Tag 识别**：每次访问 `part.Bodies` 返回新的包装对象，用 `is` 比较会选错体；操作前记下 tag 集，操作后取新增 tag 的体作为结果，刀具只取本次新建的体。
 
 - 工具体与目标体必须**真正体积相交**；面/点/线接触会静默留两个体，工具体在外报 `Tool body completely outside target body`。
-- 相切工具体被拒（`... zero wall thickness.`）：留间隙或先合并；Ø60 凸台改 Ø56（留 4 mm）。
+- 相切工具体被拒（`... zero wall thickness.`）：留间隙或先合并；缩小凸台直径留出间隙，不要靠调整布尔顺序。
 - 孔壁识别：遍历 `GetFeatures()` 找 `FeatureType == "SUBTRACT"` 后取 `GetFaces()`，或 Hole 特征用 `AskFaceData` 按半径过滤（§5）；不要按"所有圆柱面"过滤。
 - 依次合并每步接触当前材料；命名体数与实际体数不符时查孤立体。
 - **切孔的验收看面表，不看体积差**：锥座若落在已挖空的腔里，切除仍会小降体积（数百 mm³）却不产生锥面。每把刀提交后按半径/半角/孔心核对新增面，再进入下一把。
-- **失败的布尔要包 undo mark**：合并重试的分支失败后若不 `UndoToMark`，失败特征会留在树上变成告警；R4 的 20 条告警中 13 条是 UNITE、7 条是 EXTRUDE，表达式可编辑性直接不过。
+- **失败的布尔要包 undo mark**：合并重试的分支失败后若不 `UndoToMark`，失败特征会留在树上变成告警（UNITE/EXTRUDE 都会），表达式可编辑性直接不过。
 
 ## 3. 阵列 / 镜像 / 旋转 / 衍生特征
 
@@ -301,7 +301,7 @@ pb.CommitFeature(); pb.Destroy()
 
 ⚠ 2D 线性阵列必须 `rect.UseYDirectionToggle = True` 并给 YDirection。
 ⚠ 依赖特征一起阵列（打孔→倒圆）自带倒圆。
-⚠ 验证：孔壁 type=16 半径=HD/2；孔口倒圆 type=19，`radius` = 主半径 = HD/2 + 倒圆半径。
+⚠ 验收：孔壁 type=16 半径=HD/2；孔口倒圆 type=19，`radius` = 主半径 = HD/2 + 倒圆半径。
 ⚠ 圆周间距用 `PitchDistance`（`CountAndPitch` 不存在）。
 
 ### 3.1a 沿路径阵列（`AlongPath`）
@@ -457,7 +457,7 @@ feats = ufs.Modl.CreateRevolved(
     [0.0, 0.0, 0.0], [1.0, 0.0, 0.0],  # 原点 + 旋转轴方向
     NXOpen.UF.ModlFeatureSigns.NULLSIGN,  # ⚠ 枚举是 ModlFeatureSigns，不是 FeatureSigns
 )
-# ⚠ 剖面含落在轴上的边时其余弦凸剖面可用（360° 已验证）；凹剖面或带台阶/凹陷剖面报 "Cannot create Swept geometry"。
+# ⚠ 剖面含落在轴上的边时其余弦凸剖面可用（360° 可用）；凹剖面或带台阶/凹陷剖面报 "Cannot create Swept geometry"。
 #   复杂旋转体 = 多段凸剖面旋转 + BooleanBuilder Unite。
 ```
 
@@ -580,10 +580,10 @@ adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 sk.GetStatus()
 ```
 
-- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**（用例 37）：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
-- **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出（同用例第 1 条断言）。把 0 尺寸归因于少调 `GetStatus` 是错归因——同一用例里另一个变量是 AutoConstrain。
-- ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小 R3 弧）会被拉到自交，拉伸体体积从 2 507 变 956 671 mm³。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
-- **适用边界（已验证）**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；26 曲线轮毂轮廓出 108 个尺寸、dof=6，尺寸是线长/角度而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
+- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
+- **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出；0 尺寸的原因是先跑了 AutoConstrain，不是少调 `GetStatus`。
+- ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小圆弧）会被拉到自交，拉伸体体积异常增大。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
+- **适用边界**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；曲线多、段长的轮毂轮廓会生成大量线长/角度尺寸而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
 
 ### 4.2b 自动尺寸 → 命名参数（唯一可行的参数化路线）
 
@@ -608,7 +608,7 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 ### 4.3 草图尺寸与约束路线
 
 - 尺寸与约束：简单草图走 §4.2；测量轮廓走 `sk.CreateFixedConstraint(NXOpen.Sketch.ConstraintGeometry(c, NXOpen.Sketch.ConstraintPointType.NotSet, 0))` 逐条固定，dof 未归零时再对每条试 `ArcCenter / StartVertex / EndVertex`（无效点类型会抛异常，逐条 try 即可）。`ConstraintPointType` 的“无点”成员是 `NotSet`（不是 `None`）。
-- **非 XY 草图平面只能靠 Reattach**（NX12 批处理已验证）：`PlaneReference` 无论配 `PlaneOption=ExistingPlane/NewPlane/NewCsys`、`PlaneCollection.CreatePlane(FixedY)`、`CreateFixedPlane` 还是 `CreateSketchInPlaceBuilder2` 都被忽略，提交后 `AttachPlane.Normal` 仍是 (0,0,1)。可行路线：
+- **非 XY 草图平面只能靠 Reattach**（NX12 批处理）：`PlaneReference` 无论配 `PlaneOption=ExistingPlane/NewPlane/NewCsys`、`PlaneCollection.CreatePlane(FixedY)`、`CreateFixedPlane` 还是 `CreateSketchInPlaceBuilder2` 都被忽略，提交后 `AttachPlane.Normal` 仍是 (0,0,1)。可行路线：
   ```python
   db = wp.Features.CreateDatumPlaneBuilder(NXOpen.Features.Feature.Null)   # ⚠ 参数是 Feature.Null
   db.SetPointAndDirection(wp.Points.CreatePoint(pt),
@@ -628,7 +628,7 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 - **`RevolveBuilder` 对草图截面崩溃**（`memory access violation`）；改用 UF `Modl.CreateRevolved`（草图曲线可用，体积与解析值一致）。
 - `Sketch.CreateDimension` / `CreateRadialDimension`、`SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 批处理不可用（只读或 `No overload matches`），不要在这条路线上尝试。
 - **共面堆叠特征要用表达式定起点**：板顶上的垫环/筋/轮缘/缺口，拉伸起点写 `Limits.StartExtend.Value.RightHandSide = "T_PLATE - 15.875"`，不要写 `"0"`。写死 0 时改 `T_PLATE` 会让上层特征与板顶脱开或互相吞并，更新整体回滚。
-- **倒圆不要贴在会移动的边上**：沉孔上沿（z≈22.225，r 48.5..50.5）的 R1.524 倒圆在 `Z_PAD +10%` 后边的主人改变，整个更新回滚（“Update undo happened”）。要么把倒圆放到所有驱动参数之后，要么换一条不随参数移动的边。
+- **倒圆不要贴在会移动的边上**：沉孔上沿的倒圆在驱动参数 +10% 后边的主人改变，整个更新回滚（“Update undo happened”）。要么把倒圆放到所有驱动参数之后，要么换一条不随参数移动的边。
 - **同一个 `FileNew` 只能建一个零件**：一个进程里第二次 `FileNew` 之后草图报 “Sketch is not initialized”、更新报 “Update undo happened”。批量跑多案例用进程级环境变量分流，一进程一案例。
 - 草图级镜像走不通（`SketchMirrorPatternBuilder.DirectionObject` 只读）；对称件用特征级 `MirrorFeatureBuilder`（§3.2）。
 - 面查询用 §5 的 `AskFaceData`（`Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在）。
@@ -650,11 +650,11 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 
 ```python
 pt   = wp.Points.CreatePoint(NXOpen.Point3d(30.0, 20.0, 20.0))
-rule = wp.ScRuleFactory.CreateRuleCurveDumbFromPoints([pt])  # 点规则在这里
+rule = wp.ScRuleFactory.CreateRuleCurveDumbFromPoints([pt])
 b.HolePosition.AddToSection([rule], pt, NXOpen.NXObject.Null, NXOpen.NXObject.Null,
                             NXOpen.Point3d(30.0, 20.0, 20.0), NXOpen.Section.Mode.Create, False)
 bt = NXOpen.GeometricUtilities.BooleanOperation.BooleanType
-b.BooleanOperation.SetBooleanOperationAndBody(bt.Subtract, body)  # 目标体在这里
+b.BooleanOperation.SetBooleanOperationAndBody(bt.Subtract, body)
 b.ProjectionDirection.ProjectVector = wp.Directions.CreateDirection(pt, NXOpen.Vector3d(0.0, 0.0, -1.0))
 b.HoleDepthLimitOption = NXOpen.Features.HolePackageBuilder.HoleDepthLimitOptions.Value
 b.Tolerance = 0.0254  # ⚠⚠ 必填（距离公差 double）：不写 Validate 报

@@ -37,7 +37,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
     sys.path.insert(0, _p)
 
 from nxlib.session import new_part
-from nxlib.modeling import add_thru_hole, block, find_planar_face
+from nxlib.modeling import add_thru_hole, block
 
 # 板件与孔（孔半径必须相等，Fit 才成立）
 BASE_ORG = (-50.0, -30.0, 0.0)

@@ -171,9 +171,9 @@ def sxline_legs(u, sxline):
     """
     data = u.Draw.AskSteppedSxline(sxline)
     if not hasattr(data, "__len__") or len(data) < 7:
-        raise RuntimeError("AskSteppedSxline returned %d field(s), expected the "
-                           "documented 8" % (len(data) if hasattr(data, "__len__")
-                                             else -1))
+        raise RuntimeError("AskSteppedSxline returned %d field(s), expected "
+                           "at least 7" % (len(data) if hasattr(data, "__len__")
+                                           else -1))
     n_segs = data[5]
     seg_tags = data[6]
     if len(seg_tags) != n_segs:

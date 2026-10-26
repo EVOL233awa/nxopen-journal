@@ -265,7 +265,7 @@ nxopen-journal/
 ├── LICENSE                         ← MIT 许可证
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
-├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.2.0）
+├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.3.0）
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
 ├── references/*.md                 ← 八个域文件；各自的域与覆盖范围见 §5 路由表
 ├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/标题栏/技术要求/尺寸道位/PDF；验收=33 号用例，用法=references/gb-drawing.md）

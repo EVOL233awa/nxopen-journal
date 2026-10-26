@@ -52,7 +52,7 @@ cf.SetName("FIX_base")
 
 - `con.Type` 只读 → 用 `con.ConstraintType`。
 - Distance `con.OffsetRightHandSide` setter 报 "Not yet implemented" → 用显式坐标或 Touch/Concentric。
-- DOF 仅辅助，须约束存活时读（删约束后任何件 `3T+3R`）；互证：`Fix` `0T+0R`、`Fit` 等半径孔面 `1T+1R`、`Concentric` 孔口圆边 `0T+1R`、未约束 `3T+3R`；位置以 `GetPosition()` 为准。
+- DOF 仅辅助，须约束存活时读（删约束后任何件 `3T+3R`）；`Fix` `0T+0R`、`Fit` 等半径孔面 `1T+1R` 可互证；`Concentric` 圆边的读数不可靠（§A.5），转动副以拖动后的几何为准；位置以 `GetPosition()` 为准。
 - `RemoveComponent` 不删 positioner 持久约束。清空：`for c in list(positioner.Constraints): c.Persistent = False` → `DeleteNonPersistentConstraints()` → 冷开 `list(...)==[]`。
 - 面引用 = `FindOccurrence(原型面)`；用错原型面报 "not in the same file as the Targetset"（fea.md §5）。
 
@@ -60,7 +60,7 @@ cf.SetName("FIX_base")
 （`ValueOf` 在 `dir()` 里但**不是枚举成员**，赋类型报 `Expecting NXOpen.Positioning.Constraint.Type type, found builtin_function_or_method`。）
 ⚠ **`Hinge`/`Slider`/`Cylindrical`/`Ball`/`Screw`/`Gear`/`RackPinion`/`Cable`/`LinearPattern`/`CircularPattern`/`Linear2dPattern`/`RadiantPattern`/`CommonOffsetTransform` 标注 `For internal use only`**，赋 `ConstraintType` 抛 `NXOpen.NXException: The constraint type is not valid for this operation.` → 转动副走 §A.5 的 `Fit`/`Bond`，移动副走「两组平面 Touch」。
 
-求解路线：先 `Fix` 基准件，再加 `Touch`/`Concentric`；显式坐标回退后走 §A.5 Bond 决策树——间隙配合/同轴贴合（r6 销配 r6.1 孔）优先 Bond。对齐没有 `Align` 成员，用 `Concentric`/`Fit`。
+求解路线：先 `Fix` 基准件，再加 `Touch`/`Concentric`；显式坐标回退后走 §A.5 Bond 决策树——间隙配合/同轴贴合优先 Bond。对齐没有 `Align` 成员，用 `Concentric`/`Fit`。
 
 ### A.3 组件阵列 / 引用集 / 干涉
 
@@ -118,7 +118,7 @@ c.CreateConstraintReference(comp_pin, comp_pin, False, False, False)    # 成员
 c.CreateConstraintReference(comp_host, comp_host, False, False, False)  # 成员 2
 ```
 - **每附属件单独一组、两成员**。⚠ **绝不可**把 N 个销轴 + M 个宿主放进同一 Bond——语义是"多个可动对象构成刚性组"，等于整机刚性。
-- 间隙配合（r=4.9 配 r=5.0）时 `Fit` 不可用，`Bond` 作几何补丁；间隙动力学须另建。
+- 间隙配合时 `Fit` 不可用，`Bond` 作几何补丁；间隙动力学须另建。
 
 **拖动配方**：
 ```python
@@ -136,9 +136,9 @@ net.Solve(); net.ApplyToModel(); net.EndDrag(); pos.ClearNetwork()
 - GUI 路径：装配 → 组件位置 → 移动组件，类型「动态」。
 
 **判据与约束**：
-- `Concentric` 挂圆柱面报 `CannotSolve` → 改挂孔口圆边；圆边约束了什么须拖动验证（位移落轴、`0T+1R`、绕轴自由、沿轴滑被拒）。
+- `Concentric` 挂圆柱面报 `CannotSolve` → 改挂孔口圆边；圆边约束了什么须拖动验证（位移落轴、绕轴自由、沿轴滑被拒），不能靠静态 DOF 读数下结论。
 - `Fit` 不等半径报 `InternallyInconsistent`；`AlignLock` 建不出来（`FindOccurrence(圆柱面)` 返回 `None`，报 `No overload matches these arguments.`）→ 改 `Concentric` 圆边或 `Fit`。
-- 路线：`Concentric` 孔口圆边给 `0T+1R`、无半径要求；`Fit` 圆柱面给 `1T+1R`、必须等半径。交付用 `Fit`+`Bond`。
+- 路线：`Concentric` 孔口圆边无半径要求；`Fit` 圆柱面必须等半径，可读 `1T+1R`。交付用 `Fit`+`Bond`。
 
 圆边取**孔口整圆**（`p1 == p2 == 圆心`），用 `hole_top_edge()` 的"两顶点重合+取近顶面"筛法；取错面对齐到另一端。⚠ 圆边路线只在最小几何上验证，**真实多杆机构未验证**。
 

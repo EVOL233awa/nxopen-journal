@@ -29,9 +29,6 @@ import NXOpen
 import NXOpen.Motion as M
 import NXOpen.UF
 
-
-import sys
-
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
 except NameError:

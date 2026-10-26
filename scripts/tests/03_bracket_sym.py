@@ -31,7 +31,7 @@ HOLE_D = 8.0
 
 def main():
     session = NXOpen.Session.GetSession()
-    part = new_part(name=PART_NAME)
+    new_part(name=PART_NAME)
     wp = session.Parts.Work
 
     # 1) half profile sketch + extrude (y in [0, HALF_Y])

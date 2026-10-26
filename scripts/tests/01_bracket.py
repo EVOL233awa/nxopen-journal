@@ -37,7 +37,7 @@ BLEND_R = 2.0
 
 def main():
     session = NXOpen.Session.GetSession()
-    part = new_part(name=PART_NAME)
+    new_part(name=PART_NAME)
     wp = session.Parts.Work
     exprs = expressions(wp, [("L", L), ("W", W), ("T", T), ("HD", HD)])
 

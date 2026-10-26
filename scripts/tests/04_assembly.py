@@ -17,13 +17,12 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
     sys.path.insert(0, _p)
 
 from nxlib.assembly import add_component
-from nxlib.modeling import block, bodies
+from nxlib.modeling import block
 from nxlib.session import new_part, save, set_work
 from nxlib.testing import stage, stage_finish
 
 
 def main():
-    session = NXOpen.Session.GetSession()
     ufs = NXOpen.UF.UFSession.GetUFSession()
 
     # 1) component parts: plate + pin

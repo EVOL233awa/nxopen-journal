@@ -350,7 +350,6 @@ def main():
         # negative control: with RotationPoint left unset the rotation point
         # defaults onto the bend point and the first cut point is refused
         part = state["part"]
-        ref = state["ref"]
         svb = part.DraftingViews.CreateSectionViewBuilder(
             NXOpen.Drawings.SectionView.Null)
         try:

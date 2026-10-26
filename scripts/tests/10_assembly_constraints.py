@@ -27,7 +27,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 
 from nxlib.assembly import add_component, find_proto_face, touch_pair
 from nxlib.modeling import block
-from nxlib.session import new_part, save, set_work
+from nxlib.session import new_part, set_work
 from nxlib.testing import stage
 
 

@@ -26,7 +26,7 @@ _p = os.path.abspath(os.path.join(_here, ".."))
 if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
     sys.path.insert(0, _p)
 
-from nxlib.testing import check, say, RESULTS, stage, check_finish
+from nxlib.testing import check, stage, check_finish
 from nxlib.session import new_part, set_work, save_checked
 from nxlib.modeling import block, bodies
 from nxlib.assembly import add_component, preload_components

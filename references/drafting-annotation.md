@@ -1,7 +1,6 @@
 # 工程图标注域（NX 12 批处理）
 
 > 前置：SKILL.md + drafting.md §B.1-B.3（图纸/三视图/PDF 导出）。
-> 本文件：标注配方（尺寸/文字/表格）。
 
 ## 1. 决定性结论（先读这个）
 
@@ -38,7 +37,7 @@ def set_global_prefs(wp):
 - 继承审计：建完取 `d.GetLetteringPreferences().GetDimensionText().Size` = 设定值。
 - 逐尺寸设 `EdlineAndArrow` 冗余：全局 `LineAndArrowPreferences` 已被子尺寸继承，只设全局。
 - ⚠ **`SetLetteringPreferences` 不能省**：Get 返回副本，不 Set 等于没改。
-- ⚠ **期望非默认**：mm A4 默认尺寸 **3.5**、注释 **6.5**；改设 5.0 再断言（`scripts/tests/19`）。
+- ⚠ **期望非默认**：mm A4 默认尺寸 **3.5**、注释 **6.5**；改设非默认值（如 4.0）再断言（`scripts/tests/19`）。
 - 兜底：遍历 `wp.Dimensions` 逐个 Get→改→Set。
 
 ## 3. 尺寸布局规范（GB/T 4458.4-2003 + 专业实践）
@@ -85,7 +84,7 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 # 水平/直径/半径：CreateHorizontalDim(o1,o2,txt,org) /
 # CreateDiameterDim(o1,txt,org) / CreateRadiusDim(o1,txt,org)
 # 半径：o1 建在圆/圆弧边（Edge.SolidEdgeType == EdgeType.Circular，
-#   AssocType=ARC_CENTER）；ComputedSize 取真实半径（R10 → 10.0000）
+#   AssocType=ARC_CENTER）；ComputedSize 取半径（非直径）
 ```
 
 - **`AssocDwgPos` 必须显式给，且恰 2 个 double**；留 `[0,0]` 时长直边界线画到错误视图，长度 3 报 `Array length mismatch`。显式点渲染 ~1.5mm 关联符号，关不掉，接受。
@@ -100,7 +99,7 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 |---|---|
 | `CreateDiameterDim` | 可用，返回 tag；出现 `DiameterDimension` |
 | `CreateHoleDim` | 可用（3 参）；出现 `HoleDimension` |
-| `CreateRadiusDim` | 可用：圆弧/整圆边，`ComputedSize` 取真实半径（R10 → 10.0000）；直线边报 `NXException: The input object is invalid.`；按 `Edge.SolidEdgeType == EdgeType.Circular` 筛，不按面半径 |
+| `CreateRadiusDim` | 可用：圆弧/整圆边，`ComputedSize` 取半径（非直径）；直线边报 `NXException: The input object is invalid.`；按 `Edge.SolidEdgeType == EdgeType.Circular` 筛，不按面半径 |
 | `CreateVertical/HorizontalChainDimension` | **3 参**（`List[NXOpen.UF.Drf.Object]`, `int`, `NXOpen.UF.DrfText_Struct`） |
 | `CreateHorizontal/VerticalBaselineDimension` | 同上 3 参 |
 | `CreateOrdinateDim` | **12 参**；`CreateOrdinateOrigin` **7 参** |
@@ -132,7 +131,7 @@ wp.Annotations.CreateNote([u"技术要求："],
                        edge, view, NXOpen.Point3d(lx, ly, 0.0), 0.0, [])
   label = wp.Annotations.CreateLabel([u"文本"], NXOpen.Point3d(x, y, 0.0),
                                      None, None, None, bundle)
-  # 真实边与自由点都用 Screen（33 号用例以真实边验证）；OnObject 需对象成员，配方未打通
+  # 真实边与自由点都用 Screen（33 号用例以真实边验证）；OnObject 需对象成员，不用
   # 字高后置：GetLetteringPreferences→GetGeneralText→Size=3.5→SetGeneralText→Set
   ```
   assoc 须真实边（part → `Cannot extract the curve from edge`；None → `Expecting NXObject`）；view 须 drafting view（sheet → `Expecting NXOpen.View`）。
@@ -149,11 +148,11 @@ wp.Annotations.CreateNote([u"技术要求："],
   ⚠ tag 用创建返回值匹配（§9）。
 - **倒角：CreateChamferDim 不可用**（END_POINT → "The first input object is invalid"）→ label "C2" 挂 45° 斜边（0.3<dx<4、|dx−dy|<0.05），文本在斜边中点 ±8mm，字高 3.5。
 - 控制序列：`<O>` Ø、`<#C>` 沉孔、`<$s>` °、`<&10>` 位置度。
-- FCF/粗糙度/孔表走 .NET builder 探针：`CreateDraftingFeatureControlFrameBuilder` / `DraftingSurfaceFinishSymbols.CreateDraftingSurfaceFinishBuilder` / `HoleTables.CreateHoleTableBuilder` 入口存在，配方未打通。
+- FCF/粗糙度/孔表走 .NET builder 探针：`CreateDraftingFeatureControlFrameBuilder` / `DraftingSurfaceFinishSymbols.CreateDraftingSurfaceFinishBuilder` / `HoleTables.CreateHoleTableBuilder` 入口存在，先用探针验证 builder 链路；未打通前不用于交付。
 
 ## 6. 表格（孔参数表/明细栏/标题栏）
 
-**最小 2×2 表（已验证）**——先跑通这一版再加列/合并：
+**最小 2×2 表**——先跑通这一版再加列/合并：
 
 ```python
 def norm(r):
@@ -204,32 +203,10 @@ got = ufs.Tabnot.AskCellText(cell(1, 1))              # 回读：(rc, text)
 print(got[1] if isinstance(got, tuple) else got)      # -> <O>10
 ```
 
-- 默认表是 5×5（`AskNmColumns/AskNmRows` 返回裸 int）；清空后加 2 列 2 行，4 格回读全等（中文与 `<O>` 均可）。
+- 默认表是 5×5（`AskNmColumns/AskNmRows` 返回裸 int）；清空后建表并回读校验（中文与 `<O>` 均可）。
 - `Create`/`AskNthRow`/`AskNthColumn`/`AskCellAtRowCol` 在 Python 里可能返回元组，统一 `norm()` 解包。
 
-**完整表格/明细栏配方**：
-
-```python
-dp = ufs.Tabnot.AskDefaultCellPrefs()
-dp.TextHeight = 3.5                          # CellPrefs 字高字段 = TextHeight
-ufs.Tabnot.SetDefaultCellPrefs(dp)
-res = ufs.Tabnot.Create(ufs.Tabnot.AskDefaultSectionPrefs(), [x, y, 0.0])
-tn = res[0] if isinstance(res, tuple) else res           # 返回 tag（int）
-# ⚠ 默认 5×5，全删：
-for _ in range(int(ufs.Tabnot.AskNmColumns(tn)[0] if isinstance(ufs.Tabnot.AskNmColumns(tn), tuple) else ufs.Tabnot.AskNmColumns(tn))):
-    c0 = ufs.Tabnot.AskNthColumn(tn, 0); ufs.Tabnot.RemoveColumn(c0[0] if isinstance(c0, tuple) else c0)
-# 行同理 RemoveRow
-for w in (15.0, 25.0, 20.0, 30.0):           # 列宽 mm
-    c = ufs.Tabnot.CreateColumn(w); ufs.Tabnot.AddColumn(tn, tag_of(c), -1)
-for ri, vals in enumerate(rows):
-    r = ufs.Tabnot.CreateRow(7.0)            # 行高 7mm（GB/T 10609.2）
-    ufs.Tabnot.AddRow(tn, tag_of(r), -1)
-    for ci in range(ncols):
-        c0 = ufs.Tabnot.AskNthColumn(tn, ci)
-        cell = ufs.Tabnot.AskCellAtRowCol(tag_of(r), tag_of(c0))  # (row, col)
-        ufs.Tabnot.SetCellText(tag_of(cell), vals[ci])            # 直径写 "<O>8"
-ufs.Tabnot.Update(tn)
-```
+**完整表格/明细栏**：
 
 - **origin = 左上角**，向下生长，吸附 ~2mm。
 - `ufs.Drf.SetOrigin` **未打通**（第 1 参不收 tabular note tag）→ 定位走 UFTabnot。

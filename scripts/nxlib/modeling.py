@@ -588,9 +588,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
     #    分组给（线全给完再弧）UF 链探测报 "Section curves are not connected
     #    each other"，探针二分实测，T8 原版即交错序）
     def _phi0(th, side):
-        uu = 0.0
-        off = uu - _math.degrees(_math.atan(uu))
-        return th + side * (psi_b - off)
+        return th + side * psi_b
 
     aux_tags, tip_tags, root_tags = [], [], []
     for i in range(z):
@@ -620,7 +618,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
         aux_tags.append(root)
 
     # 5) 全齿闭合轮廓一次拉伸（region 点在材料内 r<rf）
-    feats = u.Modl.CreateExtruded(
+    u.Modl.CreateExtruded(
         law_tags + aux_tags, "0.0", [repr(z_offset), repr(z_offset + b_width)],
         [min(16.0, rf * 0.5), 0.0, 0.0], [0.0, 0.0, 1.0],
         NXOpen.UF.ModlFeatureSigns.NULLSIGN)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """nxlib —— NX12 journal 标准层（Python 3.6.1 兼容，全部配方来自已验收用例的逐字平移）。
 
-用例引导（写在 import 之前，8 行，适配 run_journal 下 __file__ 缺失的情形；
+用例引导（写在 import 之前，11 行，适配 run_journal 下 __file__ 缺失的情形；
 注入的是 nxlib 的**父目录**，即 scripts/）：
 
     import os, sys
@@ -32,3 +32,8 @@ from . import drafting
 from . import measure
 
 NXLIB_VERSION = "0.1.0"
+
+__all__ = [
+    "testing", "session", "modeling", "assembly", "drafting", "measure",
+    "NXLIB_VERSION",
+]

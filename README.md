@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.2.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
+当前版本 1.3.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran
@@ -25,7 +25,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 
 ## 功能范围
 
-技能覆盖 NX 自动化的五个域，工作方式都是 agent 编写 journal、批处理执行、核对产物：
+技能覆盖 NX 自动化的五个基础域，并提供逆向重建与测量。工作方式都是 agent 编写 journal、批处理执行、核对产物：
 
 | 域 | 覆盖内容 |
 | --- | --- |
@@ -34,11 +34,12 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 | Drafting | 三视图与投影视图、局部放大、剖视（阶梯剖、半剖、旋转剖）、尺寸与中心线标注、半径尺寸 |
 | 有限元 | Nastran SOL101 静力、2D 壳网格、求解级标定、解算方案与边界条件描述符 |
 | 运动仿真 | 连杆、转动副、滑动副、齿轮连接件，驱动、求解与结果提取 |
+| 逆向重建 | 从无特征实体提取结构清单与截面，按结构特征重建为可编辑模型；用独立脚本复算截面轮廓、孔系、体积、包围盒、四视图和双向表面偏差 |
 
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
 `scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
 标题栏、技术要求、尺寸道位，journal 中 `import gb_drawing` 后可直接使用）、用例标准层
-`scripts/nxlib/`（测试框架与建模、装配、制图等配方，回归用例直接 import，不各自复制），以及
+`scripts/nxlib/`（测试框架与建模、装配、制图、测量等六模块配方，回归用例直接 import，不各自复制），以及
 `scripts/render/` 的离线出图链（批处理截不了图，三维图由 STL 在 NX 外渲染，工程图 PDF 转成图片）。
 
 ## 示例产物
@@ -72,7 +73,7 @@ Drafting 图的 9 道尺寸都关联在几何上，导出 PDF 后用文本层核
 
 ### 进阶案例：ZA 曲柄摇杆机构总成
 
-在六个基础模块之外，还用同样的方式执行了一轮更完整的测试：7 种 18 件的曲柄摇杆机构总成，
+在基础域之外，还用同样的方式执行了一轮更完整的测试：7 种 18 件的曲柄摇杆机构总成，
 从零件建模、装配到装配图一次完成，再基于装配参数出两张运动学分析图。装配图由 NX 12
 批处理 Drafting 直接生成；两张运动学图由 Python 脚本复算并绘制，不经过 NX。
 
@@ -204,13 +205,15 @@ PASS 33_gb_sheet.py
 PASS 34_involute_gear.py
 PASS 35_assembly_preload.py
 PASS 36_motion_slider.py
+PASS 37_sketch_autodim_param.py
+PASS 38_measure.py
 PASS 09_fea_static.py
 PASS check_journal rule selftest - counter-examples hit, clean passes
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-35 个用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
+35 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
 文件；这些文件每次运行都会重新生成。
 
 ## 回归用例
@@ -219,11 +222,12 @@ PASS pdf value check - test 19 annotation values
 
 | 域 | 用例 |
 | --- | --- |
-| 三维建模 | 01 02 03 05 08 14 15 22 26 28 32 34 |
+| 三维建模 | 01 02 03 05 08 14 15 22 26 28 32 34 37 |
 | 装配 | 04 10 16 17 29 35 |
 | Drafting | 06 07 19 20 21 27 31 33 |
 | 有限元 | 09 24 25 30 |
 | 运动仿真 | 18 23 36（16 与 17 覆盖装配层运动副） |
+| 测量 | 38 |
 
 另有 3 个一次性 API 探测脚本不纳入校验，保留作参考。
 
@@ -235,7 +239,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 对应的回归用例，改动后执行一次 `scripts\tests\RUN_TESTS.bat` 即可确认是否破坏。不可行的
 写法按域内联在对应路线的约束句里，按“遇到什么 → 如何处理”查阅；跨域通用且高发的陷阱只在
 `SKILL.md` §1。例如干涉检查给的是布尔求交与
-`SimpleInterference` 两条几何路线，螺纹孔给的是“底孔 + 标注”。
+`SimpleInterference` 两条几何路线，螺纹孔给的是“底孔 + 标注”，逆向重建给的是结构表 → 测量链 → 按结构建特征 → 验收门。
 
 ## 已知限制
 
@@ -247,6 +251,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 - 阵列九个类型里，`Linear`、`Circular`、`AlongPath`、`Helix`、`Polygon`、`Spiral`、`General`、
   `Reference` 都能在 `PatternFeatureBuilder` 里生成实例（用例 01、02、22、28、32）；`Mirror`
   在提交阶段被 NX 拒绝，特征镜像改用 `Features.MirrorFeatureBuilder`（用例 03）。
+- 逆向重建仍不保证复杂件通过：本版提供结构清单、可编辑特征树和独立复算的验收链，但复杂铸件（如转向节）的最新盲测仍未全部达标，不能当作任意零件一次还原的保证。
 - 技能只生成脚本和产物，不修改 NX 安装目录，脚本与模型都落在工作目录下。
 
 ## 目录结构
@@ -269,5 +274,5 @@ nxopen-journal/
 ```
 
 每个用例覆盖什么、反向验证记录、已经不可行的路线，都在 `scripts/tests/README.md`。仓库自带
-一份云端 CI（`.github/workflows/ci.yml`）：每次提交执行 Python 3.6 语法检查、`check_journal.py`
-与 `scripts/check_repo.py`，这三项不需要 NX；回归套件本身要在装了 NX 12 的机器上执行。
+一份云端 CI（`.github/workflows/ci.yml`）：每次提交执行 `check_repo.py`、`check_journal` 规则自测，
+以及对全部 journal 的静态检查；这些不需要 NX。回归套件本身要在装了 NX 12 的机器上执行。

@@ -70,7 +70,7 @@ from nxlib.testing import FAILED_STAGES, stage
 from nxlib.session import new_part
 from nxlib.modeling import add_thru_hole, block
 from nxlib.drafting import (
-    cell_text, drain_table, export_pdf, new_table, norm_tag,
+    cell_text, export_pdf, new_table,
     pin_table_geometry, read_cell, view_by_prefix, view_names, visible_count,
 )
 

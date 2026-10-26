@@ -38,9 +38,6 @@ import NXOpen.Features
 import NXOpen.GeometricAnalysis
 import NXOpen.UF
 
-
-import sys
-
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -79,7 +76,6 @@ def intersect_case(part, target, tool_origin):
 
 
 def main():
-    session = NXOpen.Session.GetSession()
     ufs = NXOpen.UF.UFSession.GetUFSession()
     SI = NXOpen.GeometricAnalysis.SimpleInterference
     # (part, abspath)登记表：每个用例建件后登记，末尾统一"显示中保存"（见末尾注释）

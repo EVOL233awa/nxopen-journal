@@ -40,7 +40,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 
 from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
-from nxlib.modeling import ARC_TOL, block, classify_edges, face_radius
+from nxlib.modeling import ARC_TOL, block, classify_edges
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parts")
 PART = os.path.join(OUT_DIR, "t27_radius_dim.prt")
@@ -55,7 +55,6 @@ PLATE_H = 12.0
 
 
 def main():
-    session = NXOpen.Session.GetSession()
     ufs = NXOpen.UF.UFSession.GetUFSession()
     part = new_part(path=PART)
     block(part, NXOpen.Point3d(0.0, 0.0, 0.0), "%.1f" % PLATE_L, "%.1f" % PLATE_W,

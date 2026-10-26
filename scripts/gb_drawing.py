@@ -319,8 +319,8 @@ def model_bbox(body):
 
     NX12 UF 把 UF_MODL_ask_bounding_box 封装在 ufs.ModlGeneral（不是
     ufs.Modeling）；属性名写错时本函数会落入直边回退，纯回转体无直边
-    即抛错，所以回退时打印警告而不是静默。返回扁平
-    [xmin,ymin,zmin,xmax,ymax,zmax]。
+    即抛错，所以回退时打印警告而不是静默。返回
+    ((xmin,ymin,zmin), (xmax,ymax,zmax))。
     """
     ufs = _ufs()
     try:
@@ -560,7 +560,6 @@ def detail_rect(bx, by, half_w, half_h):
     """Selection rectangle for AddDetailView around (bx,by): NX draws the
     boundary circle at ~0.83x the rectangle's half-diagonal (measured), so
     the rectangle is inflated until the circle covers the requested box."""
-    import math
     # inflate uniformly so the half-diagonal covers the boundary circle
     # (circle radius ~= 0.83 x selection-rect half-diagonal)
     k = 1.0 / DETAIL_CIRCLE_FACTOR

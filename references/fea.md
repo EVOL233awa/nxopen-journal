@@ -1,6 +1,6 @@
 # 有限元域：CAD → FEM → SIM → 求解 → 后处理（NX 12 批处理）
 
-> 先读 SKILL.md。完整示例 `scripts/tests/09_fea_static.py`（手算校验，BENCH_PASS）。悬臂梁基准 FEA 挠度/手算 = 1.033。
+> 先读 SKILL.md。完整示例 `scripts/tests/09_fea_static.py`（手算校验，BENCH_PASS）。
 
 ## 0. 文件体系与前置
 
@@ -9,7 +9,7 @@
 - 求解器/分析类型：`"NXNASTRAN"`/`"STRUCT"`（FinalizeCreation 入参）；读回 `('NX NASTRAN', 'Structural')`。
 - 单位制 mm-N-s-MPa（应力 MPa、力 N）；Steel E=206940 MPa、密度 7.83e-9 tonne/mm³（重力载荷注意）；上游/手算载荷（压紧力、摩擦扭矩、转速）需换算单位。
 
-## 0a. 保存 .fem/.sim（已验证）
+## 0a. 保存 .fem/.sim
 
 ```python
 fem.Save(NXOpen.BasePart.SaveComponents.FalseValue,
@@ -22,8 +22,8 @@ assert os.path.getsize(fem_path) > 0 and os.path.getsize(sim_path) > 0
 ```
 
 - `session.Parts.Work` 与 `session.Parts.Display` 对 .fem/.sim 都抛 `The part file is not a .prt part`；部件句柄只保留 `FileNew().Commit()` 的返回值。
-- `fem.Save()` **只写 .fem，不写理想化件**：`fem.Save()` 之后 `save_i.prt` 不存在，补 `fem.IdealizedPart.Save(...)` 才落盘（47,764 B）。`fem.IdealizedPart` 是普通 `Part`，`.FullPath` 指向 `_i.prt`。
-- 返回值是 `NXOpen.PartSaveStatus` 对象（不是错误清单）；落盘判据用 `os.path.getsize > 0`。本机参考体积：.fem ≈1.5 MB、.sim ≈3.4 MB（模板差异，不作判据）。
+- `fem.Save()` **只写 .fem，不写理想化件**：`fem.Save()` 之后 `save_i.prt` 不存在，补 `fem.IdealizedPart.Save(...)` 才落盘。`fem.IdealizedPart` 是普通 `Part`，`.FullPath` 指向 `_i.prt`。
+- 返回值是 `NXOpen.PartSaveStatus` 对象（不是错误清单）；落盘判据用 `os.path.getsize > 0`。
 - `ufs.Part.Save()` 保存**显示部件**：新建 sim 后显示件是 sim，能写 .sim；但语义隐式，显式用 `sim.Save(...)`。
 - 重开：`part, status = session.Parts.Open(path)`（返回元组）。.fem 已作为 .sim 的依赖加载时再 `Open` 报 `File already exists`，先 `ufs.Part.CloseAll()`。
 
@@ -104,18 +104,13 @@ mb.CommitMesh(); mb.Destroy()
 
 整链：薄板体 → PSHELL 壳网格 → 端边固支 + 端边集中力 → SOL101 → 对照梁理论。
 
-| 量 | 解析（梁理论） | NX SOL101 | 比值 |
-| --- | --- | --- | --- |
-| 端部挠度 δ = FL³/(3EI) | 3.0927 mm | 3.090916 mm | **0.9994** |
-| 根部 von Mises σ = FL(t/2)/I | 480.0 MPa | 473.83 MPa | **0.9871** |
-
-算例：100×5 mm 板、t=5 mm、E=206940 MPa、短边 6 DOF 固支、对边 −Z 100 N；`I=b·t³/12=52.0833 mm⁴`；20 mm CQUAD4、204 节点；b/L=0.05。
+算例：100×5 mm 板、t=5 mm、E=206940 MPa、短边 6 DOF 固支、对边 −Z 100 N；`I=b·t³/12`；20 mm CQUAD4；b/L=0.05。SOL101 端部挠度 δ=FL³/(3EI) 与根部应力 σ=FL(t/2)/I 对梁理论的偏差均 <2%。
 
 1. **薄板体**：`cad.Features.CreateBoundedPlaneBuilder(NXOpen.Features.BoundedPlane.Null)`；`BoundingCurves` 只读（not writable / `No profile selected`）→ `bp.BoundingCurves.AddToSection([rule], lines[0], NXObject.Null, NXObject.Null, helpPoint, Section.Mode.Create, False)`。仅 4 边板体可按边长认端边。
 2. **端边 BC/载荷挂 `CAE_Edge`**，过滤器 `GeomEdge`，目标经 `NXOpen.CAE.SetObject()`（`Obj`/`SubType`/`SubId`）；`CAEEdge` 只有 `GetLength()`，按 `abs(len-B)<0.5` 挑。sim 用实例边：`sim.ComponentAssembly.RootComponent.GetChildren()[0].FindObject("CAE_Body(1)|CAE_Edge(n)")`。
 3. **挂 `Structural Output Requests`**，否则 `No results found`。结果类型：`Displacement - Nodal/Rotation - Nodal/Stress - Elemental/Stress - Element-Nodal/Reaction Force - Nodal/Reaction Moment - Nodal`。
 
-判别力：理论值不得随错误厚度重算。t = 2.5 对 5 mm：挠度比 ≈ 8（7.9803）、应力比 3.8682，`BENCH_SHELL_*` 应 FAIL。
+判别力：理论值不得随错误厚度重算。t=2.5 对 5 mm：挠度比约 8、应力比约 3.9，`BENCH_SHELL_*` 应 FAIL。
 
 ## 4. CTETRA(10) 四面体网格
 
@@ -272,7 +267,7 @@ def ask_max(rt_name, comp):                          # comp: Component.Magnitude
 
 ## 8. FEA 工程师方法论
 
-1. **先手算后软件**：δ=FL³/3EI、σ=Mc/I、δ=FL/AE；偏差 >20% 查模型，<10% 谈精度。基准：δ +3.3%（剪切）、σ 峰值 +16%（固定端集中，注明位置）。
+1. **先手算后软件**：δ=FL³/3EI、σ=Mc/I、δ=FL/AE；偏差 >20% 查模型，<10% 谈精度。基准：δ 略高于梁理论（剪切变形），σ 峰值高于名义值（固定端集中，注明位置）。
 2. **单位制**：mm-N-s-MPa；面力默认 Total（整面合力）。
 3. **网格**：CTETRA(10) 默认（CTETRA4 过刚）；尺寸取关键特征/壁厚 1/2~1/4；h 加密（尺寸减半）变化 <5% 为收敛。
 4. **BC 远离关注区**（圣维南）：约束/集中载荷 1~2 倍特征长度内应力不可信；角点应力集中注明位置；取远端中段对比梁理论。

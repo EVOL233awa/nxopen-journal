@@ -503,7 +503,6 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
                 k = key(pts[0])
                 if k == key(pts[-1]):
                     break
-        e1, e2 = _basis(normal)
         loops.append({"pts": pts,
                       "closed": key(pts[0]) == key(pts[-1]),
                       "gap": gap(pts)})
@@ -720,8 +719,9 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
 
     匹配条件：半径差 ≤2×radius_tol、轴角 ≤axis_tol_deg、孔心（垂直于轴的
     平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度，圆锥再加半角。
-    `pass` 只有在两组都无未匹配项且每个 pair 都过阈值时为真；`unmatched_a`
-    是“原件有、自建件没有”的结构，必须逐项建或写入简化清单。
+    `pass` 要求原件功能组没有未匹配项且每个 pair 都过阈值；`unmatched_a`
+    是“原件有、自建件没有”的结构，必须逐项建或写入简化清单；`strict_pass`
+    才要求双向都无未匹配项，`unmatched_b`（多出的圆角/凸台）只作复核。
 
     ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单（按 faces
     tag 识别）。原件侧用 `functional_hole_groups`（截面内环筛出的功能孔）
@@ -1296,8 +1296,8 @@ def _ring_lower_bound(p, ci, lo, cell, dims, r):
 def _grid_distance(p, index):
     if index is None:
         return 0.0
-    lo, hi, cell, dims = (index["lo"], index["hi"], index["cell"],
-                          index["dims"])
+    lo, _hi, cell, dims = (index["lo"], index["hi"], index["cell"],
+                           index["dims"])
     ci = [max(0, min(dims[i] - 1, int(math.floor((p[i] - lo[i]) / cell))))
           for i in range(3)]
     best = 1e300
@@ -1381,14 +1381,10 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
     acc = {}
     order = []
 
-    def axis_key(d):
-        d = _canon(d)
-        return (round(d[0], 3), round(d[1], 3), round(d[2], 3))
-
     def add(origin, normal, source, kind, role, group, radius):
         n = _canon(normal)
         off = _dot(origin, n)
-        key = (axis_key(n), round(off / max(offset_tol, 1e-9)))
+        key = (_axis_key(n), round(off / max(offset_tol, 1e-9)))
         if key in acc:
             if source not in acc[key]["sources"]:
                 acc[key]["sources"].append(source)
@@ -1641,11 +1637,13 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
                  section_iou_min=0.95, section_area_pct=5.0,
                  ref_a=None, ref_b=None):
-    """原件/自建件几何门 G0–G6 一次汇总（长度统一到毫米）。
+    """原件/自建件几何门 G0–G6 一次汇总（G2–G6 长度换算到毫米）。
 
     G1 的面表平面站用 B-rep 精确截面复核，其余站用 STL 截面；两者阈值
-    相同。G7 圆角为报告项；G8 表达式存活与 G9 结构语义仍需按
-    `modeling.md` §6 的编辑测试与特征树检查，本函数不作替代。
+    相同。G1 的站位取自原件面表，要求两件使用同一长度单位；G2–G6 会按
+    各自 `length_scale` 换算到毫米。G7 圆角为报告项；G8 表达式存活与
+    G9 结构语义仍需按 `modeling.md` §6 的编辑测试与特征树检查，本函数
+    不作替代。
     """
     mo = measure_part(orig)
     mb = measure_part(built)
@@ -1654,6 +1652,9 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     part_b = open_part(built)
     mesh_b = read_stl(export_mesh(part_b))
     so, sb = mo["length_scale"], mb["length_scale"]
+    if abs(so - sb) > 1e-12:
+        print("WARN verify_parts: orig units=%s, built units=%s; "
+              "G1 assumes the same length unit" % (mo["units"], mb["units"]))
     mesh_o_mm = scale_mesh(mesh_o, so)
     mesh_b_mm = scale_mesh(mesh_b, sb)
 

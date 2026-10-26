@@ -31,7 +31,7 @@ _p2 = os.path.join(_p, "gb_drawing.py")
 if os.path.exists(_p2) and _p not in sys.path:
     sys.path.insert(0, _p)
 
-from nxlib.testing import check, say, RESULTS, stage, check_finish
+from nxlib.testing import check, stage, check_finish
 from nxlib.session import new_part, set_work, save_checked
 from nxlib.modeling import involute_gear
 

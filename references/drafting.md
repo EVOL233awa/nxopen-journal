@@ -19,20 +19,20 @@ svb.Commit(); svb.Destroy()
 # ⚠ DrawingSheets/DraftingViews 无 ToArray，用 for x in part.DrawingSheets 迭代
 ```
 
-**`ViewType` 必须用 `View.Base`，绝不能用 `View.Drawing`**。`View.Drawing` 建空 2D 视图：`AskVisibleObjects()` 恒 0、`IsOutOfDate` 恒 False，PrintPDFBuilder 只出 **917 字节空白页**。`View.Base` 下 `run_journal.exe` 无头批处理直接出真图，**不需 GUI/解锁/交互回放**。
+**`ViewType` 必须用 `View.Base`，绝不能用 `View.Drawing`**。`View.Drawing` 建空 2D 视图：`AskVisibleObjects()` 恒 0、`IsOutOfDate` 恒 False，PrintPDFBuilder 只出**空白页**。`View.Base` 下 `run_journal.exe` 无头批处理直接出真图，**不需 GUI/解锁/交互回放**。
 
-判据：`View.Base` 每视图 `AskVisibleObjects() ≥ 10`，`View.Drawing` 各视图恰好 0。`AskVisibleObjects()` 只对**当前图纸**的视图有效，否则抛 `The view is not displayed` → 先 `sheet.Open()`。
+判据：`View.Base` 视图的 `AskVisibleObjects()` 大于 0（数量随内容变，固定下限会在简单视图上误判），`View.Drawing` 各视图恰好 0。`AskVisibleObjects()` 只对**当前图纸**的视图有效，否则抛 `The view is not displayed` → 先 `sheet.Open()`。
 
 **视图定位与比例路线**：
 
 - 落位统一用 `v.SetDrawingReferencePoint(Point3d(x,y,0))` + 内容包盒闭环（`gb_drawing.pin_view`）；它钉住的是 NX 建视图时选定的锚点模型点，不是内容中心，偏差按视图恒定，用包盒迭代补偿（收敛 <0.05 mm）。`MoveView`/`SetOrigin`/`Fit()` 不用（`Fit()` 报 "Member view may not be fit"）。
-- 比例用 `ufs.Draw.SetViewScale(view_tag, s)`：相对/乘性，新视图基准 1.0，传目标值一次即绝对比例；`AskViewScale` 读 `(0, 实际比例)`。`DraftingView.Scale` = 实际×0.83436，不可反推缩放系数。
+- 比例用 `ufs.Draw.SetViewScale(view_tag, s)`：相对/乘性，新视图基准 1.0，传目标值一次即绝对比例；`AskViewScale` 读 `(0, 实际比例)`。`DraftingView.Scale` 是自缩放链（随父视图/autoscale 变），不等于实际出图比例，核对一律用 `AskViewScale`。
 - 视图越界会抛 `Cannot move view off of the drawing` 并回滚之前已成功的移动，摆位前先算内容包盒。
 - `svb.Coordinate` / `FirstCorner` / `SecondCorner` / `HiddenObjects.Objects` 只读；`PlacementType` 只有 Center/Corner，提交后用 `SetDrawingReferencePoint` 摆。
-- 先 `Blank()` 基准与构造曲线（DatumCsys 带 3 基准面 + 3 基准轴）；建视图后 `Blank()` 副本无效，`DraftingCurve.Blank()` 不生效。
+- 基准在建视图前 `Blank()`（DatumCsys 带 3 基准面 + 3 基准轴）；建视图后 `Blank()` 副本无效、`DraftingCurve.Blank()` 不生效，都改建视图前处理。
 - 装配出图前 `Parts.Open` 预载子件；`Component.RemoveComponent` 后当次会话视图仍投影旧几何，`SaveAs` 重开则组件 Body 不载入。
 
-拆件零件的构造曲线 `Blank()` 不生效（1 号层实体 + 8 条草图曲线仍投影）；保留即可（都在图纸内）。
+拆件零件的构造曲线即使建视图前 `Blank()` 仍会投影，保留即可（都在图纸内）。
 
 ⚠ **视图排布与剖视语义**：
 1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图右侧（与 GB 第一角相反），严格第一角需手动重排。
@@ -57,7 +57,7 @@ pt = ufs.View.MapModelToDrawing(view.Tag, [35.0, -20.0, 9.0])   # 返回图纸�
 
 ### B.3 出图导出（走 `View.Base`）
 
-`View.Drawing` 得空 2D 视图（vis 恒 0、PDF 恒 917B）。`View.Base` 下 `run_journal.exe` 直接出真图（A3 三视图 PDF + 同名 .prt），无需 GUI/解锁。
+出图走 `View.Base` 视图（空视图问题见 §B.1）：`run_journal.exe` 批处理直接出 A3 三视图 PDF + 同名 .prt，无需 GUI/解锁。
 
 `PrintPDFBuilder`（`part.PlotManager.CreatePrintPdfbuilder()`，在 **part** 上）正常出图，每 sheet 一个 PDF。
 
@@ -86,16 +86,16 @@ ufs.Draw.AddDetailView(sheet.Tag, front.Tag,
 
 | 项 | 判据 |
 | --- | --- |
-| 投影视图 | 建出 `ORTHO@n`；**必须 `ufs.Draw.UpdateOneView(sheet.Tag, tag)` 再问**——不更新时 `AskVisibleObjects()`=**0**（几何已在出图），更新后=**7** |
-| 局部放大视图 | `DETAIL@n`，更新后 `AskVisibleObjects()`=**3**（双孔区域真实内容数） |
-| 局部放大比例 | UF `AskViewScale(detail)` = **2.0 × UF 父比例（乘性）**；.NET `view.Scale` 是自缩放链（2.36 = 2.0×1.18），**核对用 UF 值** |
-| 边界圆 | 虚线圆半径 ≈ **选框半对角的 0.83 倍**（缩进 5–6 mm），选框留余量 |
+| 投影视图 | 建出 `ORTHO@n`；**必须 `ufs.Draw.UpdateOneView(sheet.Tag, tag)` 再问**——不更新时 `AskVisibleObjects()`=0（几何已在出图），更新后有内容 |
+| 局部放大视图 | `DETAIL@n`，更新后 `AskVisibleObjects()` 大于 0 |
+| 局部放大比例 | UF `AskViewScale(detail)` = 设定比例 × UF 父比例（乘性）；.NET `view.Scale` 是自缩放链，**核对用 UF 值** |
+| 边界圆 | 虚线圆半径 ≈ **选框半对角的 0.83 倍**，选框留余量 |
 | 放置点越界 | y=250（A4 高 210）抛 `Input is not a valid parameter`，**不创建视图** |
 | 删除视图 | `ufs.Obj.DeleteObject(tag)`（无 `DeleteObj`；无 `UF_DRAW_delete_view`） |
 
 #### 视图命名与查找
 
-- 自动名 = `<标签>@<视图号>`：标准三视图 `Right@1` / `Front@2` / `Top@3`（随建视图顺序变，**不要假设 `FRONT@1`**）；投影 `ORTHO@4`；剖视 `SX@5`；局部放大 `DETAIL@7`。
+- 自动名 = `<标签>@<视图号>`（序号随建视图顺序变，**不要假设 `FRONT@1`**）：投影 `ORTHO@n`、剖视 `SX@n`、局部放大 `DETAIL@n`。
 - `@n` 是视图标签序号，**不连续也不可预测**（局部放大的边界圆会占号，5 之后直接到 7）。精确匹配用实际名；按类找用前缀 `name.split("@")[0]`。
 - 改名：`view.SetName("FRONT_MAIN")`，改后 `view.Name` 就是 `FRONT_MAIN`（`@n` 后缀消失）。`view.Name = ...` 抛 `AttributeError: attribute 'Name' of 'NXOpen.NXObject' objects is not writable`。
 - 查找：图纸视图迭代 `sheet.GetDraftingViews()` 比名字（`gb_drawing.base_view` 按 `split("@")[0]` 前缀匹配，改名不破坏它）；模型视图用 `part.Views.FindObject("VFRONT")`（`save_model_view` 存的名字）。
@@ -197,7 +197,7 @@ segs.SegmentLocationForSecondLeg.AddCutSegment(
 
 ### B.5 无人值守出图入口
 
-`View.Base` 下批处理直接出图；无人值守出图走这条路线，不需要 GUI 直启、startup 钩子或 SendKeys/SetForegroundWindow 注入。先确认视图类型不是 `View.Drawing`。
+用 `View.Base` + `PrintPDFBuilder`（§B.1/B.3）即可无人值守出图；不需要 GUI 直启、startup 钩子或 SendKeys/SetForegroundWindow 注入。
 
 ### B.6 装配图路线（按顺序）
 

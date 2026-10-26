@@ -62,7 +62,7 @@ link = lb.Commit(); lb.Destroy()
 ```
 
 - `MassCenter` 要 `NXOpen.Point`（非 `Point3d`）；传错报 `Expecting NXOpen.Point type`，被 try/except 吞掉则质心落原点、反力全错；点须先建。
-- `Ixx`/`Iyy`=0 而 `Izz`≠0 → 惯性张量非正定，面外反力 500~900 N 伪尖峰；取各向同性 `Ixx=Iyy=Izz=m·L²/12`。自检：质心全在原点即中招。
+- `Ixx`/`Iyy`=0 而 `Izz`≠0 → 惯性张量非正定，面外反力伪尖峰；取各向同性 `Ixx=Iyy=Izz=m·L²/12`。自检：质心全在原点即中招。
 
 ### M.3 运动副（转动副 / 滑动副）
 
@@ -82,7 +82,7 @@ ms.FixLinkToGround(links[ground_cn])          # 接地件
 
 `JointDefine` 另供 `SecondOrigin`/`SecondVector`、`FirstCsys`/`SecondCsys`/`FirstMatrix`、`ExcludeRxConstraint`、`AxisType`、`LimitsDefined`；枚举在 `ufs.Motion`（`MotionType`/`VectorComponent`/`ReferenceFrame`/`FuncResultType`/`FuncComponentType`/`FuncRefFrameType`），`NXOpen.UF.UFMotion` 不可导入，`.NET` 枚举挂类上。
 
-Slider：平移轴=关节局部 z 轴，两组向量对齐导轨，缺第二组报 `A NULL value was encountered`。r40/l120/e20：y 恒 20.000000 mm，x 偏差 ≤0.001316 mm，杆长 ≤0.001303 mm。
+Slider：平移轴=关节局部 z 轴，两组向量对齐导轨，缺第二组报 `A NULL value was encountered`。判据：非滑动方向坐标恒定，x 与杆长偏差 ≤0.01 mm。
 
 ```python
 jd.JointType = M.JointDefine.Type.Slider
@@ -113,7 +113,7 @@ jdb.Commit(); jdb.Destroy()
 
 - `OMEGA_DEG_S = rpm×6`（65 r/min→390 deg/s）；`VelocityExpression` 为 deg/s（按 rad/s 差 57.2958 倍），判据：360 deg/s、1 s、360 步→每帧 1.000000°。
 - 转向：NX Euler 驱动的正值绕 +Z 为顺时针（+360 deg/s 使曲柄角递减）；不要按右手定则推断，换轴后以 frame 1（0 基）符号为准。行主序；角度用绝对角（相对角 `atan2(r[4],r[0])` 有相位伪偏差）。
-- 绝对角=有符号物理角，勿 `abs()`/取反（与解析式冲突，致 14 mm 假偏差）；取 `T·[A_design,1]` 销坐标再 `atan2`。
+- 绝对角=有符号物理角，勿 `abs()`/取反（与解析式冲突，造成假偏差）；取 `T·[A_design,1]` 销坐标再 `atan2`。
 
 ### M.4a 齿轮连接件（Gear Coupler）
 
@@ -131,7 +131,7 @@ cb.ContactPoint = sim_part.Points.CreatePoint(NXOpen.Point3d(20.0, 0.0, 60.0))
 cb.Validate(); cb.Commit(); cb.Destroy()
 ```
 
-`FirstRadius`/`SecondRadius` = 分度圆半径；`RatioExpression` 与半径比不一致时以谁为准未验证——两者写同一比，用输出转速判据。减速器 m=2、z20/z40：60 r/min → −30.0000 r/min，`RATIO_OUT_IN=−0.500000`。
+`FirstRadius`/`SecondRadius` = 分度圆半径；`RatioExpression` 与半径比不一致时以谁为准未验证——两者写同一比，用输出转速判据。
 
 ### M.5 载荷：标量力矩（ScalarTorque）
 
@@ -146,7 +146,7 @@ set_expr(sim_part, stb.ValueExpression, "%.6f" % val)
 stb.Commit(); stb.Destroy()
 ```
 
-- mm 件 `ValueExpression` 按 **N·mm** 解释，非 N·m。判据：1608 → J_B=34.47 N（手算 34.93 N）；1.608 → 0.63 N；反力小 1000 倍先查此（`NM_TO_NMM=1000.0`）。
+- mm 件 `ValueExpression` 按 **N·mm** 解释，非 N·m。判据：反力与手算同量级；反力小 1000 倍先查此（`NM_TO_NMM=1000.0`）。
 - NX12 `ValueExpression` 不能引用运动状态函数：`WZ`/`IF`/`TANH`/`SGN` 报 syntax error → `τ=−Mf·sgn(ω)` 无法表达。`CreateFunction` 注册的函数取不到引用（`stb.Function` 为 `None`）。变通：按 ω 符号拆 ±sgn 两工况；精确符号载荷走外部静定解算器（§M.8）。
 
 ### M.5a 连接件：弹簧 / 阻尼 / 衬套
@@ -218,7 +218,7 @@ b.Validate(); b.Commit()
 
 `mm.PostProcess`：包络/序列/动画/干涉/测量/轨迹。
 
-- `AskGrueblerCount()`：2 Link+1 转动副 → **7**（`6n−5j` 粗计数，非自由度；见 §M.8）。
+- `AskGrueblerCount()`：`6n−5j` 粗计数，非自由度；见 §M.8。
 - `InitInterferenceStruct()` 0 参（out 参数即返回值），字段 `Solid1`/`Solid2`；`CreateInterference(...)` 抛 `SystemError` → 用帧变换后处理。
 
 ### M.5c 驱动选型
@@ -248,9 +248,8 @@ for fr in range(nfr):          # 0 .. nfr-1，含 t=0 与 t=t_end
     r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, fr)
 ```
 
-- 以 36 号用例（T=2 s、720 步）为例：`nfr=721`，frame 0 单位阵、frame 720 = t=2 s 末态，全有效，Δθ=0.5°/帧；一般地 `frame k ↔ t=k·T/nstep`。
-- 不无条件剔尾帧；`0..nfr-1` 内相邻增量≈0 或位姿跳回设计态时才丢弃。
-- 帧 k ↔ `t=k·dt`（0 基）；journal 内端点速度用单边差分，端点不参与精度判据。
+- 帧 k ↔ `t=k·T/nstep`（0 基），末帧 t=T 有效；不无条件剔尾帧，只有相邻增量≈0 或位姿跳回设计态时才丢弃。
+- journal 内端点速度用单边差分，端点不参与精度判据。
 
 ### M.7 结果提取
 
@@ -267,14 +266,14 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 
 - `AskLinkTransfromForGivenFrame`：2 参优先，3 参 `(tag, frame, [0.0]*12)` 备用；`frame` 0..nfr-1，帧 0=t=0。
 - 16 值=4×4 **行主序**，平移 **3/7/11**；R22（10）恒 1.0、Tz（11）自检。绕轴角（相对设计位姿）：Z `atan2(r[4],r[0])`、Y `atan2(r[2],r[0])`、X `atan2(r[9],r[5])`；要绝对物理角，按 §M.4 取 `T·[设计点,1]` 再 `atan2`。
-- 列主序（12/13/14）→ 杆长偏差 14.17 mm、铰点不共点；行主序 → 0.0013 mm。杆长/共点=判别器。
+- 列主序（12/13/14）→ 杆长与铰点共点严重不符；行主序 → 一致。杆长/共点=判别器。
 - 速度用帧变换中心差分；`AskVelocity/AccelerationResults` 恒 0.0（静默失败），签名 `(tag, MotionType.ROTATION, VC.MAGNITUDE, RF.ABSOLUTE)`。
 - 自算 ω/α：方位角中心差分，平面 `atan2(R[1,0],R[0,0])`；journal 内无 numpy，中心差分手写，端点用单边差分且不参与精度判据；宿主侧绘图可用 `np.gradient(..., edge_order=2)`。
-- 线速度：平移 3/7/11 差分；内部帧 ≤0.0032 mm/s；**frame 1 含首步瞬态（0.2366 mm/s），判据从 frame 2 起**；端点单边差分不可判精度。
-- 用 `range(nfr)`；1..nfr 越界返回末帧副本/归零值。勿用中位步长剔帧（四杆 dψ/dθ 0~0.565 rad/rad）。
+- 线速度：平移 3/7/11 差分；内部帧接近 0；**frame 1 含首步瞬态，判据从 frame 2 起**；端点单边差分不可判精度。
+- 用 `range(nfr)`；1..nfr 越界返回末帧副本/归零值。勿用中位步长剔帧（会误删变速段）。
 - 传动角：首帧变换逆投设计态方向到各 Link 局部系（模长=杆长），各帧 R 旋转后求夹角。
-- 帧变换：`world_k=T_k·[x_design,y_design,0,1]`，非先 T₀ 求逆再变换（后者铰点偏差 1.7 mm，改正后 2.4e-5 mm）。旋转不变量验不了平移；用共享铰点逐帧共点自检（≤1e-3 mm）。
-- 差分前手写 unwrap（±180° 卷绕造假速率 357.8°/帧）；宿主侧可用 `np.unwrap`。
+- 帧变换：`world_k=T_k·[x_design,y_design,0,1]`，不是先 T₀ 求逆再变换（后者引入铰点偏差）。旋转不变量验不了平移；用共享铰点逐帧共点自检（≤1e-3 mm）。
+- 差分前手写 unwrap（±180° 卷绕会造假速率）；宿主侧可用 `np.unwrap`。
 
 ### M.8 静不定与反力伪影（本域最重要的一条）
 
@@ -282,11 +281,11 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 
 平面 5 构件×7 转动副：`6×5−5×7=−5`。NX 打印 `Redundant constraints will be removed automatically, results may be not as expected.`。摇杆极限位（共线、雅可比近奇异）附近消去方式跳变，反力逐帧抖动数倍。
 
-判伪：步长加密 4 倍（1080→4320）尖峰位置与幅值不变 → 冗余约束数值伪影；尖峰在死点邻域。
+判伪：步长加密后尖峰位置与幅值不变 → 冗余约束数值伪影；尖峰在死点邻域。
 
-对策：静定平面刚体动力学模型——每构件 3 方程（2 平动+1 转动）→ `3n`；六杆 5 构件 15 方程/15 未知量（7 铰点×2+驱动力矩）；校核：解析偏差 `1e-15`、能量守恒 1.001(μ=0.4)/1.000(μ=0.8)、与 NX 非死点区偏差 0.02%~3.4%；坐标统一 SI，用实际 μ。
+对策：静定平面刚体动力学模型——每构件 3 方程（2 平动+1 转动）→ `3n`；六杆 5 构件 15 方程/15 未知量（7 铰点×2+驱动力矩）；校核：解析偏差接近机器精度、能量守恒、与 NX 非死点区偏差在个位百分比内；坐标统一 SI，用实际 μ。
 
-Kinematics 仍可用 NX（位姿/摆角/传动角偏差 ≤0.15°），只有反力不可信。四杆也静不定：`6×5−5×4=−2`，日志打印 `Starting redundant constraint check...`；判定按 6-3-5 空间计数；四杆反力只可验 API 通路。
+Kinematics 仍可用 NX（位姿/摆角/传动角偏差 ≤0.15°），只有反力不可信。四杆也静不定：`6×3−5×4=−2`，日志打印 `Starting redundant constraint check...`；判定按 6-3-5 空间计数；四杆反力只可验 API 通路。
 
 ### M.9 批处理多工况（并行）
 

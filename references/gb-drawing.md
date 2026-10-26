@@ -88,10 +88,10 @@ bv.Commit(); bv.Destroy()
 ```
 
 - 三个视图各存一个模型视图（前/俯/左）。第一角左视图：`X=-natY`、`Y=natZ`、`Z=-natX`；俯视图：`X=natX`、`Y=natY`、`Z=natZ`。
-- 基本视图默认 autoscale（如 0.354），Commit 后用 `ufs.Draw.SetViewScale(tag, scale)` + `UpdateOneView` 才生效；builder 的 `Scale.Numerator/Denominator` 在批处理下不可靠。
+- 基本视图默认 autoscale，Commit 后用 `ufs.Draw.SetViewScale(tag, scale)` + `UpdateOneView` 才生效；builder 的 `Scale.Numerator/Denominator` 在批处理下不可靠。
 - `base_view` 返回的视图落在图纸坐标原点（左下角），大部分几何在纸外；必须再由 `SetDrawingReferencePoint` + 内容包盒迭代把视图摆到目标位置。
 - `BaseViewBuilder.Placement.Placement` 是 `SelectObject`，`SetValue(None,None,Point3d)` 报参数不匹配 → 统一走 `SetDrawingReferencePoint` + 包盒迭代定位。
-- 带转角的零件其轴对齐包围盒会明显大于真实自然系包盒（菱形板件差 ~24 mm/边），包盒取**全部边顶点在自然系下的并集**，不要旋转世界包盒角点。
+- 带转角的零件其轴对齐包围盒会明显大于真实自然系包盒，包盒取**全部边顶点在自然系下的并集**，不要旋转世界包盒角点。
 - `MapModelToDrawing` 只接受 Drafting 视图；模型视图上调用报 `View tag is invalid for this operation`。
 
 ## 视图样式（隐藏线 / 虚拟交线 / 平滑边）
@@ -141,9 +141,9 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 等价调用：`gb.set_cjk_font(part)`（返回字体 id）。
 
 - 字体在 `.NET Annotations.Lettering.Cfw.Font`（整数 ID），**没有** `Lettering.Font`；UF 的 `Drf.Lettering_Struct` 也没有 Font，只有 Cfw。
-- `Arial Unicode MS` 已加载（ID=2）但 NX 描边绘图不渲染其中文字形；`chinesef` 正常。
+- `Arial Unicode MS` 已加载但 NX 描边绘图不渲染其中文字形；`chinesef` 正常。
 - 中文用 `chinesef` 后 ASCII 会变等宽，尺寸数字仍清晰；`<O>` 等控制序列不受影响。
-- 表格单元字高走 `Tabnot.AskDefaultCellPrefs().TextHeight`；标题栏 10 字符日期在 25 mm 列仍溢出时，把该 cell 的 `TextHeight` 调到 2.2 或改用年月（`2026-10`）。
+- 表格单元字高走 `Tabnot.AskDefaultCellPrefs().TextHeight`；标题栏 10 字符日期在 25 mm 列仍溢出时，把该 cell 的 `TextHeight` 调到 2.2 或改用年月文本。
 
 ## 文字控制字符（SetCellText / Note）
 

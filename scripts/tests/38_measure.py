@@ -153,7 +153,6 @@ def find_hole_face(part, xy, radius):
 
 
 def main():
-    session = NXOpen.Session.GetSession()
     ufs = NXOpen.UF.UFSession.GetUFSession()
     part_path = os.path.abspath(os.path.join(OUT_DIR, "t38_measure.prt"))
     stl_path = os.path.abspath(os.path.join(OUT_DIR, "t38_measure.stl"))
