@@ -14,6 +14,8 @@
 - `references/reverse-engineering.md` §9：重写为圆角地图 + 三档成形（闭合链 `EdgeBlend` / 开放链圆角刀 / 端缘折面逐段滚）+ 刀具记账纪律 + 极值退缩 `R(2−√2)` 定量判据 + 覆盖率分母核对。
 - `references/reverse-engineering.md` §4.2：新增四条归因——端缘缺滚圆的定量判据、耳顶混合冠的 0.1–0.2 mm 残差、杆端方肩多料、口部圆角带半径/顺序。
 - `references/modeling.md` §2.4：新增开放链圆角刀配方（截面求滚心、沿边拉伸穿出、凸减凹加、undo mark 纪律、候选筛选、逐段记账、验收口径）。
+- `references/reverse-engineering.md` §2.5：口部是拔模棱柱不是直棱柱；口深 ≈ 两圆角半径之和时出现切向退化（壁厚→0、截面开链）及判据。
+- `references/reverse-engineering.md` §9：实测角半径小于闭合链可提交值时不得放大半径凑闭合，改走圆角刀。
 
 ## [1.3.0] - 2026-10-26
 
