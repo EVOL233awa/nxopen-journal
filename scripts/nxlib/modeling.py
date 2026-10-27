@@ -456,7 +456,8 @@ def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
 
     `EdgeBlend` 在开放链上提交会留下清不掉的诊断
     （`Unable to terminate the blend faces`），开放边只能用刀：每条边生成
-    一把截面垂直于边的刀，拉伸穿出两端。`add=True` 生成凹边一侧的刀、
+    一把截面垂直于边的刀，拉伸到终点外 `ee`（起点与边端点平齐，穿出起点
+    会切掉顶点邻边该留的料）。`add=True` 生成凹边一侧的刀、
     `False` 凸边；缺省按 `edge_is_concave` 自动判。两面不是平面、夹角不在
     30°–150°、边长不足 `4*radius`、切点退化时返回 None，原因写进 `trace`
     （若给）。返回 `(feature, 预期体积 mm3)`，调用方对

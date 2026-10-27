@@ -23,6 +23,10 @@
 - `references/reverse-engineering.md` §1.1：圆角行在结构表阶段登记（半径组/档位/滚圆子体）；二/三档滚圆在合并前完成。
 - `references/reverse-engineering.md` §4.2：新增两条归因——数百段闭合链 Blend 失败/降半径是采样折线轮廓的指纹；共面并集失败只局部加长，不整体缩放截面。
 - `references/reverse-engineering.md` §9：三档表指向 `nxlib.modeling.roll_edge/apply_roll`，补精确圆弧与凸凹判定口径。
+- `references/reverse-engineering.md` §9：圆角刀档只收两面平面；支撑面是柱/锥/环面时截面边界不是直线，配方不适用，按闭合链/轮廓带或分母证据处理。
+- `references/modeling.md` §2.4：滚圆刀拉伸语义修正为“终点穿出、起点与边端点平齐”（起点穿出会切掉顶点邻边的料）。
+- `references/reverse-engineering.md` §2.4：一件的多个臂/耳不是同一模式，逐臂按孔轴/瓣心/端面半径组成形。
+- `references/reverse-engineering.md` §4.2：凹半圆柱轴向长度≈壁厚且过轴截面有整圆内环 → 贯穿孔，按孔建刀，不按缺口切槽。
 
 ## [1.3.0] - 2026-10-26
 
