@@ -50,10 +50,11 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 
 from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
-from nxlib.modeling import (apply_roll, block, boolean, blend_on_edges,
+from nxlib.modeling import (apply_roll, block, boolean, face_blend_edge,
                             volume)
-from nxlib.measure import (CYLINDER, TORUS, face_table, fillet_map,
-                           hole_params, structure_directory)
+from nxlib.measure import (CYLINDER, TORUS, face_table, fillet_coverage,
+                           fillet_map, fillet_run_samples, hole_params,
+                           structure_directory)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -167,8 +168,16 @@ def main():
             rim.append(e)
     check("REG_RIM_EDGE", len(rim) == 1,
           "boss top circular edge found=%d" % len(rim))
+    blend_ok = False
+    blend_rev = None
     if rim:
-        blend_on_edges(part, rim, BLEND_R)
+        try:
+            _, blend_rev = face_blend_edge(part, rim[0], BLEND_R)
+            blend_ok = True
+        except Exception as exc:
+            say("REG_FACE_BLEND_FAIL %s" % str(exc)[:200])
+    check("REG_FACE_BLEND", blend_ok,
+          "FaceBlend on boss rim ok=%s rev=%s" % (blend_ok, blend_rev))
     body = [b for b in part.Bodies][0]
 
     # Straight convex rim: the open-chain cutter.  An EdgeBlend cannot
@@ -271,6 +280,22 @@ def main():
           "roll faces=%d stored radius=%s (major), rad_data=%s" %
           (len(roll), "%.3f" % roll[0]["radius"] if roll else "-",
            "%.3f" % roll[0]["rad_data"] if roll else "-"))
+
+    # Run-level geometry (G7geo): the same two blends must form two runs with
+    # UV-center samples, and comparing the set with itself must be 100%
+    # covered.  Face-count ratios are segmentation dependent; this is not.
+    rr = fillet_run_samples(part, faces, [BLEND_R, ROLL_R])
+    cov = fillet_coverage(rr, rr)
+    sample_ok = all(r["centers"] and r["samples"] for r in rr)
+    check("REG_FILLET_RUNS", len(rr) >= 2 and sample_ok,
+          "runs=%d faces=%d centers/samples=%s" %
+          (len(rr), sum(r["nfaces"] for r in rr), sample_ok))
+    check("REG_FILLET_COVER_SELF",
+          abs(cov["coverage"] - 1.0) < 1e-9 and
+          abs(cov["run_coverage"] - 1.0) < 1e-9 and
+          cov["p95_max"] is not None and cov["p95_max"] < 1e-6,
+          "self coverage=%.3f run=%.3f p95_max=%s" %
+          (cov["coverage"], cov["run_coverage"], cov["p95_max"]))
 
     # A bore is a cylinder at its own radius and is expected to appear when
     # that radius is swept; its supports are both planes, which is how a

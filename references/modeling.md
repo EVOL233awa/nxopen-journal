@@ -258,10 +258,27 @@ builder.Destroy(); collector.Destroy()
 ```
 
 - ⚠ `Edge.GetVertices()` 返回 `Point3d` 列表。
-- 角点处的边不能逐条倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"；重建件上后补圆角受相邻拓扑影响大，能在截面轮廓里带的圆角（腔口/槽口小半径）优先画进轮廓。
+- `EdgeBlend` 在角点处不能逐条相邻边倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"。FaceBlend 走两支撑面，不共享这条限制（见下）。
 - **双瓣耳/眼**：矩形块沿孔轴拉伸，平台两侧各一条顶边倒 `R_EYE`，肩面应得到解析圆柱（类型 16）；平台半宽用系统式（`W_HALF = H_LOBE + R_EYE`）。端面整圈倒 `R_END` 得到环面（major = R_EYE − R_END、minor = R_END）。
 - **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
 - 验收：孔口倒圆/倒角后体积下降；双棱边产生 2 个面、单直边 1 个面；倒角锥面 type **17**、直边倒角平面 22。
+
+**两支撑面 FaceBlend（曲面支撑首选）**：支撑面是圆柱/圆锥/环面/B 曲面时，滚圆刀的截面边界不再是直线，改用 FaceBlend 的两面模式：
+
+```python
+from nxlib.modeling import face_blend, face_blend_edge
+
+feat = face_blend(wp, face_a, face_b, 1.5875, True, True)
+feat, rev = face_blend_edge(wp, edge, 1.5875)  # 未知法向组合时自动试
+```
+
+- 建造器固定 `BlendTwoFace` + `FirstFaceCollector`/`SecondFaceCollector` + `CircularCrossSection.SetRadius`；`BlendFromEdges` 只给边链会报 `combination ... not sufficient`。不要设 `OverflowOption.None`（NX12 无此枚举）。
+- 法向组合不固定：凸平面-平面、凹口通常 `(True, True)`；凸圆柱-圆柱常见 `(False, False)`。`face_blend_edge` 按 `(TT, FF, TF, FT)` 各在自己的 undo mark 内试，失败回滚，返回成功的 `(rev_a, rev_b)` 并可用 `trace` 记录。
+- 前置检查：两支撑面宽 ≥ `2R + 0.5 mm`、边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错；回建模加宽/重建支撑面，不要降半径。
+- 开放链逐段 `face_blend_edge`，每段成功后按几何重找下一条边；闭合矩形窗口四段可逐段提交、0 告警。角部若原件是环面，另建角过渡；不要用直线段圆角冒充整圈。
+- 结果面型：直边平面-平面 → type 16、`radius` = R；圆形平面-圆柱 → type 19、`rad_data` = R、`radius` = 主半径；圆柱-圆柱可能是 type 43。验收按半径/环面主副半径 + 体积变化。
+- 命名表达式可驱动 `CircularCrossSection.SetRadius`：×1.1 后体积变化、还原后体积差 0、`DoUpdate` 0 错；这是可编辑性门的要求。
+- **B 曲面只在真二面角上做**：放样条带之间的近相切缝是折面近似，FaceBlend 会“成功”但只生成近零体积薄片，不代表圆角已建；该处应回建模重建支撑面。
 
 **开放链圆角刀（EdgeBlend 的替代）**：边不闭合（端缘折面链、开放轮廓边）时 `EdgeBlend` 提交会存下 `Unable to terminate the blend faces`，且没有 API 能清——不要在真实零件上试。用 `nxlib.modeling` 的滚圆刀：
 

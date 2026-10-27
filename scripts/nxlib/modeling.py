@@ -370,6 +370,63 @@ def blend_on_edges(wp, edges, radius):
     return feat
 
 
+def face_blend(wp, face_a, face_b, radius, reverse_a=False, reverse_b=False):
+    """两支撑面 FaceBlend（BlendTwoFace）。
+
+    支撑面可以是平面、圆柱、圆锥、环面或 B 曲面，但必须是完整解析面且
+    非相切；相切缝或宽度小于 2R 的窄条会报 `Radius is too large/small`。
+    凸缘/凹口的两面法向组合不固定，未知时用 `face_blend_edge` 自动试。
+    """
+    builder = wp.Features.CreateFaceBlendBuilder(NXOpen.Features.Feature.Null)
+    fbt = NXOpen.Features.FaceBlendBuilder
+    builder.FaceBlendDefineType = fbt.DefiningType.BlendTwoFace
+    builder.FirstFaceCollector = face_collector(wp, [face_a])
+    builder.SecondFaceCollector = face_collector(wp, [face_b])
+    builder.ReverseFirstFaceNormal = reverse_a
+    builder.ReverseSecondFaceNormal = reverse_b
+    builder.CrossSectionType = fbt.CrossSectionOption.Circular
+    builder.CircularCrossSection.SetRadius(repr(radius))
+    try:
+        feat = builder.CommitFeature()
+    finally:
+        builder.Destroy()
+    return feat
+
+
+def face_blend_edge(wp, edge, radius,
+                    orders=((True, True), (False, False),
+                            (True, False), (False, True)), trace=None):
+    """对一条边的两邻面做 FaceBlend，按 orders 试法向组合。
+
+    失败组合回滚到自己的 undo mark；成功即返回 `(feature, (rev_a, rev_b))`。
+    `trace` 是可选 list，逐次追加 `(comb, ok, error)`，用于记录哪组法向成功。
+    边缘在成功提交后失效，调用方应按几何重新找下一条边，不要复用 wrapper。
+    """
+    faces = list(edge.GetFaces())
+    if len(faces) != 2:
+        raise ValueError("face_blend_edge needs a two-face edge, got %d" %
+                         len(faces))
+    session = NXOpen.Session.GetSession()
+    last = None
+    for rev_a, rev_b in orders:
+        mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
+                                   "face_blend_edge")
+        try:
+            feat = face_blend(wp, faces[0], faces[1], radius,
+                              rev_a, rev_b)
+            if trace is not None:
+                trace.append(((rev_a, rev_b), True, None))
+            session.DeleteUndoMark(mark, None)
+            return feat, (rev_a, rev_b)
+        except Exception as exc:
+            last = exc
+            if trace is not None:
+                trace.append(((rev_a, rev_b), False, str(exc)[:300]))
+            session.UndoToMark(mark, None)
+            session.DeleteUndoMark(mark, None)
+    raise last if last is not None else RuntimeError("no blend attempt")
+
+
 def _sub3(a, b):
     return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 

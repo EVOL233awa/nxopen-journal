@@ -526,6 +526,188 @@ def fillet_map(faces, radii=None, tol=0.002, max_ratio=0.25,
     return out
 
 
+def _face_samples(part, face_tags, grid=3):
+    """按 UV 参数采面点：中心点 + 3x3 网格。返回 {tag: (center, points)}。
+
+    圆角面的 UV 范围可能包含修剪掉的角区；中心点始终在面上，网格点只作
+    跑道长度方向的补充，不用于判定面是否存在。EvaluateFace 在 NX12 返回
+    SrfPos；失败的面给空样本，不抛异常中断整表。
+    """
+    u = _ufs()
+    out = {}
+    for tag in face_tags:
+        try:
+            rng = [float(x) for x in u.Modeling.AskFaceUvMinmax(tag)]
+        except Exception:
+            out[tag] = (None, [])
+            continue
+        pts = []
+        for i in range(grid):
+            for j in range(grid):
+                uv = [rng[0] + (rng[1] - rng[0]) * (i + 0.5) / grid,
+                      rng[2] + (rng[3] - rng[2]) * (j + 0.5) / grid]
+                try:
+                    val = u.Modeling.EvaluateFace(tag, 1, uv)
+                    p = [float(x) for x in val.SrfPos]
+                except Exception:
+                    continue
+                if all(max(abs(p[k] - q[k]) for k in range(3)) > 1e-4
+                       for q in pts):
+                    pts.append(p)
+        try:
+            val = u.Modeling.EvaluateFace(
+                tag, 1, [(rng[0] + rng[1]) * 0.5, (rng[2] + rng[3]) * 0.5])
+            center = [float(x) for x in val.SrfPos]
+        except Exception:
+            center = pts[0] if pts else None
+        out[tag] = (center, pts)
+    return out
+
+
+def fillet_run_samples(part, faces, radii, tol=0.002, grid=3):
+    """圆角面 → 同半径连通跑道 + UV 采样。
+
+    与 `fillet_map` 的区别：按共享边把同半径圆角面并成连通跑道，并给每个
+    面一个 UV 中心点和 3x3 样本。中心点用于跨件覆盖匹配，样本用于局部
+    P95；跑道是报告单位，覆盖判定按面，不按面数比分母——同一几何换一种
+    分段方式不应改变结论。
+    """
+    usable = [f for f in faces if f.get("type") in (CYLINDER, TORUS)]
+    picked = []
+    for f in usable:
+        got = (abs(f.get("rad_data", 0.0)) if f["type"] == TORUS
+               else abs(f.get("radius", 0.0)))
+        if any(abs(got - r) <= tol for r in radii):
+            picked.append(f)
+    by_tag = dict((f["tag"], f) for f in faces)
+    parent = {}
+
+    def find(a):
+        parent.setdefault(a, a)
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    picked_tags = set(f["tag"] for f in picked)
+    for f in picked:
+        find(f["tag"])
+        for e in f.get("edges", []):
+            for t in e.get("faces", []):
+                if t in picked_tags and t != f["tag"]:
+                    other = by_tag.get(t)
+                    if other is None:
+                        continue
+                    ra = (abs(other["rad_data"]) if other["type"] == TORUS
+                          else abs(other["radius"]))
+                    rb = (abs(f["rad_data"]) if f["type"] == TORUS
+                          else abs(f["radius"]))
+                    if abs(ra - rb) <= tol:
+                        union(f["tag"], t)
+    groups = {}
+    for f in picked:
+        groups.setdefault(find(f["tag"]), []).append(f)
+    samples = _face_samples(part, [f["tag"] for f in picked], grid)
+    runs = []
+    for root, members in groups.items():
+        centers = []
+        pts = []
+        for m in members:
+            c, ps = samples.get(m["tag"], (None, []))
+            if c:
+                centers.append(c)
+            pts.extend(ps)
+        supporter = {}
+        member_tags = set(m["tag"] for m in members)
+        for m in members:
+            for e in m.get("edges", []):
+                for t in e.get("faces", []):
+                    if t in member_tags:
+                        continue
+                    nf = by_tag.get(t)
+                    if nf is None:
+                        continue
+                    key = "%d/R%.3f/A%.3f" % (
+                        nf["type"], abs(nf.get("radius", 0.0)),
+                        abs(nf.get("rad_data", 0.0)))
+                    supporter[key] = supporter.get(key, 0) + 1
+        runs.append({"radius": members[0].get(
+            "rad_data") if members[0]["type"] == TORUS
+            else members[0].get("radius"),
+            "faces": [m["tag"] for m in members],
+            "nfaces": len(members),
+            "bbox": _bbox_union(members),
+            "centers": centers, "samples": pts,
+            "supports": sorted(supporter.items(),
+                               key=lambda kv: -kv[1])[:6]})
+    return runs
+
+
+def fillet_coverage(ref_runs, built_runs, tol=0.10, run_frac=0.70):
+    """G7geo：参考圆角面中心 → 同半径建出面中心的最短距离。
+
+    返回面覆盖（每个参考圆角面一个中心点）、跑道覆盖（中心命中率 ≥
+    run_frac 的参考跑道比例）和每跑道全样本 P95。分母是参考圆角面，不是
+    面数比值，所以参考件与建件分段不同不改变判定；半径不同的面不互相
+    匹配。
+    """
+    def key(radius):
+        return round(abs(float(radius)), 3)
+
+    cpool = {}
+    spool = {}
+    for run in built_runs:
+        k = key(run["radius"])
+        cpool.setdefault(k, []).extend(run.get("centers", []))
+        spool.setdefault(k, []).extend(run.get("samples", []))
+
+    def nearest(p, pts):
+        best = 1e18
+        for q in pts:
+            d = ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 +
+                 (p[2] - q[2]) ** 2)
+            if d < best:
+                best = d
+        return math.sqrt(best) if best < 1e18 else None
+
+    rows = []
+    hit = 0
+    total = 0
+    for run in ref_runs:
+        k = key(run["radius"])
+        pool = cpool.get(k, [])
+        ds = [nearest(c, pool) for c in run.get("centers", [])] if pool else []
+        good = [d for d in ds if d is not None and d <= tol]
+        frac = len(good) / float(len(ds)) if ds else 0.0
+        all_ds = []
+        for p in run.get("samples", []):
+            d = nearest(p, spool.get(k, [])) if spool.get(k) else None
+            if d is not None:
+                all_ds.append(d)
+        all_ds.sort()
+        p95 = (all_ds[min(len(all_ds) - 1,
+                          int(round(0.95 * (len(all_ds) - 1))))]
+               if all_ds else None)
+        rows.append({"radius": run["radius"], "nfaces": run["nfaces"],
+                     "bbox": run.get("bbox"), "coverage": frac,
+                     "p95": p95, "max": all_ds[-1] if all_ds else None})
+        hit += len(good)
+        total += len(ds)
+    p95s = [r["p95"] for r in rows if r["p95"] is not None]
+    p95s.sort()
+    return {"tol": tol, "coverage": hit / float(total) if total else 0.0,
+            "run_coverage": (sum(1 for r in rows if r["coverage"] >= run_frac) /
+                             float(len(rows)) if rows else 0.0),
+            "p95_median": (p95s[len(p95s) // 2] if p95s else None),
+            "p95_max": (p95s[-1] if p95s else None),
+            "runs": rows}
+
+
 def exact_section(part, origin, normal, tolerance=0.01, samples=65,
                   body=None):
     """B-rep 截面曲线（UF SectionFromPlanes），按端点串成闭环。

@@ -7,6 +7,12 @@
 
 ### Added
 
+- `scripts/nxlib/measure.py`：新增 `fillet_run_samples`（同半径连通跑道 + UV 中心/3×3 样本）与 `fillet_coverage`（G7geo 分段不变覆盖）；`_face_samples` 走 `AskFaceUvMinmax`/`EvaluateFace`。
+- `scripts/nxlib/modeling.py`：新增 `face_blend`（`BlendTwoFace` 两支撑面）与 `face_blend_edge`（自动试四种法向组合、失败回滚、返回成功组合）。
+- `references/reverse-engineering.md` §9：重写为过渡账本 + 支撑面就绪判据（宽度 ≥2R、二面角 20°–160°）+ 机制路由（FaceBlend/逐段/滚圆刀回退）+ FaceBlend 报错判读 + G7 双轨。
+- `references/modeling.md` §2.4：新增两支撑面 FaceBlend 配方（曲面支撑、法向组合、窄支撑/相切缝失败判据、闭合窗口逐段、B 曲面伪过渡）。
+- `scripts/tests/39_reverse_route.py`：凸台顶缘改 `face_blend_edge`，新增跑道采样与自覆盖断言；18→21 项。
+- `references/reverse-engineering.md` §2.5/§4.2：口部圆角带改用 FaceBlend，新增支撑面窄/近相切缝/伪过渡/窗口角环面四条归因。
 - `scripts/nxlib/measure.py`：新增 `structure_directory`（同轴圆柱/圆锥组 + 环面组 + 平面族）与 `fillet_map`（按半径分桶、每面带支撑面）；配套 `group_coaxial` 的 `cluster_tol`、`torus_groups`、`plane_families`、`_bbox_union`。
 - `scripts/tests/39_reverse_route.py`：新增结构目录与圆角地图用例（9 项：结构分组、孔/锥/平面族参数、环面主半径、圆角支撑面、`rad_data` 口径、孔壁≠圆角的支撑面判别、单实体）；`RUN_TESTS.bat` 登记 `TEST39_DONE`。
 - `references/reverse-engineering.md` §1/§1.1：结构目录与圆角地图列为开工产物；结构表证据列增加支撑面类型对与圆角组。
