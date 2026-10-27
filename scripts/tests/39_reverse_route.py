@@ -25,6 +25,11 @@
 # The radius sweep must also surface a hole wall at its own radius; that is
 # correct behaviour, and the supports are what separates a blend from a bore
 # (the bore's supports are both planes, the blend's include a curved face).
+#
+# The same controlled part carries the open-chain cutter: a straight convex
+# rim is rolled with roll_edge/apply_roll (section = corner minus tangent
+# circle, extruded along the edge) and must remove (R^2 - pi*R^2/4) * L and
+# leave a cylinder of exactly the roll radius.
 import math
 import os
 
@@ -45,9 +50,10 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 
 from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
-from nxlib.modeling import block, boolean, blend_on_edges
-from nxlib.measure import (CONE, CYLINDER, PLANE, TORUS, face_table,
-                           fillet_map, hole_params, structure_directory)
+from nxlib.modeling import (apply_roll, block, boolean, blend_on_edges,
+                            volume)
+from nxlib.measure import (CYLINDER, TORUS, face_table, fillet_map,
+                           hole_params, structure_directory)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -164,9 +170,38 @@ def main():
     if rim:
         blend_on_edges(part, rim, BLEND_R)
     body = [b for b in part.Bodies][0]
+
+    # Straight convex rim: the open-chain cutter.  An EdgeBlend cannot
+    # terminate on an open chain, so the roll is a tool: section = corner
+    # minus the tangent circle, extruded past both ends, subtracted.  A 90
+    # degree edge of length L with roll R removes (R^2 - pi*R^2/4) * L.
+    ROLL_R = 4.0
+    edge = None
+    for e in body.GetEdges():
+        vs = e.GetVertices()
+        if len(vs) != 2:
+            continue
+        if (abs(vs[0].Z - BLOCK[2]) < 0.01 and abs(vs[1].Z - BLOCK[2]) < 0.01
+                and abs(vs[0].Y) < 0.01 and abs(vs[1].Y) < 0.01
+                and abs(abs(vs[0].X - vs[1].X) - BLOCK[0]) < 0.01):
+            edge = e
+            break
+    check("REG_ROLL_EDGE", edge is not None, "straight top rim found")
+    roll_ok = False
+    if edge is not None:
+        exp = (ROLL_R * ROLL_R - math.pi * ROLL_R * ROLL_R / 4.0) * BLOCK[0]
+        v0 = volume(part, body)
+        roll_ok, body = apply_roll(part, body, edge, ROLL_R)
+        dv = v0 - volume(part, body)
+        check("REG_ROLL_CUT", roll_ok and 0.7 * exp < dv < 1.3 * exp,
+              "roll ok=%s dv=%.1f expected=%.1f" % (roll_ok, dv, exp))
     ufs.Part.Save()
 
     faces = face_table(part, with_edges=True)
+    roll_faces = [f for f in faces
+                  if f["type"] == CYLINDER and abs(f["radius"] - ROLL_R) < 0.01]
+    check("REG_ROLL_FACE", roll_ok and len(roll_faces) >= 1,
+          "R%.1f roll cylinder faces=%d" % (ROLL_R, len(roll_faces)))
     d = structure_directory(faces, cluster_tol=8.0)
 
     boss_group = _group_at(d, "cylinders", BOSS_R)
@@ -254,6 +289,51 @@ def main():
           "bodies=%d faces=%d types=%s" %
           (len(list(part.Bodies)), len(faces),
            sorted(set(f["type"] for f in faces))))
+
+    # Concave rim: a pocket floor is rolled by uniting the same tool.  The
+    # detector must read the two faces as concave (each face lies on the void
+    # side of the other); the volume must grow by the same corner-minus-circle
+    # section times the edge length.
+    part2 = new_part("t39c", os.path.join(OUT_DIR,
+                                         "t39_reverse_roll_concave.prt"))
+    f2 = block(part2, NXOpen.Point3d(0.0, 0.0, 0.0),
+               "40.0", "40.0", "10.0")
+    body2 = f2.GetBodies()[0]
+    pf = block(part2, NXOpen.Point3d(10.0, 10.0, 6.0),
+               "20.0", "20.0", "6.0")
+    boolean(part2, body2, pf.GetBodies()[0],
+            NXOpen.Features.Feature.BooleanType.Subtract)
+    body2 = [b for b in part2.Bodies][0]
+    CONC_R = 3.0
+    cedge = None
+    for e in body2.GetEdges():
+        vs = e.GetVertices()
+        if len(vs) != 2:
+            continue
+        if (abs(vs[0].Y - 10.0) < 0.01 and abs(vs[1].Y - 10.0) < 0.01
+                and abs(vs[0].Z - 6.0) < 0.01 and abs(vs[1].Z - 6.0) < 0.01
+                and abs(abs(vs[0].X - vs[1].X) - 20.0) < 0.01):
+            cedge = e
+            break
+    check("REG_CONC_EDGE", cedge is not None, "pocket floor rim found")
+    conc_ok = False
+    if cedge is not None:
+        exp2 = (CONC_R * CONC_R - math.pi * CONC_R * CONC_R / 4.0) * 20.0
+        w0 = volume(part2, body2)
+        conc_ok, body2 = apply_roll(part2, body2, cedge, CONC_R)
+        dv2 = volume(part2, body2) - w0
+        check("REG_CONC_ADD", conc_ok and 0.7 * exp2 < dv2 < 1.3 * exp2,
+              "concave ok=%s dv=%.2f expected=%.2f" %
+              (conc_ok, dv2, exp2))
+    cfaces = face_table(part2, with_edges=False)
+    check("REG_CONC_FACE",
+          conc_ok and any(f["type"] == CYLINDER and
+                          abs(f["radius"] - CONC_R) < 0.01 for f in cfaces),
+          "concave roll cylinder faces=%d" %
+          sum(1 for f in cfaces
+              if f["type"] == CYLINDER and abs(f["radius"] - CONC_R) < 0.01))
+    check("REG_CONC_BODY", len(list(part2.Bodies)) == 1,
+          "concave bodies=%d" % len(list(part2.Bodies)))
 
     failed = [n for n, v in RESULTS if not v]
     say("TEST39_CASES=%d" % len(RESULTS))

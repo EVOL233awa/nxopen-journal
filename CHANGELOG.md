@@ -17,6 +17,12 @@
 - `references/reverse-engineering.md` §2.5：口部是拔模棱柱不是直棱柱；口深 ≈ 两圆角半径之和时出现切向退化（壁厚→0、截面开链）及判据。
 - `references/reverse-engineering.md` §2.5：槽/叉口底部导入段的判据（最低三站量槽宽斜率），按等宽槽建会让最低站多料 20–30%。
 - `references/reverse-engineering.md` §9：实测角半径小于闭合链可提交值时不得放大半径凑闭合，改走圆角刀。
+- `scripts/nxlib/modeling.py`：新增 `roll_edge`/`apply_roll`/`edge_is_concave`——开放链圆角刀标准配方（精确圆弧截面、沿边拉伸、凸减凹加、undo mark 回滚）；凸凹按两邻面的相互侧判定，不用体积猜。
+- `scripts/tests/39_reverse_route.py`：滚圆刀覆盖凸边（体积退缩量 = `(R² − πR²/4)·L`、滚出面是半径 R 的圆柱）与凹边（unite、体积增量同式）；11→18 项。
+- `references/modeling.md` §2.4：开放链圆角刀配方改为调用 `nxlib.modeling.roll_edge/apply_roll`；记录折线截面的两个后果（滚出面变成十几张窄平面、切点弦切进面内留 0.2–0.5 mm 平台）与凸凹判定口径。
+- `references/reverse-engineering.md` §1.1：圆角行在结构表阶段登记（半径组/档位/滚圆子体）；二/三档滚圆在合并前完成。
+- `references/reverse-engineering.md` §4.2：新增两条归因——数百段闭合链 Blend 失败/降半径是采样折线轮廓的指纹；共面并集失败只局部加长，不整体缩放截面。
+- `references/reverse-engineering.md` §9：三档表指向 `nxlib.modeling.roll_edge/apply_roll`，补精确圆弧与凸凹判定口径。
 
 ## [1.3.0] - 2026-10-26
 

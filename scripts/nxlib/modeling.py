@@ -7,6 +7,8 @@
   - 所有 builder 提交后立即 Destroy；
   - 失败就地抛异常，由 testing.stage 捕获。
 """
+import math
+
 import NXOpen
 import NXOpen.Features
 import NXOpen.UF
@@ -366,6 +368,284 @@ def blend_on_edges(wp, edges, radius):
     builder.Destroy()
     collector.Destroy()
     return feat
+
+
+def _sub3(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot3(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross3(a, b):
+    return (a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def _unit3(a):
+    n = math.sqrt(_dot3(a, a))
+    return None if n < 1e-9 else (a[0] / n, a[1] / n, a[2] / n)
+
+
+def _extrude_along(wp, curves, direction, distance, start, help_pt):
+    """沿任意方向拉伸（ExtrudeBuilder；direction 为三元组）。"""
+    section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
+    rule = wp.ScRuleFactory.CreateRuleCurveDumb(curves)
+    section.AddToSection([rule], NULL, NULL, NULL, help_pt,
+                         NXOpen.Section.Mode.Create, False)
+    builder = wp.Features.CreateExtrudeBuilder(NXOpen.Features.Feature.Null)
+    builder.Section = section
+    builder.Direction = wp.Directions.CreateDirection(
+        NXOpen.Point3d(0.0, 0.0, 0.0),
+        NXOpen.Vector3d(float(direction[0]), float(direction[1]),
+                        float(direction[2])),
+        NXOpen.SmartObject.UpdateOption.WithinModeling)
+    builder.Limits.StartExtend.Value.RightHandSide = start
+    builder.Limits.EndExtend.Value.RightHandSide = distance
+    feat = builder.CommitFeature()
+    builder.Destroy()
+    return feat
+
+
+def edge_is_concave(edge, trace=None):
+    """两邻面都是平面时，用“面在对面哪一侧”判凸凹。
+
+    凸边：每个邻面的内侧都落在另一个面的材料侧（法向负侧）；凹边：都落在
+    空侧（正侧）。两面不共点、法向不沿边、符号不一致时返回 None。只对平面
+    邻边有效；曲面邻边直接返回 None。
+    """
+    u = ufs()
+    vs = edge.GetVertices()
+    fs = edge.GetFaces()
+    if len(vs) != 2 or len(fs) != 2:
+        return None
+    p0 = (vs[0].X, vs[0].Y, vs[0].Z)
+    fd = []
+    for f in fs:
+        try:
+            d = u.Modeling.AskFaceData(f.Tag)
+        except Exception:
+            return None
+        if int(d[0]) != 22:
+            return None
+        fd.append(d)
+    n = [_unit3((d[2][0], d[2][1], d[2][2])) for d in fd]
+    if n[0] is None or n[1] is None:
+        return None
+    side = []
+    for i in (0, 1):
+        b = fd[i][3]
+        c = ((b[0] + b[3]) * 0.5, (b[1] + b[4]) * 0.5,
+             (b[2] + b[5]) * 0.5)
+        t = _dot3(_sub3(c, p0), n[i])
+        c = (c[0] - t * n[i][0], c[1] - t * n[i][1], c[2] - t * n[i][2])
+        side.append(_dot3(_sub3(c, p0), n[1 - i]))
+    if side[0] < -1e-6 and side[1] < -1e-6:
+        return False
+    if side[0] > 1e-6 and side[1] > 1e-6:
+        return True
+    if trace is not None:
+        trace.append("convexity ambiguous %.3f %.3f" % (side[0], side[1]))
+    return None
+
+
+def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
+    """开放链圆角刀：截面 = 角区 − 切圆，沿边拉伸（凸边减、凹边加）。
+
+    `EdgeBlend` 在开放链上提交会留下清不掉的诊断
+    （`Unable to terminate the blend faces`），开放边只能用刀：每条边生成
+    一把截面垂直于边的刀，拉伸穿出两端。`add=True` 生成凹边一侧的刀、
+    `False` 凸边；缺省按 `edge_is_concave` 自动判。两面不是平面、夹角不在
+    30°–150°、边长不足 `4*radius`、切点退化时返回 None，原因写进 `trace`
+    （若给）。返回 `(feature, 预期体积 mm3)`，调用方对
+    `feature.GetBodies()[0]` 做一次布尔（凸 Subtract / 凹 Unite）。
+    """
+    u = ufs()
+    vs = edge.GetVertices()
+    if len(vs) != 2:
+        if trace is not None:
+            trace.append("vertices %d" % len(vs))
+        return None
+    p0 = (vs[0].X, vs[0].Y, vs[0].Z)
+    p1 = (vs[1].X, vs[1].Y, vs[1].Z)
+    dd = _sub3(p1, p0)
+    ln = math.sqrt(_dot3(dd, dd))
+    if ln < (4.0 * radius if min_len is None else min_len):
+        if trace is not None:
+            trace.append("short %.2f" % ln)
+        return None
+    dv = _unit3(dd)
+    nrm = []
+    for f in edge.GetFaces():
+        try:
+            fd = u.Modeling.AskFaceData(f.Tag)
+        except Exception:
+            if trace is not None:
+                trace.append("no face data")
+            return None
+        if int(fd[0]) != 22:
+            if trace is not None:
+                trace.append("face type %d" % int(fd[0]))
+            return None
+        nv = _unit3((fd[2][0], fd[2][1], fd[2][2]))
+        if nv is None or abs(_dot3(nv, dv)) > 0.5:
+            if trace is not None:
+                trace.append("normal along edge")
+            return None
+        nrm.append(nv)
+    if len(nrm) != 2:
+        if trace is not None:
+            trace.append("faces %d" % len(nrm))
+        return None
+    ang = math.degrees(math.acos(max(-1.0, min(1.0, _dot3(nrm[0], nrm[1])))))
+    if not (30.0 < ang < 150.0):
+        if trace is not None:
+            trace.append("angle %.1f" % ang)
+        return None
+    if add is None:
+        add = edge_is_concave(edge, trace)
+        if add is None:
+            return None
+    sgn = 1.0 if add else -1.0
+    e1 = _unit3((sgn * nrm[0][0], sgn * nrm[0][1], sgn * nrm[0][2]))
+    e2 = _unit3(_cross3(dv, e1))
+    uu = []
+    for nv in nrm:
+        wi = (sgn * nv[0], sgn * nv[1], sgn * nv[2])
+        uu.append((_dot3(wi, e1), _dot3(wi, e2)))
+    det = uu[0][0] * uu[1][1] - uu[0][1] * uu[1][0]
+    if abs(det) < 0.2:
+        if trace is not None:
+            trace.append("det %.2f" % det)
+        return None
+    ox = (radius * uu[1][1] - radius * uu[0][1]) / det
+    oy = (uu[0][0] * radius - uu[1][0] * radius) / det
+    tt = [(ox - radius * uu[0][0], oy - radius * uu[0][1]),
+          (ox - radius * uu[1][0], oy - radius * uu[1][1])]
+    near = min(math.hypot(*q) for q in tt)
+    far = max(math.hypot(*q) for q in tt)
+    if near < 0.3 * radius or far > 6.0 * radius:
+        if trace is not None:
+            trace.append("tangent near %.2f far %.2f" % (near, far))
+        return None
+    r0 = ((tt[0][0] - ox) / radius, (tt[0][1] - oy) / radius)
+    r1 = ((tt[1][0] - ox) / radius, (tt[1][1] - oy) / radius)
+    a0 = math.atan2(r0[1], r0[0])
+    a1 = math.atan2(r1[1], r1[0])
+    da = (a1 - a0 + math.pi) % (2.0 * math.pi) - math.pi
+    bis = (-(uu[0][0] + uu[1][0]), -(uu[0][1] + uu[1][1]))
+    mid = (ox + radius * math.cos(a0 + 0.5 * da),
+           oy + radius * math.sin(a0 + 0.5 * da))
+    if mid[0] * bis[0] + mid[1] * bis[1] <= ox * bis[0] + oy * bis[1]:
+        da -= 2.0 * math.pi if da > 0 else -2.0 * math.pi
+    bd = _unit3((-bis[0], -bis[1], 0.0))
+    # 角区 − 切圆：两条直边贴两个面，滚圆段用精确圆弧。切点不回缩、
+    # 只在角点外偏 0.1：切点附近回缩再用弦接圆弧会切进面内，留下
+    # 0.2–0.5 mm 的窄平台（面表多出一族偏 0.01–0.2 的平面）。
+    skirt = 0.1
+    c_out = (-skirt * bd[0], -skirt * bd[1])
+    if da < 0.0:
+        arc_a0, arc_a1 = a1, a1 - da
+    else:
+        arc_a0, arc_a1 = a0, a0 + da
+    arc_p0 = (ox + radius * math.cos(arc_a0),
+              oy + radius * math.sin(arc_a0))
+    arc_p1 = (ox + radius * math.cos(arc_a1),
+              oy + radius * math.sin(arc_a1))
+    pts2 = [c_out, arc_p0]
+    for j in range(1, 16):
+        a = arc_a0 + (arc_a1 - arc_a0) * j / 16.0
+        pts2.append((ox + radius * math.cos(a),
+                     oy + radius * math.sin(a)))
+    pts2.append(arc_p1)
+    area = 0.0
+    for i in range(len(pts2)):
+        x0, y0 = pts2[i]
+        x1, y1 = pts2[(i + 1) % len(pts2)]
+        area += x0 * y1 - x1 * y0
+    area = abs(0.5 * area)
+    ee = min(0.8, 0.25 * ln) if ext is None else ext
+    base = (p0[0] - dv[0] * ee, p0[1] - dv[1] * ee, p0[2] - dv[2] * ee)
+
+    def to3(xy):
+        return NXOpen.Point3d(
+            base[0] + xy[0] * e1[0] + xy[1] * e2[0],
+            base[1] + xy[0] * e1[1] + xy[1] * e2[1],
+            base[2] + xy[0] * e1[2] + xy[1] * e2[2])
+
+    q0 = to3(c_out)
+    curves = [wp.Curves.CreateLine(q0, to3(arc_p0)),
+              wp.Curves.CreateArc(to3((ox, oy)),
+                                  NXOpen.Vector3d(*e1),
+                                  NXOpen.Vector3d(*e2),
+                                  float(radius), arc_a0, arc_a1),
+              wp.Curves.CreateLine(to3(arc_p1), q0)]
+    hp = to3((sum(p[0] for p in pts2) / len(pts2),
+              sum(p[1] for p in pts2) / len(pts2)))
+    try:
+        feat = _extrude_along(wp, curves, dv, repr(ln + 2.0 * ee), repr(ee),
+                              hp)
+    except Exception:
+        if trace is not None:
+            trace.append("cutter extrude failed")
+        return None
+    return feat, area * ln
+
+
+def apply_roll(wp, body, edge, radius, min_len=None, want_add=None):
+    """用 `roll_edge` 滚一条边；凸/凹先判定，失败回滚。返回 (ok, body)。
+
+    凸凹由 `edge_is_concave` 按两邻面的相互侧判定，不按体积猜：凹边上先减
+    也会“成功”切掉一刀，体积没法区分凸边倒圆和凹边开槽。体积只作提交后的
+    一致性检查；减/加的方向反了就把这次提交回滚，再按另一侧重试一次。
+    每次尝试独立 undo mark；失败清账后从 `wp.Bodies` 重新取实体。已提交的
+    滚圆不回滚（回滚后实体 out-of-date，后续布尔会报
+    `Tool body completely outside target body`）。
+    """
+    session = NXOpen.Session.GetSession()
+    if want_add is None:
+        want_add = edge_is_concave(edge)
+        if want_add is None:
+            return False, body
+    for add in (want_add, not want_add):
+        mark = session.SetUndoMark(
+            NXOpen.Session.MarkVisibility.Invisible, "roll_edge")
+        res = roll_edge(wp, edge, radius, min_len=min_len, add=add)
+        if res is None:
+            session.DeleteUndoMark(mark, None)
+            return False, body
+        feat, exp = res
+        v0 = volume(wp, body)
+        try:
+            tools = feat.GetBodies()
+            if len(tools) != 1:
+                raise RuntimeError("roll tool made %d bodies" % len(tools))
+            op = (NXOpen.Features.Feature.BooleanType.Unite if add
+                  else NXOpen.Features.Feature.BooleanType.Subtract)
+            boolean(wp, body, tools[0], op)
+            allb = bodies(wp)
+            if len(allb) != 1:
+                raise RuntimeError("roll left %d bodies" % len(allb))
+            body = allb[0]
+            dv = (volume(wp, body) - v0) if add else (v0 - volume(wp, body))
+        except Exception:
+            session.UndoToMark(mark, None)
+            session.DeleteUndoMark(mark, None)
+            session.UpdateManager.ClearErrorList()
+            allb = bodies(wp)
+            body = allb[0] if allb else body
+            continue
+        if dv > 0.35 * exp - 0.5:
+            session.DeleteUndoMark(mark, None)
+            return True, body
+        session.UndoToMark(mark, None)
+        session.DeleteUndoMark(mark, None)
+        session.UpdateManager.ClearErrorList()
+        allb = bodies(wp)
+        body = allb[0] if allb else body
+    return False, body
 
 
 def unique_by_tag(objects):
