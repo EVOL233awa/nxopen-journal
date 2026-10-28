@@ -23,6 +23,7 @@
   assembly —— 组件添加/单位阵/原型面查找/Touch 约束网络
   drafting —— 视图查询/UF 表格/PDF 导出/剖视配方
   measure  —— 只读面表/同轴分组/孔锥参数/STL 截面面积与 IoU/件间比对
+  rolling  —— 滚球角网：边几何/偏置坍缩判类/解析环带/直边刀（§9 过渡）
 """
 from . import testing
 from . import session
@@ -30,10 +31,12 @@ from . import modeling
 from . import assembly
 from . import drafting
 from . import measure
+from . import rolling
 
 NXLIB_VERSION = "0.1.0"
 
 __all__ = [
     "testing", "session", "modeling", "assembly", "drafting", "measure",
+    "rolling",
     "NXLIB_VERSION",
 ]

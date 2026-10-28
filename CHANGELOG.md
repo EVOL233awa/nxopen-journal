@@ -7,6 +7,9 @@
 
 ### Added
 
+- `scripts/nxlib/rolling.py`：滚球角网标准层——边几何拟合、`±R` 偏置坍缩判类（`classify_corner`/`rim_from_face`）、锐边滚球中心圆（`rim_roll_center`）、解析环带（方截面环 + 4×FaceBlend + 面带分割，非喇叭/喇叭外侧两种）、直边刀与 `apply_roll_general` 统一入口。
+- `scripts/tests/40_rolling_network.py`：22 项滚球角网回归（直边 type16、Z/45° 轴/喇叭圆边的 type19 `rad_data=R`、分类反读）；`RUN_TESTS.bat` 登记 `TEST40_DONE`。
+- `references/reverse-engineering.md` §9：新增同半径延续判据（脊线共圆不是支撑面）、解析环带建在滚球中心圆上（含四象限试分与 Pappus 体积筛）、喇叭外侧环、§9.7 B 类角面管道重建。
 - `scripts/nxlib/measure.py`：新增 `fillet_run_samples`（同半径连通跑道 + UV 中心/3×3 样本）与 `fillet_coverage`（G7geo 分段不变覆盖）；`_face_samples` 走 `AskFaceUvMinmax`/`EvaluateFace`。
 - `scripts/nxlib/modeling.py`：新增 `face_blend`（`BlendTwoFace` 两支撑面）与 `face_blend_edge`（自动试四种法向组合、失败回滚、返回成功组合）。
 - `references/reverse-engineering.md` §9：重写为过渡账本 + 支撑面就绪判据（宽度 ≥2R、二面角 20°–160°）+ 机制路由（FaceBlend/逐段/滚圆刀回退）+ FaceBlend 报错判读 + G7 双轨。
