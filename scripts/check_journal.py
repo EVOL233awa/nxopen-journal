@@ -41,8 +41,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 # 保证输出不被控制台代码页吞掉/崩坏
@@ -165,7 +167,9 @@ def check(path: Path) -> int:
     warnings: list[str] = []
 
     try:
-        tree = ast.parse(text, filename=str(path))
+        # NX12 内嵌解释器是 Python 3.6.1；宿主机 3.12 的默认语法会放过
+        # walrus / positional-only / match 等 3.7+ 语法，必须按 3.6 解析。
+        tree = ast.parse(text, filename=str(path), feature_version=(3, 6))
     except SyntaxError as exc:
         hint = ""
         low = text.lower()
@@ -180,16 +184,37 @@ def check(path: Path) -> int:
     # 探针类文件（故意演示坑位）可在文件内声明豁免：
     #   # check_journal: allow-probes
     allow_probes = "check_journal: allow-probes" in src_lower
-    for marker in ("todo", "fixme", "placeholder", "pass  #"):
-        if marker in src_lower:
-            issues.append(f"发现占位符/待办标记: {marker}")
+    # 占位符只看注释 token 与真正的 raise NotImplementedError；字符串常量里
+    # 出现 TODO 是测试反例/文档，不是待办。也不再把合法的 `pass  # ...` 当占位。
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type != tokenize.COMMENT:
+                continue
+            low = tok.string.lower()
+            for marker in ("todo", "fixme", "placeholder"):
+                if marker in low:
+                    issues.append(
+                        f"第 {tok.start[0]} 行: 发现占位符/待办标记: {marker}")
+    except (tokenize.TokenError, IndentationError):
+        pass
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise) or node.exc is None:
+            continue
+        exc = node.exc
+        name = None
+        if isinstance(exc, ast.Name):
+            name = exc.id
+        elif isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name):
+            name = exc.func.id
+        if name == "NotImplementedError":
+            issues.append(f"第 {node.lineno} 行: raise NotImplementedError 是占位实现")
 
     if "def main(" not in text:
         warnings.append("未找到 def main(): NXOpen journal 建议包含 main() 入口")
     if "import nxopen" not in src_lower:
         warnings.append("未找到 NXOpen import, journal 可能无法运行")
 
-    for needle in ("session.getsession", "parts.work", "ui.getui"):
+    for needle in ("session.getsession", "parts.work"):
         if needle not in src_lower:
             warnings.append(f"未找到常见模板要素 '{needle}' (可能不需要)")
 
@@ -415,9 +440,9 @@ def check(path: Path) -> int:
 
     # 5.11  STEP 导出未设同步标志
     if not allow_probes and "createstepcreator" in src_lower and "processholdflag" not in src_lower:
-        warnings.append(
+        issues.append(
             "使用 StepCreator 但未设 ProcessHoldFlag=True: 实测 Commit() 返回时 .stp 尚未落盘 "
-            "(约 3 秒后才出现), 随即校验存在性会误判失败; 建议显式设 True"
+            "(约 3 秒后才出现), 随即校验存在性会误判失败; 必须显式设 True"
         )
 
     # 5.12  去参销毁特征树, 违背历史模式铁律
@@ -427,12 +452,16 @@ def check(path: Path) -> int:
             "仅用户明确要求哑实体时才可用"
         )
 
-    # 5.13  长 journal 的 Save 缺落盘校验（仅对 >120 行的多阶段脚本提示，避免短脚本噪声）
-    if not allow_probes and text.count("\n") > 120 and "save(" in src_lower and "getsize" not in src_lower:
-        warnings.append(
-            "长 journal 内有 Save 但无落盘校验: 阶段保存后应 "
-            "assert os.path.exists(path) and os.path.getsize(path) > 0 (见 SKILL.md §3)"
-        )
+    # 5.13  Save 必须有落盘校验；save_checked 已内含 getize/存在性断言。
+    if not allow_probes and re.search(r"(?i)\bsave\s*\(", text):
+        checked = ("save_checked(" in text or "getsize(" in text or
+                   "os.path.exists(" in text)
+        if not checked:
+            issues.append(
+                "有 Save 但无落盘校验: 改用 nxlib.session.save_checked(path)，"
+                "或保存后 assert os.path.exists(path) and os.path.getsize(path) > 0 "
+                "(见 SKILL.md §3)"
+            )
 
     # 5.14  DraftBuilder.Method 只读 + 容差默认 0 必须显式设
     draft_vars = _builder_vars(tree, "CreateDraftBuilder")
@@ -451,17 +480,17 @@ def check(path: Path) -> int:
                         )
                         break
         if not re.search(r"\.AngleTolerance\s*=", text):
-            warnings.append(
+            issues.append(
                 "使用 CreateDraftBuilder 但未设 .AngleTolerance: 默认 0.0, Commit 报 "
-                "'Angle tolerance is too small'; 建议显式设 0.5 (见 modeling.md §3.4)"
+                "'Angle tolerance is too small'; 必须显式设 0.5 (见 modeling.md §3.4)"
             )
 
     # 5.15  ShellBuilder.Tolerance 默认 0 必须显式设
     if not allow_probes and "createshellbuilder" in src_lower:
         if not re.search(r"\.Tolerance\s*=", text):
-            warnings.append(
+            issues.append(
                 "使用 CreateShellBuilder 但未设 .Tolerance: 默认 0.0, Commit 报 "
-                "'Tolerance error'; 建议显式设 0.01 (见 modeling.md §3.4)"
+                "'Tolerance error'; 必须显式设 0.01 (见 modeling.md §3.4)"
             )
 
     # 5.16  journal 解释器 = NX12 内嵌 Python 3.6.1, 拦截 3.7+ 专属 API
@@ -517,7 +546,7 @@ def check(path: Path) -> int:
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
                 and node.func.attr in ("removeprefix", "removesuffix"):
-            warnings.append(
+            issues.append(
                 f"第 {node.lineno} 行: str.{node.func.attr} 是 Python 3.9+, "
                 f"journal 解释器为 3.6.1; 改用 re.sub 或切片"
             )
@@ -541,23 +570,40 @@ def check(path: Path) -> int:
     # 5.18  CylinderBuilder.Types 成员名
     # NX12 只有 ArcAndHeight / AxisDiameterAndHeight, 无 AxisAndHeight
     # (AxisAndHeight 是 .NET 文档名, Python 封装不存在)。
-    if not allow_probes and re.search(
-            r"CylinderBuilder\.Types\.AxisAndHeight\b", text):
-        issues.append(
-            "CylinderBuilder.Types.AxisAndHeight 不存在 (NX12 Python 封装只有 "
-            "ArcAndHeight / AxisDiameterAndHeight); 改用 AxisDiameterAndHeight"
-        )
+    if not allow_probes:
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute) and
+                    node.attr == "AxisAndHeight"):
+                chain = _attr_chain(node)
+                if "CylinderBuilder" in chain and "Types" in chain:
+                    issues.append(
+                        "CylinderBuilder.Types.AxisAndHeight 不存在 (NX12 Python "
+                        "封装只有 ArcAndHeight / AxisDiameterAndHeight); "
+                        "改用 AxisDiameterAndHeight"
+                    )
+                    break
 
     # 5.19 NXOpen.UF 没有 UFDrf 容器
     # 装配图气泡符号用例实际踩中: NXOpen.UF.UFDrf → AttributeError。
     # 正确入口是 ufs.Drf (UFSession.GetUFSession().Drf) / NXOpen.UF.Drf 属性。
-    if not allow_probes and (
-            re.search(r"\bNXOpen\.UF\.UFDrf\b", text)
-            or re.search(r"from\s+NXOpen\.UF\s+import\s+[^\n]*\bUFDrf\b", text)):
-        issues.append(
-            "NXOpen.UF 没有 UFDrf 容器 (运行时报 AttributeError); "
-            "改用 ufs.Drf (ufs = NXOpen.UF.UFSession.GetUFSession())"
-        )
+    if not allow_probes:
+        bad_drf = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                chain = _attr_chain(node)
+                if (len(chain) >= 3 and chain[-3:] == ["UFDrf", "UF", "NXOpen"]):
+                    bad_drf = True
+                    break
+            elif isinstance(node, ast.ImportFrom):
+                if (node.module == "NXOpen.UF" and
+                        any(a.name == "UFDrf" for a in node.names)):
+                    bad_drf = True
+                    break
+        if bad_drf:
+            issues.append(
+                "NXOpen.UF 没有 UFDrf 容器 (运行时报 AttributeError); "
+                "改用 ufs.Drf (ufs = NXOpen.UF.UFSession.GetUFSession())"
+            )
 
     for w in warnings:
         print(f"[提示] {w}")

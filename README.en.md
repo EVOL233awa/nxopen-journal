@@ -42,8 +42,8 @@ Five tools come with it: `scripts/check_journal.py` (static check of a journal a
 a rule base of measured NX 12 pitfalls), `scripts/run_journal_batch.bat` (headless replay),
 `scripts/gb_drawing.py` (GB-style drawing kit: A4 frame, pinned views, title block, tech
 note and dimension lanes — any journal can `import gb_drawing`), the case standard layer
-`scripts/nxlib/` (test framework plus six recipe modules: testing, session, modeling,
-assembly, drafting and measure; regression cases import it instead of copying their own), and the offline figure
+`scripts/nxlib/` (test framework plus seven recipe modules: testing, session, modeling,
+assembly, drafting, measure and rolling; regression cases import it instead of copying their own), and the offline figure
 chain in `scripts/render/` (batch sessions cannot capture images, so solids are rendered
 from STL outside NX and drawing PDFs are rasterised on the host).
 
@@ -116,7 +116,7 @@ analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path ci
 
 | # | Requirement | How to check | If missing |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 35 gated cases run, only the static check is left |
+| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 37 gated cases run, only the static check is left |
 | 2 | `NX_HOME` pointing at the NX install root | defaults to `D:\UG-NX12`; set `NX_HOME` if yours is elsewhere | The batch wrapper prints an error and exits with code 2 instead of silently using the wrong path |
 | 3 | An agent that loads skills | put the directory into the agent's skill directory and let the agent read `SKILL.md` | The skill never triggers. Routing comes from the frontmatter of `SKILL.md`; nothing to compile or register |
 | 4 | Python 3.11+ (host) | `python -V`. `check_journal.py`, `check_repo.py` and the PDF value check use it (the latter also needs pymupdf) | Journals are unaffected: NX runs them with its embedded Python 3.6.1; the host Python only runs checks and MCP |
@@ -227,13 +227,15 @@ PASS 35_assembly_preload.py
 PASS 36_motion_slider.py
 PASS 37_sketch_autodim_param.py
 PASS 38_measure.py
+PASS 39_reverse_route.py
+PASS 40_rolling_network.py
 PASS 09_fea_static.py
 PASS check_journal rule selftest - counter-examples hit, clean passes
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-35 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
+37 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
 the check. By default the run deletes the artifacts under `scripts/tests/parts/`, including the
 Nastran intermediate files, because every run rebuilds them completely.
 
@@ -249,7 +251,7 @@ recorded in `scripts/tests/README.md`.
 | Drafting | 06 07 19 20 21 27 31 33 |
 | FEA | 09 24 25 30 |
 | Motion | 18 23 36 (16 and 17 cover assembly-level joints) |
-| Measurement | 38 |
+| Measurement & reverse engineering | 38 39 40 |
 
 Three further one-shot API probes are not part of the check and are kept for reference.
 
@@ -300,7 +302,7 @@ nxopen-journal/
 │   ├── check_repo.py               repo self-check (Py3.6 syntax / case list / doc structure / file list / standard-layer exclusivity / doc conciseness)
 │   ├── run_journal_batch.bat       single-file batch replay (NX_HOME parameterised)
 │   ├── render/                     offline figure chain (shaded STL rendering, PDF rasterising, trim and scale bar)
-│   └── tests/                      regression suite (35 gated cases + 3 one-shot probes) plus its own README
+│   └── tests/                      regression suite (37 gated cases + 3 one-shot probes) plus its own README
 └── agents/openai.yaml              Codex / OpenAI front-end config for cross-agent portability
 ```
 

@@ -2,7 +2,7 @@
 rem ============================================================
 rem nxopen-journal regression suite (ASCII only - cmd parses GBK)
 rem
-rem Runs the 36 gated journals in dependency order. 11_api_probe.py,
+rem Runs the 37 gated journals in dependency order. 11_api_probe.py,
 rem 12_api_probe2.py and 13_api_probe3.py are one-shot API probes: they are
 rem kept as evidence of how an API behaves and are not part of the gate.
 rem 09 runs NX Nastran and is the slowest case, so it runs last.

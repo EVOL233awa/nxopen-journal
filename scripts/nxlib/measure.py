@@ -166,6 +166,17 @@ def _do_update(tag):
     return 0 if errs is None else int(errs)
 
 
+def _is_auto_expression(name):
+    """NX 自动表达式（p0/p1…）与 PI 不计入 G8 存活率。"""
+    if not name:
+        return True
+    if name.upper() == "PI":
+        return True
+    if name[0] in ("p", "P"):
+        return name[1:].isdigit()
+    return False
+
+
 def expression_survey(part, factor=1.1):
     """G8 可编辑性：逐条命名表达式 +factor、更新、量体积、还原。
 
@@ -175,19 +186,24 @@ def expression_survey(part, factor=1.1):
     只改内存中的部件，**不保存**；调用方应传入已建的输出件，且此时不要再
     保存该部件（否则参数试验的结果会进文件）。
 
+    某个表达式更新失败只记录该条并继续测其余表达式，不因首个 broken 丢掉
+    后面的证据；还原失败则抛错（部件已不可信，不能继续报存活率）。
     pass = 单实体 + 至少一个命名表达式 + 至少一条实测驱动几何 + 无死参数
     + 无更新异常/还原失败 + 无特征告警 + 存活率 1.0。
     """
     bodies = list(part.Bodies)
     v0 = part_volume(part)
     named = []
+    seen = set()
     for e in part.Expressions:
         try:
             lhs = e.Equation.split("=")[0].strip()
         except Exception:
             continue
-        if lhs and lhs.upper() != "PI" and not lhs.lower().startswith("p"):
-            named.append((lhs, e))
+        if _is_auto_expression(lhs) or lhs in seen:
+            continue
+        seen.add(lhs)
+        named.append((lhs, e))
     live, dead, broken, skipped = [], [], [], []
     for i, (name, e) in enumerate(named):
         try:
@@ -196,8 +212,10 @@ def expression_survey(part, factor=1.1):
         except Exception:
             skipped.append(name)
             continue
+        changed = False
         try:
             e.RightHandSide = "%.6f" % (val * factor)
+            changed = True
             errs = _do_update("survey_%d" % i)
             d = part_volume(part) - v0
             if errs != 0:
@@ -206,16 +224,21 @@ def expression_survey(part, factor=1.1):
                 dead.append(name)
             else:
                 live.append({"name": name, "delta_volume": d})
+        except Exception as exc:
+            broken.append({"name": name, "exception": str(exc)[:300]})
+        if not changed:
+            continue
+        try:
             e.RightHandSide = rhs
             errs2 = _do_update("restore_%d" % i)
             vr = part_volume(part)
-            if errs2 != 0 or abs(vr - v0) > 1e-4 * max(abs(v0), 1.0):
-                broken.append({"name": name + ":restore", "errors": errs2,
-                               "volume": vr})
-                break
-        except Exception:
-            broken.append({"name": name, "exception": True})
-            break
+        except Exception as exc:
+            raise RuntimeError("expression restore failed for %s: %s" %
+                               (name, exc))
+        if errs2 != 0 or abs(vr - v0) > 1e-4 * max(abs(v0), 1.0):
+            raise RuntimeError(
+                "expression restore failed for %s: errors=%s volume=%.6f/%.6f" %
+                (name, errs2, vr, v0))
     try:
         alerts = [{"tag": int(f.Tag), "name": f.Name,
                    "type": f.FeatureType}
@@ -258,10 +281,12 @@ def face_table(part, with_edges=False):
                     "rad_data": float(rdata),
                     "norm_dir": int(ndir),
                 })
-            except Exception:
+            except Exception as exc:
                 rec.update({"type": -1, "point": [0.0, 0.0, 0.0],
                             "dir": [0.0, 0.0, 1.0], "box": [0.0] * 6,
-                            "radius": 0.0, "rad_data": 0.0, "norm_dir": 0})
+                            "radius": 0.0, "rad_data": 0.0, "norm_dir": 0,
+                            "invalid": True,
+                            "error": str(exc)[:200]})
             if with_edges:
                 edges = []
                 try:
@@ -313,21 +338,40 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3,
         d = _canon(fs[0]["dir"])
         tol = cluster_tol if cluster_tol is not None else max(
             2.0 * max(abs(f.get("radius", 0.0)) for f in fs) + 2.0, 5.0)
-        clusters = []
-        for f in fs:
-            for cl in clusters:
-                if _line_dist(cl["p0"], d, f["point"]) <= tol:
-                    cl["faces"].append(f)
-                    break
-            else:
-                clusters.append({"p0": list(f["point"]), "faces": [f]})
-        for cl in clusters:
-            lo, hi = 1e9, -1e9
+        parent = list(range(len(fs)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        def union(i, j):
+            ri, rj = find(i), find(j)
+            if ri != rj:
+                parent[rj] = ri
+
+        for i in range(len(fs)):
+            for j in range(i + 1, len(fs)):
+                if _line_dist(fs[i]["point"], d, fs[j]["point"]) <= tol:
+                    union(i, j)
+        by_root = {}
+        for i in range(len(fs)):
+            by_root.setdefault(find(i), []).append(fs[i])
+        for cl_faces in by_root.values():
+            cl = {"p0": list(cl_faces[0]["point"]), "faces": cl_faces}
+            intervals = []
             for f in cl["faces"]:
                 a, b = _project_extent(f["box"], cl["p0"], d)
-                lo, hi = min(lo, a), max(hi, b)
+                intervals.append({"faces": [f["tag"]],
+                                  "extent": [a, b],
+                                  "length": b - a})
+            intervals.sort(key=lambda s: (s["extent"][0], s["extent"][1]))
+            lo = min(s["extent"][0] for s in intervals)
+            hi = max(s["extent"][1] for s in intervals)
             bx = [min(f["box"][k] for f in cl["faces"]) for k in range(3)] + \
                  [max(f["box"][k + 3] for f in cl["faces"]) for k in range(3)]
+            mid = 0.5 * (lo + hi)
             groups.append({
                 "kind": kind,
                 "axis": d,
@@ -336,8 +380,9 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3,
                 "half_angle_deg": math.degrees(cl["faces"][0].get("rad_data", 0.0)),
                 "extent": [lo, hi],
                 "length": hi - lo,
+                "segments": intervals,
                 "bbox": bx,
-                "center": [0.5 * (bx[k] + bx[k + 3]) for k in range(3)],
+                "center": [cl["p0"][k] + d[k] * mid for k in range(3)],
                 "concave": all(f.get("norm_dir") == -1 for f in cl["faces"]),
                 "faces": [f["tag"] for f in cl["faces"]],
                 "ends": _end_faces(cl["faces"], d, cl["p0"], faces),
@@ -376,6 +421,7 @@ def hole_params(group):
         "center": list(group["center"]),
         "length": group["length"],
         "extent": list(group["extent"]),
+        "segments": list(group.get("segments", [])),
         "ends": list(group.get("ends", [])),
         "faces": list(group["faces"]),
     }
@@ -391,6 +437,7 @@ def cone_params(group):
         "center": list(group["center"]),
         "length": group["length"],
         "extent": list(group["extent"]),
+        "segments": list(group.get("segments", [])),
         "faces": list(group["faces"]),
     }
 
@@ -448,23 +495,24 @@ def plane_families(faces, digits=2):
     return sorted(out, key=lambda r: -r["nfaces"])
 
 
-def structure_directory(faces, cluster_tol=8.0, axis_digits=3):
+def structure_directory(faces, cluster_tol=None, axis_digits=3):
     """面表 → 结构目录：同轴圆柱/圆锥组、环面组、平面族。
 
     每组给几何参数（轴/参考点/半径/半角/轴向区间/包围盒/凹性/面 tag），是
     "每个功能面组只属于一个结构"的机器可读底表：孔/座/窗取 cylinders 与
     cones 的轴向区间，圆角面另由 `fillet_map` 按半径单列。
-    cluster_tol 是桶内轴向聚簇的垂距上限，取"同一孔的两段不拆、两个孔不并"
-    的量级（数量级约等于 2×最大半径+2）。
+    cluster_tol 缺省交给 `group_coaxial` 的 2R+2 口径；显式给定时只用于
+    测试/特殊件。
     """
     groups = group_coaxial(faces, CYLINDER, axis_digits=axis_digits,
                            cluster_tol=cluster_tol)
     groups += group_coaxial(faces, CONE, axis_digits=axis_digits,
                             cluster_tol=cluster_tol)
+    torus_tol = 5.0 * (cluster_tol if cluster_tol is not None else 8.0)
     return {
         "cylinders": [g for g in groups if g["kind"] == CYLINDER],
         "cones": [g for g in groups if g["kind"] == CONE],
-        "torus_groups": torus_groups(faces, cluster_tol * 5.0),
+        "torus_groups": torus_groups(faces, torus_tol),
         "plane_families": plane_families(faces),
     }
 
@@ -564,15 +612,60 @@ def _face_samples(part, face_tags, grid=3):
     return out
 
 
-def fillet_run_samples(part, faces, radii, tol=0.002, grid=3):
+def _face_supports(f, by_tag):
+    out = []
+    seen = set()
+    for e in f.get("edges", []):
+        for t in e.get("faces", []):
+            if t == f["tag"] or t in seen:
+                continue
+            s = by_tag.get(t)
+            if s is not None:
+                seen.add(t)
+                out.append(s)
+    return out
+
+
+def _fillet_support(f, s, tol=0.002):
+    """支撑面是否像圆角的邻面（而不是孔端面/同半径锥口）。"""
+    ft = f.get("type")
+    fr = abs(f.get("rad_data", 0.0)) if ft == TORUS else abs(f.get("radius", 0.0))
+    st = s.get("type")
+    if st in (CYLINDER, CONE, TORUS, 18):
+        sr = (abs(s.get("rad_data", 0.0)) if st == TORUS
+              else abs(s.get("radius", 0.0)))
+        return abs(sr - fr) > max(3.0 * tol, 0.05)
+    if st == PLANE:
+        n = _canon(s.get("dir", [0.0, 0.0, 1.0]))
+        ax = _canon(f.get("dir", [0.0, 0.0, 1.0]))
+        return abs(_dot(n, ax)) < 0.5
+    return False
+
+
+def _face_is_fillet(f, by_tag):
+    if f.get("type") not in (CYLINDER, TORUS, 18):
+        return False
+    supports = _face_supports(f, by_tag)
+    return any(_fillet_support(f, s) for s in supports)
+
+
+def fillet_run_samples(part, faces, radii, tol=0.002, grid=3,
+                       fillet_only=True):
     """圆角面 → 同半径连通跑道 + UV 采样。
 
     与 `fillet_map` 的区别：按共享边把同半径圆角面并成连通跑道，并给每个
     面一个 UV 中心点和 3x3 样本。中心点用于跨件覆盖匹配，样本用于局部
     P95；跑道是报告单位，覆盖判定按面，不按面数比分母——同一几何换一种
     分段方式不应改变结论。
+
+    `fillet_only=True` 时先用支撑面筛掉孔壁/凸台：孔壁的相邻平面法向沿
+    孔轴，凸台两端也是端面；圆角至少有一个切向支撑（曲面，或法向垂直于
+    圆角轴的平面）。
     """
+    by_tag = dict((f["tag"], f) for f in faces)
     usable = [f for f in faces if f.get("type") in (CYLINDER, TORUS)]
+    if fillet_only:
+        usable = [f for f in usable if _face_is_fillet(f, by_tag)]
     picked = []
     for f in usable:
         got = (abs(f.get("rad_data", 0.0)) if f["type"] == TORUS
@@ -648,23 +741,24 @@ def fillet_run_samples(part, faces, radii, tol=0.002, grid=3):
     return runs
 
 
-def fillet_coverage(ref_runs, built_runs, tol=0.10, run_frac=0.70):
+def fillet_coverage(ref_runs, built_runs, tol=0.10, run_frac=0.70,
+                    radius_tol=0.025, coverage_min=0.70):
     """G7geo：参考圆角面中心 → 同半径建出面中心的最短距离。
 
-    返回面覆盖（每个参考圆角面一个中心点）、跑道覆盖（中心命中率 ≥
-    run_frac 的参考跑道比例）和每跑道全样本 P95。分母是参考圆角面，不是
-    面数比值，所以参考件与建件分段不同不改变判定；半径不同的面不互相
-    匹配。
+    半径按 `radius_tol` 分池（默认 0.025 mm），不再用 0.001 mm 的字符串
+    键把 0.01 mm 的合法偏差判成完全没建。返回面覆盖、跑道覆盖、逐半径
+    P95 与半径误差；`pass` 要求覆盖/跑道覆盖 ≥0.70、半径误差 ≤0.025、
+    P95 ≤0.10。分母是参考圆角面，不是面数比值。
     """
-    def key(radius):
-        return round(abs(float(radius)), 3)
-
-    cpool = {}
-    spool = {}
+    pools = []
     for run in built_runs:
-        k = key(run["radius"])
-        cpool.setdefault(k, []).extend(run.get("centers", []))
-        spool.setdefault(k, []).extend(run.get("samples", []))
+        pools.append({"radius": abs(float(run["radius"])),
+                      "centers": list(run.get("centers", [])),
+                      "samples": list(run.get("samples", []))})
+
+    def matching(radius):
+        return [p for p in pools
+                if abs(p["radius"] - abs(float(radius))) <= radius_tol]
 
     def nearest(p, pts):
         best = 1e18
@@ -678,53 +772,274 @@ def fillet_coverage(ref_runs, built_runs, tol=0.10, run_frac=0.70):
     rows = []
     hit = 0
     total = 0
+    radius_errors = []
+    p95_by_radius = {}
     for run in ref_runs:
-        k = key(run["radius"])
-        pool = cpool.get(k, [])
-        ds = [nearest(c, pool) for c in run.get("centers", [])] if pool else []
+        pool = matching(run["radius"])
+        centers = [c for p in pool for c in p["centers"]]
+        samples = [s for p in pool for s in p["samples"]]
+        ds = [nearest(c, centers) for c in run.get("centers", [])] if centers else []
         good = [d for d in ds if d is not None and d <= tol]
         frac = len(good) / float(len(ds)) if ds else 0.0
         all_ds = []
         for p in run.get("samples", []):
-            d = nearest(p, spool.get(k, [])) if spool.get(k) else None
+            d = nearest(p, samples) if samples else None
             if d is not None:
                 all_ds.append(d)
         all_ds.sort()
         p95 = (all_ds[min(len(all_ds) - 1,
                           int(round(0.95 * (len(all_ds) - 1))))]
                if all_ds else None)
+        rerr = (min(abs(p["radius"] - abs(float(run["radius"])))
+                    for p in pool) if pool else None)
+        if rerr is not None:
+            radius_errors.append(rerr)
+        key = round(abs(float(run["radius"])), 3)
+        if p95 is not None:
+            p95_by_radius[key] = max(p95_by_radius.get(key, 0.0), p95)
         rows.append({"radius": run["radius"], "nfaces": run["nfaces"],
                      "bbox": run.get("bbox"), "coverage": frac,
+                     "radius_error": rerr,
                      "p95": p95, "max": all_ds[-1] if all_ds else None})
         hit += len(good)
         total += len(ds)
     p95s = [r["p95"] for r in rows if r["p95"] is not None]
     p95s.sort()
-    return {"tol": tol, "coverage": hit / float(total) if total else 0.0,
-            "run_coverage": (sum(1 for r in rows if r["coverage"] >= run_frac) /
-                             float(len(rows)) if rows else 0.0),
+    p95_max = max(p95s) if p95s else None
+    radius_err_max = max(radius_errors) if radius_errors else None
+    coverage = hit / float(total) if total else 0.0
+    run_coverage = (sum(1 for r in rows if r["coverage"] >= run_frac) /
+                    float(len(rows)) if rows else 0.0)
+    ok = (bool(rows) and coverage >= coverage_min and
+          run_coverage >= run_frac and radius_err_max is not None and
+          radius_err_max <= radius_tol and p95_max is not None and
+          p95_max <= tol)
+    return {"tol": tol, "radius_tol": radius_tol,
+            "coverage_min": coverage_min, "run_frac": run_frac,
+            "coverage": coverage, "run_coverage": run_coverage,
+            "radius_err_max": radius_err_max,
             "p95_median": (p95s[len(p95s) // 2] if p95s else None),
-            "p95_max": (p95s[-1] if p95s else None),
-            "runs": rows}
+            "p95_max": p95_max, "p95_by_radius": p95_by_radius,
+            "pass": ok, "runs": rows}
 
 
-def exact_section(part, origin, normal, tolerance=0.01, samples=65,
-                  body=None):
-    """B-rep 截面曲线（UF SectionFromPlanes），按端点串成闭环。
+def g7_reachability(ref_runs, built_faces, radius_tol=0.025,
+                    min_len_factor=0.5, ceiling_min=0.70):
+    """G7 可达上限：参考圆角跑道数 / 参考圆角面数。
 
-    返回每个原始段的三维采样点与按端点聚类的闭环；闭合环带绝对面积。
-    每个环带 `gap`（首尾距离），`open_gaps` 汇总未闭环的缺口；缺口大于
-    容差是真实开口/槽，不是拟合误差，不要靠放宽容差把它闭合成实体。
-    只用于取重建轮廓：STL 切面只用于最终偏差核对。截面特征与临时基准面
-    在取点后按 undo mark 回滚，不留在内存部件里；`body` 缺省取第一个实体。
+    一条参考跑道最多由一个解析面覆盖（`fillet_coverage` 按面 UV 中心匹配），
+    所以覆盖上限就是跑道数/面数。不能拿建件边数当分子：110 特征的件有三
+    千多条两面边，算出的 ceiling 恒为 1.0，把“不可达”伪装成可达。
+    建件可滚边数只作诊断（恰好两面、长度 ≥ min_len_factor×R）。
     """
+    groups = {}
+    for run in ref_runs:
+        r = abs(float(run["radius"]))
+        key = None
+        for k in groups:
+            if abs(k - r) <= radius_tol:
+                key = k
+                break
+        if key is None:
+            key = r
+            groups[key] = {"radius": r, "ref_faces": 0, "ref_runs": 0,
+                           "eligible_runs": 0, "built_edges_eligible": 0,
+                           "ceiling": 0.0}
+        groups[key]["ref_faces"] += int(run.get("nfaces", 0))
+        groups[key]["ref_runs"] += 1
+    edges = []
+    seen = set()
+    for f in built_faces:
+        for e in f.get("edges", []):
+            tag = e.get("tag")
+            if tag in seen:
+                continue
+            seen.add(tag)
+            if len(e.get("faces", [])) != 2:
+                continue
+            ln = float(e.get("length", 0.0))
+            if ln > 0.0:
+                edges.append(ln)
+    for g in groups.values():
+        g["eligible_runs"] = g["ref_runs"]
+        g["built_edges_eligible"] = sum(
+            1 for ln in edges if ln >= min_len_factor * g["radius"])
+        g["ceiling"] = (min(1.0, g["ref_runs"] / float(g["ref_faces"]))
+                        if g["ref_faces"] else 0.0)
+    ceilings = [g["ceiling"] for g in groups.values()]
+    ceiling = min(ceilings) if ceilings else 1.0
+    return {
+        "groups": sorted(groups.values(), key=lambda r: -r["ref_faces"]),
+        "ceiling": ceiling,
+        "ceiling_min": ceiling_min,
+        "min_len_factor": min_len_factor,
+        "ceiling_basis": "reference fillet runs / reference fillet faces",
+        "blocked": bool(ceilings) and any(c < ceiling_min for c in ceilings),
+        "eligible_edges_total": len(edges),
+        "edge_length_min": min(edges) if edges else None,
+    }
+
+
+def _edge_vertices(edge):
+    try:
+        return [(float(v.X), float(v.Y), float(v.Z))
+                for v in edge.GetVertices()]
+    except Exception:
+        return []
+
+
+def g4_blocked_reason(part, axis_index, side, delta, limit,
+                      corner_radius=3.175):
+    """G4 不可达证据：极值顶点是否落在三面短边锐角上。
+
+    只有当极值点同时邻接 ≥3 个面、最短邻边小于 0.5×R 时才记 BLOCKED；
+    否则返回 blocked=False，让调用方继续判 FAIL。`projection_reduction_mm`
+    是滚边能带来的包盒降低量；短边小于 0.5R 时按 0 记。
+    """
+    axis_names = ("x", "y", "z")
+    target = float(delta)
+    best = None
+    for b in part.Bodies:
+        for e in b.GetEdges():
+            for p in _edge_vertices(e):
+                v = p[axis_index]
+                if side == "min":
+                    score = v
+                else:
+                    score = -v
+                if best is None or score < best[0]:
+                    best = (score, p)
+    if best is None:
+        return {"blocked": False, "reason": "no vertices"}
+    point = best[1]
+    tol = 1e-3
+    incident = []
+    face_tags = set()
+    for b in part.Bodies:
+        for e in b.GetEdges():
+            vs = _edge_vertices(e)
+            if not any(math.sqrt(sum((q[k] - point[k]) ** 2
+                                     for k in range(3))) <= tol for q in vs):
+                continue
+            try:
+                length = float(e.GetLength())
+            except Exception:
+                length = 0.0
+            tags = [int(f.Tag) for f in e.GetFaces()]
+            face_tags.update(tags)
+            incident.append({"edge": int(e.Tag), "length": length,
+                             "faces": tags})
+    min_edge = min([x["length"] for x in incident]) if incident else None
+    normals = []
+    u = _ufs()
+    for tag in face_tags:
+        try:
+            d = u.Modeling.AskFaceData(tag)
+            if int(d[0]) == PLANE:
+                normals.append((tag, [float(x) for x in d[2]]))
+        except Exception:
+            continue
+    angles = []
+    for i in range(len(normals)):
+        for j in range(i + 1, len(normals)):
+            n0 = _canon(normals[i][1])
+            n1 = _canon(normals[j][1])
+            angles.append(round(math.degrees(math.acos(
+                max(-1.0, min(1.0, abs(_dot(n0, n1)))))), 3))
+    short = min_edge is not None and min_edge < 0.5 * corner_radius
+    blocked = len(face_tags) >= 3 and short
+    return {
+        "blocked": blocked,
+        "axis": axis_names[axis_index],
+        "side": side,
+        "delta_mm": target,
+        "limit_mm": limit,
+        "vertex": list(point),
+        "faces": sorted(face_tags),
+        "edge_lengths": [x["length"] for x in incident],
+        "min_edge_mm": min_edge,
+        "corner_radius_mm": corner_radius,
+        "dihedral_angles_deg": angles,
+        "projection_reduction_mm": 0.0 if blocked else None,
+        "reason": ("three-face corner with adjacent edge <0.5R"
+                   if blocked else "no three-face short-edge corner"),
+    }
+
+
+def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
+                 type_share=0.50, max_depth=8, min_features_share=8):
+    """G9 特征树结构：特征数/结构数同量级，禁止逐层截面站栈。"""
+    feats = list(part.Features)
+    by_type = {}
+    parents = {}
+    for f in feats:
+        try:
+            typ = str(f.FeatureType)
+        except Exception:
+            typ = "?"
+        by_type[typ] = by_type.get(typ, 0) + 1
+        try:
+            parents[int(f.Tag)] = [int(p.Tag) for p in f.GetParents()]
+        except Exception:
+            parents[int(f.Tag)] = []
+    memo = {}
+
+    def depth(tag, stack):
+        if tag in memo:
+            return memo[tag]
+        if tag in stack:
+            return 0
+        stack.add(tag)
+        ps = parents.get(tag, [])
+        d = 0 if not ps else 1 + max(depth(p, stack) for p in ps)
+        stack.discard(tag)
+        memo[tag] = d
+        return d
+
+    max_depth_seen = 0
+    for f in feats:
+        max_depth_seen = max(max_depth_seen, depth(int(f.Tag), set()))
+    feature_count = len(feats)
+    max_type = max(by_type.values()) if by_type else 0
+    max_share = max_type / float(feature_count) if feature_count else 0.0
+    station_types = ("EXTRUDE", "REVOLVE", "LOFT", "THROUGH_CURVES",
+                     "SWEEP", "SWEPT")
+    station_like = sum(n for t, n in by_type.items()
+                       if any(t.upper().startswith(x) for x in station_types))
+    limit = feature_factor * float(structures) + feature_offset
+    station_stack = (feature_count > 24 and
+                     station_like > 0.5 * feature_count)
+    reasons = []
+    if feature_count > limit:
+        reasons.append("features %d > %.1f" % (feature_count, limit))
+    if feature_count >= min_features_share and max_share > type_share:
+        reasons.append("max type share %.2f > %.2f" % (max_share, type_share))
+    if max_depth_seen > max_depth:
+        reasons.append("tree depth %d > %d" % (max_depth_seen, max_depth))
+    if station_stack:
+        reasons.append("station-like features %d/%d" %
+                       (station_like, feature_count))
+    return {
+        "feature_count": feature_count,
+        "structure_count": int(structures),
+        "feature_limit": limit,
+        "ratio": (feature_count / float(structures) if structures else None),
+        "max_type_share": max_share,
+        "max_type": max(by_type, key=by_type.get) if by_type else None,
+        "min_features_share": min_features_share,
+        "station_like": station_like,
+        "tree_depth": max_depth_seen,
+        "types": by_type,
+        "reasons": reasons,
+        "pass": not reasons,
+    }
+
+
+def _exact_section_impl(part, origin, normal, tolerance, samples, body):
     ufs = _ufs()
     bodies = [body] if body is not None else list(part.Bodies)
     if not bodies:
         raise ValueError("part has no solid body")
-    session = NXOpen.Session.GetSession()
-    mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
-                               "exact_section")
     plane = part.Planes.CreatePlane(
         NXOpen.Point3d(*[float(v) for v in origin]),
         NXOpen.Vector3d(*[float(v) for v in _unit(normal)]),
@@ -744,9 +1059,16 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
     pd = NXOpen.UF.Curve.SectionPlanesData()
     pd.Planes = [plane.Tag]
     pd.NumPlanes = 1
-    feat = ufs.Curve.SectionFromPlanes(gd, pd)
-    _n, tags = ufs.Curve.AskFeatureCurves(feat)
     tol = float(tolerance)
+    try:
+        feat = ufs.Curve.SectionFromPlanes(gd, pd)
+    except Exception:
+        if tol >= 0.05:
+            raise
+        tol = 0.05
+        gd.Tolerance = tol
+        feat = ufs.Curve.SectionFromPlanes(gd, pd)
+    _n, tags = ufs.Curve.AskFeatureCurves(feat)
     curves = []
     for tag in tags:
         pts = []
@@ -835,19 +1157,38 @@ def exact_section(part, origin, normal, tolerance=0.01, samples=65,
         lp["area"] = 0.5 * ar
         lp["abs_area"] = abs(lp["area"])
     open_gaps = [l["gap"] for l in loops if not l["closed"]]
-    try:
-        session.UndoToMark(mark, None)
-    finally:
-        try:
-            session.DeleteUndoMark(mark, None)
-        except Exception:
-            pass
     return {"origin": [float(v) for v in origin],
             "normal": _unit(normal),
             "curves": curves,
             "loops": loops,
             "open": len(open_gaps),
             "open_gaps": open_gaps}
+
+
+def exact_section(part, origin, normal, tolerance=0.01, samples=65,
+                  body=None):
+    """B-rep 截面曲线（UF SectionFromPlanes），按端点串成闭环。
+
+    返回每个原始段的三维采样点与按端点聚类的闭环；闭合环带绝对面积。
+    每个环带 `gap`（首尾距离），`open_gaps` 汇总未闭环的缺口；缺口大于
+    容差是真实开口/槽，不是拟合误差，不要靠放宽容差把它闭合成实体。
+    0.01 mm 切不出时回退到 0.05 mm；无论成功/异常，临时截面特征和基准面
+    都按 undo mark 回滚，不留在内存部件里。
+    """
+    session = NXOpen.Session.GetSession()
+    mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
+                               "exact_section")
+    try:
+        return _exact_section_impl(part, origin, normal, tolerance, samples,
+                                   body)
+    finally:
+        try:
+            session.UndoToMark(mark, None)
+        finally:
+            try:
+                session.DeleteUndoMark(mark, None)
+            except Exception:
+                pass
 
 
 def measure_part(path, with_edges=True):
@@ -865,6 +1206,7 @@ def measure_part(path, with_edges=True):
         "volume": part_volume(part),
         "bodies": len(list(part.Bodies)),
         "features": len(list(part.Features)),
+        "invalid_faces": sum(1 for f in faces if f.get("invalid")),
         "faces": faces,
         "cylinders": group_coaxial(faces, CYLINDER),
         "cones": group_coaxial(faces, CONE),
@@ -895,7 +1237,11 @@ def _point_in_poly(pt, poly):
 
 
 def _inner_ring(part, group):
-    """组轴向 1/3、2/3 截面上，组半径处是否有被外环包住的内环。"""
+    """组轴向 1/3、2/3 截面上，组半径处是否有被外环包住的内环。
+
+    返回 True/False/None：None 表示两个截面都没能量出来（不能当成“没有
+    内环”），由 `hole_audit` 记入 unclassified，避免分母静默漏组。
+    """
     d = group["axis"]
     p0 = group["point"]
     lo, hi = group["extent"]
@@ -904,6 +1250,7 @@ def _inner_ring(part, group):
     ra, rb = r0 + tan * lo, r0 + tan * hi
     rmin, rmax = min(ra, rb), max(ra, rb)
     tol_r = max(0.01 * max(abs(rmin), abs(rmax), 1.0), 0.05)
+    measured = 0
     for frac in (1.0 / 3.0, 2.0 / 3.0):
         t = lo + (hi - lo) * frac
         origin = [p0[k] + d[k] * t for k in range(3)]
@@ -911,6 +1258,7 @@ def _inner_ring(part, group):
             sec = exact_section(part, origin, d)
         except Exception:
             continue
+        measured += 1
         e1, e2 = _basis(d)
         polys = []
         for lp in sec["loops"]:
@@ -939,7 +1287,7 @@ def _inner_ring(part, group):
             if any(j != i and _point_in_poly(pts[0], other)
                    for j, other in enumerate(polys)):
                 return True
-    return False
+    return False if measured else None
 
 
 def functional_hole_groups(measure, part):
@@ -950,7 +1298,85 @@ def functional_hole_groups(measure, part):
     功能孔时 G2 记 N/A，不要求为了过门强行建这些结构。
     """
     return [g for g in measure["cylinders"] + measure["cones"]
-            if g.get("concave") and _inner_ring(part, g)]
+            if g.get("concave") and _inner_ring(part, g) is True]
+
+
+def _global_interval(group):
+    """组的轴向区间（全局坐标）：point 是区间原点。"""
+    base = _dot(group["point"], group["axis"])
+    return base + group["extent"][0], base + group["extent"][1]
+
+
+def _same_hole_axis(a, b, axis_tol_deg=1.0):
+    ang = math.degrees(math.acos(
+        min(1.0, abs(_dot(a["axis"], b["axis"])))))
+    if ang > axis_tol_deg:
+        return False
+    return _perp_dist(a["center"], b["center"], a["axis"]) <= max(
+        2.0 * max(abs(a["radius"]), abs(b["radius"])) + 2.0, 2.0)
+
+
+def _interval_touch(a, b, gap=1.0):
+    alo, ahi = _global_interval(a)
+    blo, bhi = _global_interval(b)
+    return min(ahi, bhi) - max(alo, blo) >= -gap
+
+
+def hole_audit(measure, part):
+    """G2 分母审计：功能孔 + 独立锥孔 + 未分类凹面组。
+
+    `functional_hole_groups` 只收“凹面且截面有内环”的组，截面退化时会漏
+    掉锥孔/盲孔。这里把同一根轴上的锥面先并到功能孔的口部（mouth_cone），
+    没有对应圆柱的锥组记 tapered_hole（独立锥孔，必须计入 G2 分母），
+    其余凹面圆柱/锥组记 unclassified（必须人工说明，不能静默丢掉）。
+    """
+    all_groups = list(measure.get("cylinders", [])) + \
+        list(measure.get("cones", []))
+    functional = functional_hole_groups(measure, part)
+    functional_tags = set()
+    for g in functional:
+        functional_tags.update(g["faces"])
+    mouth = []
+    tapered = []
+    unclassified = []
+    for g in all_groups:
+        if set(g["faces"]) & functional_tags:
+            continue
+        if g["kind"] == CONE:
+            host = None
+            for f in functional:
+                if _same_hole_axis(g, f) and _interval_touch(g, f):
+                    host = f
+                    break
+            rec = {"radius": g["radius"], "axis": g["axis"],
+                   "center": g["center"], "length": g["length"],
+                   "faces": g["faces"]}
+            if host is not None:
+                rec["attached_faces"] = host["faces"]
+                mouth.append(rec)
+            else:
+                tapered.append(rec)
+        elif g.get("concave"):
+            ring = _inner_ring(part, g)
+            rec = {"radius": g["radius"], "axis": g["axis"],
+                   "center": g["center"], "length": g["length"],
+                   "faces": g["faces"], "inner_ring": ring}
+            if ring is True:
+                functional.append(g)
+                functional_tags.update(g["faces"])
+            else:
+                unclassified.append(rec)
+    denominator = list(functional) + list(tapered)
+    return {
+        "functional": functional,
+        "mouth_cones": mouth,
+        "tapered_holes": tapered,
+        "unclassified": unclassified,
+        "all_groups": len(all_groups),
+        "denominator": denominator,
+        "total": len(denominator),
+        "audit_total": len(denominator) + len(unclassified),
+    }
 
 
 def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
@@ -990,10 +1416,13 @@ def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
         cd = _perp_dist(o["center"], q["center"], o["axis"])
         dha = abs(q["half_angle_deg"] - o["half_angle_deg"])
         ok = dr <= radius_tol and ang <= axis_tol_deg and cd <= center_tol
+        seg_ok = True
         if kind == CONE:
             ok = ok and dha <= half_angle_tol
         else:
             ok = ok and abs(q["length"] - o["length"]) <= length_tol
+            seg_ok = _segments_cover_match(o, q, length_tol)
+            ok = ok and seg_ok
         out.append({
             "a": i, "b": j,
             "delta_radius": q["radius"] - o["radius"],
@@ -1001,6 +1430,7 @@ def _match_groups(ga, gb, kind, radius_tol, center_tol, axis_tol_deg,
             "delta_center": cd,
             "delta_axis_deg": ang,
             "delta_half_angle_deg": dha,
+            "segments_match": seg_ok,
             "pass": ok,
             "a_group": o,
             "b_group": q,
@@ -1024,61 +1454,186 @@ def _scale_group(group, scale):
     for key in ("point", "center", "bbox", "extent"):
         out[key] = [v * scale for v in group[key]]
     out["faces"] = list(group["faces"])
+    out["segments"] = [{"faces": list(s.get("faces", [])),
+                        "extent": [s["extent"][0] * scale,
+                                   s["extent"][1] * scale],
+                        "length": s["length"] * scale}
+                       for s in group.get("segments", [])]
     out["ends"] = [(tag, t * scale) for tag, t in group.get("ends", [])]
     return out
 
 
+def _merged_spans(segments):
+    """同半径面段的轴向覆盖（合并重叠/相接区间）；缺 extent 时返回 None。"""
+    spans = []
+    for s in segments:
+        ext = s.get("extent")
+        if not ext or len(ext) != 2:
+            return None
+        lo, hi = float(ext[0]), float(ext[1])
+        if hi < lo:
+            lo, hi = hi, lo
+        spans.append((lo, hi))
+    spans.sort()
+    out = []
+    for lo, hi in spans:
+        if out and lo <= out[-1][1] + 1e-9:
+            out[-1] = (out[-1][0], max(out[-1][1], hi))
+        else:
+            out.append((lo, hi))
+    return out
+
+
+def _segments_cover_match(group_a, group_b, tol):
+    """比同半径圆柱的绝对轴向覆盖，不比分段数、不按组原点平移。
+
+    组的 extent 以各自 point 为原点，两侧 point 可能取在不同面上；先加
+    `dot(point, axis)` 换到绝对轴向坐标。原件把一根圆柱按缝合边拆成两段、
+    建件是一整面时，合并后覆盖相同；分界位置差 >tol 才是结构差。
+    """
+    segs_a = group_a.get("segments", [])
+    segs_b = group_b.get("segments", [])
+    if not segs_a or not segs_b:
+        return True
+    ma = _merged_spans(segs_a)
+    mb = _merged_spans(segs_b)
+    if ma is None or mb is None:
+        la = sorted(s.get("length", 0.0) for s in segs_a)
+        lb = sorted(s.get("length", 0.0) for s in segs_b)
+        return (len(la) == len(lb) and
+                all(abs(x - y) <= tol for x, y in zip(la, lb)))
+    ax = group_a.get("axis") or [0.0, 0.0, 1.0]
+    pa = group_a.get("point") or [0.0, 0.0, 0.0]
+    pb = group_b.get("point") or [0.0, 0.0, 0.0]
+    da = sum(float(pa[i]) * float(ax[i]) for i in range(3))
+    db = sum(float(pb[i]) * float(ax[i]) for i in range(3))
+    ma = [(lo + da, hi + da) for lo, hi in ma]
+    mb = [(lo + db, hi + db) for lo, hi in mb]
+    if len(ma) != len(mb):
+        return False
+    return all(abs(a0 - b0) <= tol and abs(a1 - b1) <= tol
+               for (a0, a1), (b0, b1) in zip(ma, mb))
+
+
+def _group_matches(g, ref, radius_tol, center_tol, axis_tol_deg):
+    if g.get("kind") != ref.get("kind"):
+        return False
+    if abs(g["radius"] - ref["radius"]) > 2.0 * radius_tol:
+        return False
+    ang = math.degrees(math.acos(
+        min(1.0, abs(_dot(g["axis"], ref["axis"])))))
+    if ang > axis_tol_deg:
+        return False
+    cd = _perp_dist(g["center"], ref["center"], g["axis"])
+    return cd <= max(center_tol, 2.0 * radius_tol)
+
+
+def _subset_by_geometry(groups, ref, scale, radius_tol, center_tol,
+                        axis_tol_deg):
+    """按几何键筛组；返回 (命中的组, 没找到对应组的 ref)。
+
+    不按 faces tag 做集合：面 tag 随重建顺序变化，tag 顺序一变就 N/A 是
+    假通过。没找到的 ref 由调用方补进原件侧，交给 `_match_groups` 记
+    unmatched_a。
+    """
+    if ref is None:
+        return groups, []
+    hit = []
+    missing = []
+    for r in ref:
+        rr = _scale_group(r, scale)
+        found = [g for g in groups
+                 if _group_matches(g, rr, radius_tol, center_tol,
+                                   axis_tol_deg)]
+        if found:
+            for g in found:
+                if g not in hit:
+                    hit.append(g)
+        else:
+            missing.append(r)
+    return hit, missing
+
+
 def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
                   axis_tol_deg=0.1, length_tol=0.1, half_angle_tol=0.1,
-                  ref_a=None, ref_b=None):
+                  ref_a=None, ref_b=None, audit_a=None, audit_b=None):
     """原件/自建件的 G2 口径比对（长度容差按毫米，组先换算单位）。
 
     匹配条件：半径差 ≤2×radius_tol、轴角 ≤axis_tol_deg、孔心（垂直于轴的
-    平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度，圆锥再加半角。
-    `pass` 要求原件功能组没有未匹配项且每个 pair 都过阈值；`unmatched_a`
-    是“原件有、自建件没有”的结构，必须逐项建或写入简化清单；`strict_pass`
-    才要求双向都无未匹配项，`unmatched_b`（多出的圆角/凸台）只作复核。
+    平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度/分段，圆锥再加
+    半角。`pass` 要求原件功能组没有未匹配项且每个 pair 都过阈值；
+    `unmatched_a` 是“原件有、自建件没有”的结构，必须逐项建或写入简化清单；
+    `strict_pass` 才要求双向都无未匹配项，`unmatched_b`（多出的圆角/凸台）
+    只作复核。
 
-    ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单（按 faces
-    tag 识别）。原件侧用 `functional_hole_groups`（截面内环筛出的功能孔）
-    或孔表筛出比对清单再传 ref_a；圆角/凸台/外轮廓转角不计入。
+    ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单；不传时用
+    `hole_audit` 的分母（功能孔 + 独立锥孔），不是只按 `_inner_ring` 筛的
+    功能孔。筛选按几何键，不按 faces tag；ref 里有、建件里找不到的组会
+    补进原件侧并记 unmatched_a，不会因为 tag 顺序变化变成 N/A。
 
-    `applicable=False` 表示原件没有功能孔，G2 记 N/A；此时 `pass`
-    仍为 True（空分母不阻塞整件），报告按 `verdict` 写 N/A 而不是通过。
+    `applicable=False` 只在 ref_a 显式为空或原件确实没有孔时成立；此时
+    `pass` 为 True，报告按 `verdict` 写 N/A 而不是通过。
     """
     a = measure_part(path_a)
     b = measure_part(path_b)
+    if audit_a is None:
+        audit_a = hole_audit(a, open_part(path_a))
+    if audit_b is None:
+        audit_b = hole_audit(b, open_part(path_b))
+    if ref_a is None:
+        ref_a = audit_a["denominator"]
+    if ref_b is None and ref_a is not None:
+        ref_b = ref_a
+    ref_a = list(ref_a or [])
+    ref_b = list(ref_b or [])
+    ref_a_cyl = [r for r in ref_a if r.get("kind") == CYLINDER]
+    ref_a_con = [r for r in ref_a if r.get("kind") == CONE]
+    ref_b_cyl = [r for r in ref_b if r.get("kind") == CYLINDER]
+    ref_b_con = [r for r in ref_b if r.get("kind") == CONE]
 
-    def subset(groups, ref):
-        if ref is None:
-            return groups
-        keys = set(tuple(g["faces"]) for g in ref)
-        return [g for g in groups if tuple(g["faces"]) in keys]
-
-    a_cyl = [_scale_group(g, a["length_scale"])
-             for g in subset(a["cylinders"], ref_a)]
-    a_con = [_scale_group(g, a["length_scale"])
-             for g in subset(a["cones"], ref_a)]
-    b_cyl = [_scale_group(g, b["length_scale"])
-             for g in subset(b["cylinders"], ref_b)]
-    b_con = [_scale_group(g, b["length_scale"])
-             for g in subset(b["cones"], ref_b)]
+    a_cyl, miss_a_cyl = _subset_by_geometry(
+        a["cylinders"], ref_a_cyl, a["length_scale"], radius_tol, center_tol,
+        axis_tol_deg)
+    a_con, miss_a_con = _subset_by_geometry(
+        a["cones"], ref_a_con, a["length_scale"], radius_tol, center_tol,
+        axis_tol_deg)
+    b_cyl, miss_b_cyl = _subset_by_geometry(
+        b["cylinders"], ref_b_cyl, b["length_scale"], radius_tol, center_tol,
+        axis_tol_deg)
+    b_con, miss_b_con = _subset_by_geometry(
+        b["cones"], ref_b_con, b["length_scale"], radius_tol, center_tol,
+        axis_tol_deg)
+    a_cyl = list(a_cyl) + [_scale_group(r, a["length_scale"])
+                           for r in miss_a_cyl]
+    a_con = list(a_con) + [_scale_group(r, a["length_scale"])
+                           for r in miss_a_con]
+    if ref_b:
+        b_cyl = list(b_cyl) + [_scale_group(r, b["length_scale"])
+                               for r in miss_b_cyl]
+        b_con = list(b_con) + [_scale_group(r, b["length_scale"])
+                               for r in miss_b_con]
     cyl = _match_groups(a_cyl, b_cyl, CYLINDER, radius_tol, center_tol,
                         axis_tol_deg, length_tol, half_angle_tol)
     cones = _match_groups(a_con, b_con, CONE, radius_tol, center_tol,
                           axis_tol_deg, length_tol, half_angle_tol)
-    applicable = bool(a_cyl or a_con)
+    applicable = bool(ref_a)
     groups_pass = (not cyl["unmatched_a"] and not cones["unmatched_a"] and
                    all(p["pass"] for p in cyl["pairs"] + cones["pairs"]))
+    missing = [{"kind": r["kind"], "radius": r["radius"],
+                "axis": list(r["axis"]), "center": list(r["center"]),
+                "length": r["length"], "faces": list(r["faces"])}
+               for r in miss_a_cyl + miss_a_con]
     return {
         "a": {"path": a["path"], "units": a["units"],
               "length_scale": a["length_scale"],
               "volume": a["volume"],
-              "bodies": a["bodies"], "features": a["features"]},
+              "bodies": a["bodies"], "features": a["features"],
+              "invalid_faces": a.get("invalid_faces", 0)},
         "b": {"path": b["path"], "units": b["units"],
               "length_scale": b["length_scale"],
               "volume": b["volume"],
-              "bodies": b["bodies"], "features": b["features"]},
+              "bodies": b["bodies"], "features": b["features"],
+              "invalid_faces": b.get("invalid_faces", 0)},
         "delta_volume": b["volume"] - a["volume"],
         "delta_volume_ratio": ((b["volume"] - a["volume"]) / a["volume"]
                                if a["volume"] else 0.0),
@@ -1087,8 +1642,24 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
         "applicable": applicable,
         "verdict": ("N/A" if not applicable else
                     ("PASS" if groups_pass else "FAIL")),
-        "pass": groups_pass,
-        "strict_pass": cyl["pass"] and cones["pass"],
+        "pass": groups_pass if applicable else True,
+        "strict_pass": applicable and cyl["pass"] and cones["pass"],
+        "ref_count": len(ref_a),
+        "missing_groups": missing,
+        "audit": {
+            "a": {"functional": len(audit_a.get("functional", [])),
+                  "tapered_holes": len(audit_a.get("tapered_holes", [])),
+                  "mouth_cones": len(audit_a.get("mouth_cones", [])),
+                  "unclassified": len(audit_a.get("unclassified", [])),
+                  "total": audit_a.get("total", 0),
+                  "audit_total": audit_a.get("audit_total", 0)},
+            "b": {"functional": len(audit_b.get("functional", [])),
+                  "tapered_holes": len(audit_b.get("tapered_holes", [])),
+                  "mouth_cones": len(audit_b.get("mouth_cones", [])),
+                  "unclassified": len(audit_b.get("unclassified", [])),
+                  "total": audit_b.get("total", 0),
+                  "audit_total": audit_b.get("audit_total", 0)},
+        },
     }
 
 
@@ -1404,8 +1975,19 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
     或一个法向三元组（按该方向投影）。面积单位随部件。
     """
     if isinstance(view, str):
-        iu, iv = _VIEWS[view.lower()]
-        nrm = None
+        key = view.lower()
+        if key == "iso":
+            view = (1.0, 1.0, 1.0)
+            e1, e2 = _basis(view)
+            iu, iv = e1, e2
+            nrm = _unit(view)
+        else:
+            try:
+                iu, iv = _VIEWS[key]
+            except KeyError:
+                raise ValueError("unknown view %r; use top/front/side/iso "
+                                 "or a normal vector" % (view,))
+            nrm = None
     else:
         e1, e2 = _basis(view)
         iu, iv = e1, e2
@@ -1418,8 +2000,9 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
             us.append(u)
             vs.append(v)
     if not us:
-        return {"iou": 1.0, "area_a": 0.0, "area_b": 0.0,
-                "area_inter": 0.0, "area_union": 0.0, "step": 0.0}
+        return {"iou": 0.0, "area_a": 0.0, "area_b": 0.0,
+                "area_inter": 0.0, "area_union": 0.0, "step": 0.0,
+                "empty": True}
     umin, umax, vmin, vmax = min(us), max(us), min(vs), max(vs)
     diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
     if step is None:
@@ -1689,7 +2272,7 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
     平行平面族每个不同偏距一站；每个圆柱/圆锥组沿自身轴取根、中、端附近
     三站。站点以 (法向, 偏距) 去重。超过预算时先按法向族均匀保留平面站
     （占预算约六成），再按半径由大到小为每个轴组保留中点，最后才补端点；
-    dropped>0 表示有边界未进入本次自检，complete=False。
+    `dropped>0` 是预算截断（采样范围，不是几何剔除），complete=False。
     """
     faces = measure["faces"]
     groups = list(measure.get("cylinders", [])) + \
@@ -1783,7 +2366,7 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
         "axis_count": axis_count,
         "total": total,
         "dropped": dropped,
-        "complete": dropped == 0,
+        "complete": dropped == 0 and bool(clean),
     }
 
 
@@ -1796,6 +2379,7 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     漏建与过建。
     """
     stations = plan["stations"] if isinstance(plan, dict) else plan
+    dropped = plan.get("dropped", 0) if isinstance(plan, dict) else 0
     rows = []
     failed = []
     for i, st in enumerate(stations):
@@ -1823,13 +2407,24 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
         })
         if not ok:
             failed.append(i)
+    reasons = []
+    if not rows:
+        reasons.append("no stations")
+    if dropped:
+        reasons.append("%d stations skipped by budget (sampling)" % dropped)
+    if failed:
+        reasons.append("%d stations failed" % len(failed))
     return {
         "stations": rows,
         "count": len(rows),
         "failed": failed,
+        "dropped": dropped,
+        "budget_skipped": dropped,
+        "plan_complete": (bool(rows) and dropped == 0),
         "iou_min": iou_min,
         "area_err_max_pct": area_err_max_pct,
-        "pass": not failed,
+        "reasons": reasons,
+        "pass": bool(rows) and not failed,
     }
 
 
@@ -1858,8 +2453,9 @@ def _polygons_iou(pa, pb):
             us.append(u)
             vs.append(v)
     if not us:
-        return {"iou": 1.0, "area_a": 0.0, "area_b": 0.0,
-                "area_inter": 0.0, "area_union": 0.0, "step": 0.0}
+        return {"iou": 0.0, "area_a": 0.0, "area_b": 0.0,
+                "area_inter": 0.0, "area_union": 0.0, "step": 0.0,
+                "empty": True}
     umin, umax = min(us), max(us)
     vmin, vmax = min(vs), max(vs)
     diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
@@ -1884,8 +2480,12 @@ def _polygons_iou(pa, pb):
 
 
 def brep_section_iou(part_a, part_b, origin, normal,
-                     iou_min=0.95, area_err_max_pct=5.0):
-    """同站 B-rep 精确截面 IoU；用于面表平面站，避免 STL 共面切面伪影。"""
+                     iou_min=0.95, area_err_max_pct=5.0, allow_open=False):
+    """同站 B-rep 精确截面 IoU；用于面表平面站，避免 STL 共面切面伪影。
+
+    未闭合环默认判失败：把它们隐式闭合会掩盖真实开口/槽。确实要量开口
+    轮廓时才传 `allow_open=True`，报告里仍单列 `open_a/open_b`。
+    """
     sa = exact_section(part_a, origin, normal)
     sb = exact_section(part_b, origin, normal)
     ca = _polygons_iou(_exact_loops_2d(sa, origin, normal),
@@ -1895,7 +2495,9 @@ def brep_section_iou(part_a, part_b, origin, normal,
         err = abs(ab - aa) / abs(aa) * 100.0
     else:
         err = 0.0 if abs(ab) <= 1e-9 else 100.0
-    ok = ca["iou"] >= iou_min and err <= area_err_max_pct
+    open_ok = allow_open or (sa["open"] == 0 and sb["open"] == 0)
+    ok = (ca["iou"] >= iou_min and err <= area_err_max_pct and open_ok and
+          not ca.get("empty", False))
     return {
         "iou": ca["iou"],
         "area_a": aa,
@@ -1908,6 +2510,7 @@ def brep_section_iou(part_a, part_b, origin, normal,
         "step": ca["step"],
         "open_a": sa["open"],
         "open_b": sb["open"],
+        "open_ok": open_ok,
         "gaps_a": list(sa["open_gaps"]),
         "gaps_b": list(sb["open_gaps"]),
         "pass": ok,
@@ -1940,10 +2543,31 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
     failed = [r["index"] for r in rows if not r["pass"]]
     base["stations"] = rows
     base["failed"] = failed
-    base["pass"] = not failed
+    base["pass"] = base["pass"] and not failed
     base["brep_plane_count"] = brep_count
     base["stl_axis_count"] = len(rows) - brep_count
     return base
+
+
+def _bbox_axis_delta(bb_o, bb_b):
+    """包盒逐轴残差：返回 (位置最差轴, 位置 delta, 尺寸最差轴, 尺寸 delta)。"""
+    pos = [abs(bb_o[i] - bb_b[i]) for i in range(6)]
+    pidx = max(range(6), key=lambda i: pos[i])
+    pos_axis = pidx % 3
+    pos_side = "min" if pidx < 3 else "max"
+    size_o = [bb_o[i + 3] - bb_o[i] for i in range(3)]
+    size_b = [bb_b[i + 3] - bb_b[i] for i in range(3)]
+    size = [abs(size_o[i] - size_b[i]) for i in range(3)]
+    sidx = max(range(3), key=lambda i: size[i])
+    side_scores = (abs(bb_o[sidx] - bb_b[sidx]),
+                   abs(bb_o[sidx + 3] - bb_b[sidx + 3]))
+    size_side = "min" if side_scores[0] >= side_scores[1] else "max"
+    return {
+        "position_axis": pos_axis, "position_side": pos_side,
+        "position_delta": pos[pidx],
+        "size_axis": sidx, "size_side": size_side,
+        "size_delta": size[sidx],
+    }
 
 
 def verify_parts(orig, built, samples=4000, max_stations=48,
@@ -1952,14 +2576,24 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  volume_pct=0.1, bbox_pos_mm=0.05, bbox_size_mm=0.05,
                  view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
                  section_iou_min=0.95, section_area_pct=5.0,
-                 ref_a=None, ref_b=None):
-    """原件/自建件几何门 G0–G6 一次汇总（G2–G6 长度换算到毫米）。
+                 ref_a=None, ref_b=None, g7="auto", g7_radii=None,
+                 g7_ceiling=None, g9=False, structure_count=None,
+                 g9_feature_factor=4.0, g9_feature_offset=12,
+                 g9_type_share=0.50, g9_depth=8, blocked_g4=True,
+                 g4_corner_radius=None):
+    """原件/自建件几何门 G0–G9 一次汇总（G2–G9 长度换算到毫米）。
 
-    G1 的面表平面站用 B-rep 精确截面复核，其余站用 STL 截面；两者阈值
-    相同。G1 的站位取自原件面表，要求两件使用同一长度单位；G2–G6 会按
-    各自 `length_scale` 换算到毫米。G7 圆角为报告项；G8 表达式存活与
-    G9 结构语义仍需按 `modeling.md` §6 的编辑测试与特征树检查，本函数
-    不作替代。
+    G0 要求两件都是单实体且面表可读；G1 的面表平面站用 B-rep 精确截面，
+    其余站用 STL 截面，空站表/未闭合环判失败，`max_stations` 预算截断只
+    报 `budget_skipped`/`plan_complete`（采样范围，不判失败）；G2 用
+    `hole_audit` 的分母（功能孔 + 独立锥孔），按几何键匹配；G3–G6 按毫米
+    换算；G7 默认 `auto`（参考件有圆角面才计算），半径组取环面 rad_data
+    （纯圆柱半径组只作 `unjudged_radii` 诊断），先算可达上限，低于 70% 时
+    记 BLOCKED 而不是伪装 PASS/FAIL；G9 默认关闭，逆向验收显式 `g9=True`
+    并传结构表的 `structure_count`（缺省判 FAIL，不拿
+    `structure_directory` 的逐面组数当分母）。每门带
+    `status: PASS|FAIL|BLOCKED|N/A`；总 `pass` 只对全 PASS（或 N/A）为真，
+    `delivery_pass` 在任一 BLOCKED 时为 false。
     """
     mo = measure_part(orig)
     mb = measure_part(built)
@@ -1968,27 +2602,34 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     part_b = open_part(built)
     mesh_b = read_stl(export_mesh(part_b))
     so, sb = mo["length_scale"], mb["length_scale"]
-    if abs(so - sb) > 1e-12:
-        print("WARN verify_parts: orig units=%s, built units=%s; "
-              "G1 assumes the same length unit" % (mo["units"], mb["units"]))
     mesh_o_mm = scale_mesh(mesh_o, so)
     mesh_b_mm = scale_mesh(mesh_b, sb)
 
     plan = station_plan(mo, max_stations=max_stations)
-    sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
-                                section_iou_min, section_area_pct)
+    if abs(so - sb) > 1e-12:
+        sec = station_report(mesh_o, mesh_b, plan, section_iou_min,
+                             section_area_pct)
+        sec["unit_mismatch"] = True
+        sec["pass"] = False
+        sec["reasons"].append("unit mismatch %s vs %s" %
+                              (mo["units"], mb["units"]))
+    else:
+        sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
+                                    section_iou_min, section_area_pct)
+    audit_o = hole_audit(mo, part_o)
+    audit_b = hole_audit(mb, part_b)
     if ref_a is None:
-        ref_a = functional_hole_groups(mo, part_o)
+        ref_a = audit_o["denominator"]
     cmp = compare_parts(orig, built, radius_tol, center_tol, axis_tol_deg,
-                        length_tol, half_angle_tol, ref_a, ref_b)
+                        length_tol, half_angle_tol, ref_a, ref_b,
+                        audit_a=audit_o, audit_b=audit_b)
     vol_pct = abs(mb["volume"] - mo["volume"]) / mo["volume"] * 100.0 \
         if mo["volume"] else 100.0
     bb_o = mesh_bbox(mesh_o_mm)
     bb_b = mesh_bbox(mesh_b_mm)
-    pos_d = max(abs(bb_o[i] - bb_b[i]) for i in range(6))
-    size_o = [bb_o[i + 3] - bb_o[i] for i in range(3)]
-    size_b = [bb_b[i + 3] - bb_b[i] for i in range(3)]
-    size_d = max(abs(size_o[i] - size_b[i]) for i in range(3))
+    bd = _bbox_axis_delta(bb_o, bb_b)
+    pos_d = bd["position_delta"]
+    size_d = bd["size_delta"]
     views = {}
     for name in ("top", "front", "side"):
         views[name] = view_iou(mesh_o_mm, mesh_b_mm, name)
@@ -1996,30 +2637,190 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     views_pass = all(v["iou"] >= view_iou_min for v in views.values())
     dev = mesh_deviation(mesh_o_mm, mesh_b_mm, samples, 0,
                          rms_max, p95_max)
+
+    ref_radii = []
+    unjudged_radii = []
+    if g7 != "off":
+        if g7_radii is not None:
+            ref_radii = sorted(set(abs(float(r)) for r in g7_radii))
+        else:
+            # 只有环面（type 19）的 rad_data 一定是滚球圆角半径。圆柱半径
+            # 里混着孔壁/凸台/外圆，全部入账会把 G7 分母灌到几百面、上限
+            # 反而变松；纯圆柱半径组只作诊断。
+            torus_hist = {}
+            cyl_hist = {}
+            for f in mo["faces"]:
+                if f.get("type") == TORUS:
+                    r = round(abs(f.get("rad_data", 0.0)), 3)
+                    if r > 1e-6:
+                        torus_hist[r] = torus_hist.get(r, 0) + 1
+                elif f.get("type") == CYLINDER:
+                    r = round(abs(f.get("radius", 0.0)), 3)
+                    if r > 1e-6:
+                        cyl_hist[r] = cyl_hist.get(r, 0) + 1
+            ref_radii = sorted(torus_hist) if torus_hist else sorted(cyl_hist)
+            unjudged_radii = sorted(set(cyl_hist) - set(ref_radii))
+    ref_runs = []
+    built_runs = []
+    if ref_radii:
+        ref_runs = fillet_run_samples(part_o, mo["faces"], ref_radii,
+                                      fillet_only=True)
+        built_runs = fillet_run_samples(part_b, mb["faces"], ref_radii,
+                                        fillet_only=True)
+    if g7 == "off" or not ref_runs:
+        g7_gate = {"status": "N/A", "pass": True, "blocked": False,
+                   "ref_radii": ref_radii,
+                   "unjudged_radii": unjudged_radii,
+                   "reason": ("g7 off" if g7 == "off"
+                              else "no reference fillet runs")}
+    else:
+        cov = fillet_coverage(ref_runs, built_runs, tol=0.10,
+                              run_frac=0.70, radius_tol=0.025)
+        reach = g7_reachability(ref_runs, mb["faces"], radius_tol=0.025)
+        if g7_ceiling is not None:
+            reach["ceiling"] = float(g7_ceiling)
+            reach["blocked"] = reach["ceiling"] < 0.70
+            reach["override"] = True
+        ref_faces = sum(r["nfaces"] for r in ref_runs)
+        built_faces = sum(r["nfaces"] for r in built_runs)
+        raw_cov = built_faces / float(ref_faces) if ref_faces else 0.0
+        if cov["pass"]:
+            status = "PASS"
+        elif reach["blocked"]:
+            status = "BLOCKED"
+        else:
+            status = "FAIL"
+        g7_gate = {
+            "status": status, "pass": status == "PASS",
+            "blocked": status == "BLOCKED",
+            "geo": cov,
+            "raw": {"ref_faces": ref_faces, "built_faces": built_faces,
+                    "coverage": raw_cov, "note": "report only"},
+            "reach": reach,
+            "ref_radii": ref_radii,
+            "unjudged_radii": unjudged_radii,
+                "reason": ("reachability ceiling %.3f < 0.70" %
+                           reach["ceiling"] if status == "BLOCKED" else None),
+        }
+
+    g4_axes = []
+    g4_fail = pos_d > bbox_pos_mm or size_d > bbox_size_mm
+    torus_counts = {}
+    for f in mo["faces"]:
+        if f.get("type") == TORUS:
+            r = round(abs(f.get("rad_data", 0.0)), 3)
+            if r > 1e-6:
+                torus_counts[r] = torus_counts.get(r, 0) + 1
+    if g4_corner_radius is not None:
+        corner_r = float(g4_corner_radius)
+        corner_basis = "explicit"
+    elif torus_counts:
+        corner_r = max(torus_counts, key=torus_counts.get)
+        corner_basis = "dominant reference torus radius"
+    elif ref_radii:
+        corner_r = max(ref_radii)
+        corner_basis = "largest reference fillet radius"
+    else:
+        corner_r = 3.175
+        corner_basis = "default 3.175"
+    if pos_d > bbox_pos_mm:
+        ev = g4_blocked_reason(part_b, bd["position_axis"],
+                               bd["position_side"], pos_d, bbox_pos_mm,
+                               corner_r)
+        ev["dimension"] = "position"
+        ev["corner_radius_basis"] = corner_basis
+        g4_axes.append(ev)
+    if size_d > bbox_size_mm:
+        ev = g4_blocked_reason(part_b, bd["size_axis"], bd["size_side"],
+                               size_d, bbox_size_mm, corner_r)
+        ev["dimension"] = "size"
+        ev["corner_radius_basis"] = corner_basis
+        g4_axes.append(ev)
+    g4_blocked = (bool(blocked_g4) and bool(g4_axes) and
+                  all(e.get("blocked") for e in g4_axes))
+    if g4_fail and g4_blocked:
+        g4_status = "BLOCKED"
+    elif g4_fail:
+        g4_status = "FAIL"
+    else:
+        g4_status = "PASS"
+
+    structures = structure_count
+    directory_count = None
+    if structures is None:
+        sd = structure_directory(mo["faces"])
+        directory_count = (len(sd["cylinders"]) + len(sd["cones"]) +
+                           len(sd["torus_groups"]))
+    if g9 and structures is None:
+        # 结构数只能来自结构表：structure_directory 会把每个圆角面
+        # 单独成组（本机实测 280 组），当分母会让 G9 永远通过。
+        g9_gate = {"status": "FAIL", "pass": False,
+                   "structure_count": None,
+                   "directory_count": directory_count,
+                   "reasons": ["structure_count required (structure table)"]}
+    elif g9:
+        g9_gate = g9_structure(part_b, structures,
+                               feature_factor=g9_feature_factor,
+                               feature_offset=g9_feature_offset,
+                               type_share=g9_type_share,
+                               max_depth=g9_depth)
+        g9_gate["directory_count"] = directory_count
+        g9_gate["status"] = "PASS" if g9_gate["pass"] else "FAIL"
+    else:
+        g9_gate = {"status": "N/A", "pass": True,
+                   "structure_count": structures,
+                   "directory_count": directory_count}
+
     gates = {
-        "G0": {"pass": bool(mesh_o and mesh_b and mo["bodies"] and
-                            mb["bodies"]),
-               "bodies": [mo["bodies"], mb["bodies"]]},
+        "G0": {"pass": (mo["bodies"] == 1 and mb["bodies"] == 1 and
+                        mo.get("invalid_faces", 0) == 0 and
+                        mb.get("invalid_faces", 0) == 0 and
+                        bool(mesh_o and mesh_b)),
+               "bodies": [mo["bodies"], mb["bodies"]],
+               "invalid_faces": [mo.get("invalid_faces", 0),
+                                 mb.get("invalid_faces", 0)]},
         "G1": sec,
         "G2": cmp,
         "G3": {"pass": vol_pct <= volume_pct, "diff_pct": vol_pct,
                "limit_pct": volume_pct},
-        "G4": {"pass": pos_d <= bbox_pos_mm and size_d <= bbox_size_mm,
+        "G4": {"pass": not g4_fail, "status": g4_status,
                "position_delta_mm": pos_d, "size_delta_mm": size_d,
-               "limits_mm": [bbox_pos_mm, bbox_size_mm]},
+               "limits_mm": [bbox_pos_mm, bbox_size_mm],
+               "corner_radius_mm": corner_r,
+               "corner_radius_basis": corner_basis,
+               "axes": g4_axes, "blocked": g4_blocked},
         "G5": {"pass": views_pass, "views": views,
                "iou_min": view_iou_min},
         "G6": dev,
+        "G7": g7_gate,
+        "G9": g9_gate,
     }
+    for key, gate in gates.items():
+        if "status" not in gate:
+            gate["status"] = "PASS" if gate.get("pass") else "FAIL"
+    statuses = dict((k, g["status"]) for k, g in gates.items())
+    failed = [k for k, s in statuses.items() if s == "FAIL"]
+    blocked = [k for k, s in statuses.items() if s == "BLOCKED"]
+    if failed:
+        overall = "FAIL"
+    elif blocked:
+        overall = "BLOCKED"
+    else:
+        overall = "PASS"
     return {
         "orig": {"path": mo["path"], "units": mo["units"],
                  "length_scale": so, "volume": mo["volume"],
-                 "bodies": mo["bodies"]},
+                 "bodies": mo["bodies"],
+                 "invalid_faces": mo.get("invalid_faces", 0)},
         "built": {"path": mb["path"], "units": mb["units"],
                   "length_scale": sb, "volume": mb["volume"],
-                  "bodies": mb["bodies"]},
+                  "bodies": mb["bodies"],
+                  "invalid_faces": mb.get("invalid_faces", 0)},
         "stations": plan,
         "gates": gates,
-        "pass": all(gates[k]["pass"] for k in ("G0", "G1", "G2", "G3",
-                                               "G4", "G5", "G6")),
+        "status": overall,
+        "statuses": statuses,
+        "blocked": blocked,
+        "pass": overall == "PASS",
+        "delivery_pass": overall == "PASS",
     }

@@ -40,7 +40,8 @@ from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
 from nxlib.modeling import block, boolean, volume
 from nxlib.rolling import (apply_roll_general, classify_corner,
-                           edge_geometry, rim_from_face, rim_roll_center)
+                           edge_geometry, rim_from_face, rim_roll_center,
+                           roll_rim)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 EPS = 0.02
@@ -136,6 +137,10 @@ def case_straight():
         return
     R = 4.0
     exp = (R * R - math.pi * R * R / 4.0) * 80.0
+    short = apply_roll_general(part, body, edge, 25.0, add=False)
+    check("T40_EDGE_GUARD", short.get("ok") is False,
+          "R25 on an 80 mm edge rejected ok=%s reason=%s" %
+          (short.get("ok"), short.get("reason")))
     v0 = volume(part, body)
     res = apply_roll_general(part, body, edge, R, add=False)
     check("T40_EDGE_KIND", res.get("ok") and res.get("kind") == "line",
@@ -222,6 +227,16 @@ def case_horn():
           ("%.4f" % info["major"] if info else "-"))
     if info is None:
         return
+    guard = roll_rim(part, rim, 3.175, add=False)
+    check("T40_HORN_GUARD", guard is None,
+          "roll_rim horn guard returned %s (must be None)" % (guard,))
+    if guard is not None:
+        # 保守卫失效时工具体还留在部件里，会让后面的 analytic 因多实体
+        # 被拒，级联出一个假失败。
+        try:
+            guard[0].Feature.Delete()
+        except Exception:
+            pass
     exp = info["area"] * 2.0 * math.pi * info["r_centroid"]
     v0 = volume(part, body)
     res = apply_roll_general(part, body, rim, 3.175, add=False)

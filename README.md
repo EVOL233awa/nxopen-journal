@@ -39,7 +39,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
 `scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
 标题栏、技术要求、尺寸道位，journal 中 `import gb_drawing` 后可直接使用）、用例标准层
-`scripts/nxlib/`（测试框架与建模、装配、制图、测量等六模块配方，回归用例直接 import，不各自复制），以及
+`scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀等七模块配方，回归用例直接 import，不各自复制），以及
 `scripts/render/` 的离线出图链（批处理截不了图，三维图由 STL 在 NX 外渲染，工程图 PDF 转成图片）。
 
 ## 示例产物
@@ -97,7 +97,7 @@ Drafting 图的 9 道尺寸都关联在几何上，导出 PDF 后用文本层核
 
 | # | 条件 | 怎么确认 | 缺了会怎样 |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（35 个带判定的用例）无法执行，只剩静态检查可用 |
+| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（37 个带判定的用例）无法执行，只剩静态检查可用 |
 | 2 | `NX_HOME` 指向 NX 安装根 | 默认 `D:\UG-NX12`，装在别处先设 `NX_HOME`（写法见下一节） | 批处理找不到 `run_journal.exe`，打印报错并以退出码 2 结束，不会进入错误路径 |
 | 3 | 一个能加载技能的 agent | 目录放进 agent 的技能目录后，让它读一次 `SKILL.md` | 技能不会被触发。本技能由 `SKILL.md` 头部的描述触发，不需要注册或编译 |
 | 4 | Python 3.11+（宿主） | `python -V`。`check_journal.py`、`check_repo.py` 与工程图 PDF 数值复核使用它（后者还用到 pymupdf） | journal 不受影响：它由 NX 内嵌的 Python 3.6.1 执行；宿主 Python 只跑检查与 MCP |
@@ -207,13 +207,15 @@ PASS 35_assembly_preload.py
 PASS 36_motion_slider.py
 PASS 37_sketch_autodim_param.py
 PASS 38_measure.py
+PASS 39_reverse_route.py
+PASS 40_rolling_network.py
 PASS 09_fea_static.py
 PASS check_journal rule selftest - counter-examples hit, clean passes
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-35 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
+37 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
 文件；这些文件每次运行都会重新生成。
 
 ## 回归用例
@@ -227,7 +229,7 @@ PASS pdf value check - test 19 annotation values
 | Drafting | 06 07 19 20 21 27 31 33 |
 | 有限元 | 09 24 25 30 |
 | 运动仿真 | 18 23 36（16 与 17 覆盖装配层运动副） |
-| 测量 | 38 |
+| 测量与逆向 | 38 39 40 |
 
 另有 3 个一次性 API 探测脚本不纳入校验，保留作参考。
 
@@ -264,12 +266,12 @@ nxopen-journal/
 ├── images/                         ← 实际运行产物图（上面九张）
 ├── scripts/
 │   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）
-│   ├── nxlib/                      ← 用例标准层（测试框架 + 建模/装配/制图/测量等六域配方，用例 import 用）
+│   ├── nxlib/                      ← 用例标准层（测试框架 + 建模/装配/制图/测量/圆角滚刀等七域配方，用例 import 用）
 │   ├── check_journal.py            ← 静态检查（AST + 已固化坑位规则库）
 │   ├── check_repo.py               ← 仓库自检（Py3.6 语法 / 用例清单 / 文档结构 / 文件清单 / 标准层独占 / 文档精简）
 │   ├── run_journal_batch.bat       ← 单件批处理执行（NX_HOME 参数化）
 │   ├── render/                     ← 离线出图链（STL 着色渲染、PDF 栅格化、裁边与比例尺）
-│   └── tests/                      ← 回归套件（35 个带结果判定的用例 + 3 个一次性 API 探测脚本）+ 套件说明
+│   └── tests/                      ← 回归套件（37 个带结果判定的用例 + 3 个一次性 API 探测脚本）+ 套件说明
 └── agents/openai.yaml              ← Codex 与 OpenAI 端界面配置，跨端迁移用
 ```
 

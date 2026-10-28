@@ -25,6 +25,8 @@ def main():
     collector.Destroy()
     print("EDGE_BLEND_OK")
     ufs.Part.Save()
+    assert os.path.exists(PART_PATH) and os.path.getsize(PART_PATH) > 0, \
+        "save did not land: %s" % PART_PATH
     print("TEST05_DONE")
 
 if __name__ == "__main__":

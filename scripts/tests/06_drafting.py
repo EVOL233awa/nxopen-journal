@@ -145,6 +145,8 @@ def main():
     stage("place_views", s3)
 
     ufs.Part.Save()
+    assert os.path.exists(PART_PATH) and os.path.getsize(PART_PATH) > 0, \
+        "save did not land: %s" % PART_PATH
     if FAILED_STAGES:
         print("TEST06_FAIL stages=" + ",".join(FAILED_STAGES))
         return

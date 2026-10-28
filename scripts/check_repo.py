@@ -46,6 +46,10 @@ SELF_CONTAINED = {
 }
 # 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
 PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
+# 期望计数：文档/批次头写错数字时在这里拦，而不是靠人眼比对。
+EXPECTED_CASES = 40
+EXPECTED_GATES = 37
+EXPECTED_PROBES = 3
 CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件
 PATH_RE = re.compile(r"`([A-Za-z0-9_./\\-]+\.(?:md|py|bat|yaml|png|prt|sim|fem))`")
@@ -166,6 +170,18 @@ def check_coverage():
     for g in sorted(gated - expected):
         problems.append("COVERAGE :gate %s 是探针或没有对应文件" % g)
         print("  FAIL :gate %s 是探针或没有对应文件" % g)
+    if len(files) != EXPECTED_CASES:
+        problems.append("COVERAGE 用例文件 %d 个，期望 %d 个；同步 README/批次头"
+                        % (len(files), EXPECTED_CASES))
+    if len(expected) != EXPECTED_GATES:
+        problems.append("COVERAGE 应并入校验 %d 个，期望 %d 个"
+                        % (len(expected), EXPECTED_GATES))
+    if len(gated) != EXPECTED_GATES:
+        problems.append("COVERAGE 实际 gate %d 个，期望 %d 个"
+                        % (len(gated), EXPECTED_GATES))
+    if len(PROBES) != EXPECTED_PROBES:
+        problems.append("COVERAGE 探针 %d 个，期望 %d 个"
+                        % (len(PROBES), EXPECTED_PROBES))
     print("  用例文件 %d 个（应并入校验 %d 个，实际 gate %d 个），批次文件提到 %d 个"
           % (len(files), len(expected), len(gated), len(mentioned)))
 

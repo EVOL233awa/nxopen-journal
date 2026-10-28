@@ -407,13 +407,18 @@ def main():
                     "faces": [i]} for i in range(20)]
     thin = station_plan({"faces": fake_faces, "cylinders": fake_groups,
                          "cones": []}, max_stations=12)
+    thin_full = dict(plan)
+    thin_full["dropped"] = 7
+    thin_rep = station_report(mesh, mesh, thin_full)
     check("REG_STATION_BUDGET",
           thin["count"] <= 12 and thin["plane_count"] >= 1 and
           thin["axis_count"] >= 1 and not thin["complete"] and
-          thin["dropped"] > 0,
-          "budget=12 stations=%d plane=%d axis=%d dropped=%d" %
+          thin["dropped"] > 0 and thin_rep["pass"] and
+          thin_rep["budget_skipped"] == 7 and
+          thin_rep["plan_complete"] is False,
+          "budget=12 stations=%d plane=%d axis=%d dropped=%d report_pass=%s" %
           (thin["count"], thin["plane_count"], thin["axis_count"],
-           thin["dropped"]))
+           thin["dropped"], thin_rep["pass"]))
 
     # B-rep section, not STL: block minus two D10 holes at z=10.
     feat_before = len(list(part.Features))

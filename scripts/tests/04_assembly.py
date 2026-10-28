@@ -60,6 +60,9 @@ def main():
     stage("add_components", s2)
 
     save()
+    part_file = os.path.abspath("asm_demo.prt")
+    assert os.path.exists(part_file) and os.path.getsize(part_file) > 0, \
+        "save did not land: %s" % part_file
     stage_finish("TEST04_DONE", "TEST04")
 
 

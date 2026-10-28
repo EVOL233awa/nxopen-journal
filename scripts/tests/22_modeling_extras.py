@@ -227,6 +227,8 @@ def main():
     failed = [n for n, v in RESULTS if not v]
     say("TEST22_CASES=%d" % len(RESULTS))
     ufs.Part.Save()
+    assert os.path.exists(PART) and os.path.getsize(PART) > 0, \
+        "save did not land: %s" % PART
     if not ok:
         say("TEST22_FAIL failed=%s" % failed)
         raise RuntimeError("test 22 failed: %s" % failed)

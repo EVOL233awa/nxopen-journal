@@ -37,6 +37,29 @@
 - `references/reverse-engineering.md` §2.4：一件的多个臂/耳不是同一模式，逐臂按孔轴/瓣心/端面半径组成形。
 - `references/reverse-engineering.md` §4.2：凹半圆柱轴向长度≈壁厚且过轴截面有整圆内环 → 贯穿孔，按孔建刀，不按缺口切槽。
 
+### Changed
+
+- `scripts/nxlib/measure.py`：G0 要求两侧均单实体且面表零失败；G1 空站表/开环截面判失败，`max_stations` 预算截断只报 `budget_skipped`/`plan_complete`（不判失败）；G2 分母改用 `hole_audit`（功能孔+锥孔+耳孔+锥口）并报 `missing_groups`，同半径面段按轴向覆盖合并后比（不比分段数）；G4/G7 增加 `BLOCKED` 证据；G4 的 R 默认取参考件主环面圆角半径并记 `corner_radius_basis`；`verify_parts` 每门带 `status` 与 `delivery_pass`。
+- `scripts/nxlib/measure.py`：`fillet_coverage` 半径容差 0.025、P95 按半径池；新增 `g7_reachability`（上限 = 参考圆角跑道数 / 参考圆角面数，半径组取环面 `rad_data` 或显式 `g7_radii`，纯圆柱半径组只进 `unjudged_radii`，建成体可滚边数只作诊断）、`g4_blocked_reason`（三面短边）、`g9_structure`（特征数/占比/深度/站栈；`verify_parts(g9=True)` 缺 `structure_count` 判 FAIL，不拿 `structure_directory` 逐面组数当分母）。
+- `scripts/nxlib/measure.py`：`expression_survey` 收集全部命名表达式，单条 broken 不中断，恢复失败抛错；`exact_section` 异常必回滚并支持 0.05 mm 回退；`view_iou` 支持 iso 且空输入 IoU=0；`brep_section_iou` 未闭合环默认失败。
+- `scripts/nxlib/rolling.py`：`apply_roll_general` 圆边默认走解析环带（`add=None` 也走）；`roll_rim` 切向用解析切向；带/刀体积验收改双边 65%–135%；喇叭环与多体拒绝；新建体仅在自有 FaceBlend 失败时删除。
+- `scripts/nxlib/modeling.py`：`apply_roll` 体积验收改双边 65%–135%。
+- `scripts/tests/39_reverse_route.py`：新增 6 项负向（`hole_audit` 分母、空站表、空视图 IoU=0、G7 强制 ceiling<0.7、G9 上限、`compare_parts` 参考组逆序）；21→27 项。
+- `scripts/tests/40_rolling_network.py`：新增 2 项保护（R25/80 mm 边被 4R 长度守卫拒绝、喇叭环 `roll_rim` 返回 None）；22→24 项。
+- `scripts/check_journal.py`：`ast.parse(feature_version=(3,6))`；5.11/5.14b/5.15 升为错误；占位符改 tokenize 注释；5.13 接受 `save_checked` 并要求保存后校验；删除 `ui.getui` 警告。
+- `scripts/check_repo.py`：断言 40 用例 / 37 gate / 3 探针，计数再漂移即失败。
+- `references/reverse-engineering.md` §4.1/§9.5/§10.1：G2 先跑 `hole_audit`；G7 先算 `ceiling`，<70% 记 BLOCKED；G4 三面锐角记 BLOCKED；G9 硬式；共面站保留并记 `coplanar/offset_mm`；新增 §9 配方（闭合环切向规则边、样条段合并、环形射线尖刺、放样首末站、径向裁剪、凹坑双 R、滚球中心半径 >0、三面锐角补角、底面 z=0 判据）。
+- `SKILL.md`/`README.md`/`README.en.md`/`scripts/tests/README.md`/`RUN_TESTS.bat`：用例计数 40、gate 37、nxlib 七模块；`CHANGELOG.md` 的 `§1.5` 引用改 `§1`。
+- `scripts/tests/01/02/03/04/05/06/22/39`：`save()` 后断言 PRT 存在且非空，满足 5.13。
+
+### Fixed
+
+- `scripts/nxlib/measure.py`：`compare_parts` 改按几何键匹配参考组，不以有序 face-tag 元组判 N/A；缺组进 `unmatched_a` 而非静默通过。
+- `scripts/nxlib/measure.py`：`group_coaxial` 改并查集，`hole_params`/`cone_params` 给逐段轴向区间；`structure_directory` 默认 `2R+2` 聚类。
+- `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。
+- `scripts/nxlib/rolling.py`：`classify_corner` 精确管道要求 `rms≤1e-9`，0.005R–0.05R 记 `canal_approx`，更大记 `unknown`；`roll_rim_analytic` 多体拒绝且只删自建体。
+- `scripts/check_journal.py`/`verify_check_rules.py`：5.13 正则支持 `Part.Save()`；占位符负例改 `legitimate no-op`；反例覆盖 walrus、必设参数、保存校验。
+
 ## [1.3.0] - 2026-10-26
 
 ### Added
@@ -59,7 +82,7 @@
 - `references/reverse-engineering.md` §10.1：自检未过不得交付；按 only_a/only_b 排序修结构，G6 大偏差先修结构再补圆角。
 - `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
 - `references/reverse-engineering.md` §1.1：新增结构表模板（证据/成形方式/特征名/自检站）与基体→臂耳叉→孔系→圆角的阶段关卡。
-- `references/reverse-engineering.md` §1.5：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。
+- `references/reverse-engineering.md` §1：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。
 - `references/reverse-engineering.md` §2.2：放样限定为变截面头部（5–6 张结构站）；整件剪影闭合旋转会把环/腔/槽填实，回转体只旋转功能回转体。
 - `references/reverse-engineering.md` §2.2：孔把截面切成两瓣的站按形心射线合成外包裹并取凸包（跳站会削掉凸台外侧瓣，自交截面让放样静默失效）；塔体截面取实测外环，不用整环凸包。
 - `references/reverse-engineering.md` §2.2：凸台端面垂直于斜孔轴时，水平截面族收不出端面，按端面截面沿轴拉伸有界棱柱再并。

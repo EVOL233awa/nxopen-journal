@@ -75,6 +75,9 @@ def main():
     stage("edge_blend", s3)
 
     save()
+    part_file = os.path.abspath(PART_NAME + ".prt")
+    assert os.path.exists(part_file) and os.path.getsize(part_file) > 0, \
+        "save did not land: %s" % part_file
     stage_finish("TEST02_DONE bodies=" + str(len([b for b in wp.Bodies])), "TEST02")
 
 

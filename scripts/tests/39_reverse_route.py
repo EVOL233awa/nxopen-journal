@@ -52,9 +52,11 @@ from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
 from nxlib.modeling import (apply_roll, block, boolean, face_blend_edge,
                             volume)
-from nxlib.measure import (CYLINDER, TORUS, face_table, fillet_coverage,
-                           fillet_map, fillet_run_samples, hole_params,
-                           structure_directory)
+from nxlib.measure import (CYLINDER, TORUS, compare_parts, face_table,
+                           fillet_coverage, fillet_map, fillet_run_samples,
+                           g7_reachability, g9_structure, hole_audit,
+                           hole_params, measure_part, station_report,
+                           structure_directory, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -205,6 +207,8 @@ def main():
         check("REG_ROLL_CUT", roll_ok and 0.7 * exp < dv < 1.3 * exp,
               "roll ok=%s dv=%.1f expected=%.1f" % (roll_ok, dv, exp))
     ufs.Part.Save()
+    assert os.path.exists(part_path) and os.path.getsize(part_path) > 0, \
+        "save did not land: %s" % part_path
 
     faces = face_table(part, with_edges=True)
     roll_faces = [f for f in faces
@@ -359,6 +363,47 @@ def main():
               if f["type"] == CYLINDER and abs(f["radius"] - CONC_R) < 0.01))
     check("REG_CONC_BODY", len(list(part2.Bodies)) == 1,
           "concave bodies=%d" % len(list(part2.Bodies)))
+
+    # Negative paths: a false PASS is worse than a false FAIL, so the gates
+    # that used to pass on empty input are exercised on empty/degenerate data.
+    meas = measure_part(part_path)
+    audit = hole_audit(meas, part)
+    check("REG_HOLE_AUDIT", audit["total"] >= 2 and
+          len(audit["denominator"]) >= 1,
+          "hole audit total=%d denominator=%d" %
+          (audit["total"], len(audit["denominator"])))
+
+    empty = station_report([], [], {"stations": [], "dropped": 0})
+    check("REG_G1_EMPTY", not empty["pass"] and "no stations" in empty["reasons"],
+          "empty station plan pass=%s reasons=%s" %
+          (empty["pass"], empty["reasons"]))
+
+    vi = view_iou([], [], "top")
+    check("REG_VIEW_EMPTY", vi["iou"] == 0.0 and vi.get("empty") is True,
+          "empty view iou=%s empty=%s" % (vi["iou"], vi.get("empty")))
+
+    reach = g7_reachability([{"radius": BLEND_R, "nfaces": 10000}], faces)
+    check("REG_G7_CEILING", reach["blocked"] and reach["ceiling"] < 0.70,
+          "forced ceiling=%.4f blocked=%s" %
+          (reach["ceiling"], reach["blocked"]))
+
+    structures = (len(d["cylinders"]) + len(d["cones"]) +
+                  len(d["torus_groups"]))
+    g9_good = g9_structure(part, 100)
+    g9_bad = g9_structure(part, structures, feature_factor=0.1,
+                          feature_offset=0)
+    check("REG_G9_LIMIT", g9_good["pass"] and not g9_bad["pass"] and
+          any("features" in r for r in g9_bad["reasons"]),
+          "good pass=%s bad pass=%s reasons=%s" %
+          (g9_good["pass"], g9_bad["pass"], g9_bad["reasons"]))
+
+    rev = list(reversed(audit["denominator"]))
+    cmp_rev = compare_parts(part_path, part_path, ref_a=rev)
+    check("REG_COMPARE_ORDER", cmp_rev["applicable"] and cmp_rev["pass"] and
+          not cmp_rev["missing_groups"],
+          "reversed ref groups=%d applicable=%s pass=%s missing=%d" %
+          (len(rev), cmp_rev["applicable"], cmp_rev["pass"],
+           len(cmp_rev["missing_groups"])))
 
     failed = [n for n, v in RESULTS if not v]
     say("TEST39_CASES=%d" % len(RESULTS))

@@ -695,7 +695,7 @@ def apply_roll(wp, body, edge, radius, min_len=None, want_add=None):
             allb = bodies(wp)
             body = allb[0] if allb else body
             continue
-        if dv > 0.35 * exp - 0.5:
+        if 0.65 * exp <= dv <= 1.35 * exp:
             session.DeleteUndoMark(mark, None)
             return True, body
         session.UndoToMark(mark, None)

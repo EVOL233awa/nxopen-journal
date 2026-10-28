@@ -440,7 +440,7 @@ def roll_edge_general(wp, edge, radius, add=None, min_len=None):
     ln = geo["line"]
     p0, p1 = ln["p0"], ln["p1"]
     ln_len = ln["length"]
-    if ln_len < (0.5 * radius if min_len is None else min_len):
+    if ln_len < (4.0 * radius if min_len is None else min_len):
         return None
     dv = _unit(_sub(p1, p0))
     mid = edge_mid(pts)
@@ -485,12 +485,22 @@ def roll_rim(wp, edge, radius, add=None, span_override=None,
     ci = geo["circle"]
     if ci["r"] < radius * 0.2:
         return None
-    # 边的起点/切向；闭合边用角度 0 处
+    if ci["r"] <= radius + 1e-6:
+        # 喇叭环：截面绕边轴整圈会跨轴自交，必须走 analytic/horn 外侧环。
+        return None
+    # 边的起点/切向；闭合边用角度 0 处。切向取拟合圆在该点的解析方向，
+    # 不用 pts[0]→pts[1] 的弦（11 点整圈时弦与切向差约 16°）。
     fs = edge_faces(edge)
     if len(fs) != 2:
         return None
     station = pts[0]
-    tangent = _unit(_sub(pts[1], pts[0]))
+    radial = _sub(station, ci["center"])
+    tangent = _unit(_cross(ci["axis"], radial))
+    if tangent is None:
+        return None
+    chord = _sub(pts[1], pts[0])
+    if _dot(tangent, chord) < 0.0:
+        tangent = _mul(tangent, -1.0)
     nrm = []
     for f in fs:
         n, _ = face_normal_at(wp, f, station)
@@ -501,6 +511,15 @@ def roll_rim(wp, edge, radius, add=None, span_override=None,
         return None
     sec = section_profile(nrm[0], nrm[1], tangent, radius, add)
     if not sec["ok"]:
+        return None
+    # 喇叭环（滚球中心主半径 = R）：截面绕边轴整圈会跨轴自交，必须走
+    # analytic 的外侧环。判据在滚球中心上，不在锐边半径上。
+    ax = _unit(ci["axis"])
+    c3 = _as_tuple(_to3(station, sec["e1"], sec["e2"],
+                        (sec["ox"], sec["oy"])))
+    rel = _sub(c3, ci["center"])
+    maj = _norm(_sub(rel, _mul(ax, _dot(rel, ax))))
+    if maj <= radius + 1e-6:
         return None
     a0 = ci["a0"]
     a1 = ci["a1"]
@@ -534,10 +553,13 @@ def apply_roll_general(wp, body, edge, radius, add=None):
     kind = geo.get("kind") if geo.get("ok") else None
     if kind is None:
         return {"ok": False, "reason": "edge not line/circle"}
-    if kind == "circle" and add is False:
+    if kind == "circle" and add is not True:
         mark = session.SetUndoMark(
             NXOpen.Session.MarkVisibility.Invisible, "roll_rim_analytic")
-        res = roll_rim_analytic(wp, body, edge, radius)
+        try:
+            res = roll_rim_analytic(wp, body, edge, radius)
+        except Exception:
+            res = {"ok": False, "reason": "analytic raised"}
         if res.get("ok"):
             session.DeleteUndoMark(mark, None)
             return {"ok": True, "kind": "circle_analytic",
@@ -570,7 +592,10 @@ def apply_roll_general(wp, body, edge, radius, add=None):
             continue
         v1 = _volume(wp, body)
         dv = v1 - v0
-        good = (dv > 0.25 * exp) if wants_add else (dv < -0.25 * exp)
+        if wants_add:
+            good = 0.65 * exp <= dv <= 1.35 * exp
+        else:
+            good = -1.35 * exp <= dv <= -0.65 * exp
         if not good:
             session.UndoToMark(mark, None)
             session.DeleteUndoMark(mark, None)
@@ -628,19 +653,29 @@ def classify_corner(part, face_tag, radius, grid=7):
     out = {"ok": True, "sign": best["sign"], "thickness": pc["s"][2],
            "s": pc["s"], "pca": pc, "locus": best["locus"],
            "radius": radius, "samples": samples}
-    if pc["s"][2] <= 0.005 * radius:
+    thick = pc["s"][2]
+    if thick <= 0.005 * radius:
         if pc["s"][0] <= 0.01 and pc["s"][1] <= 0.01:
             out["kind"] = "sphere"
             out["sphere"] = {"center": pc["center"], "r": radius}
             return out
         ci = fit_circle3d(best["locus"])
-        if ci["ok"]:
+        if ci["ok"] and ci["rms"] <= 1e-9:
             out["kind"] = "canal_circle"
             out["circle"] = ci
             return out
-    ci = fit_circle3d(best["locus"])
-    out["kind"] = "canal_approx"
-    out["circle"] = ci if ci["ok"] else None
+        out["kind"] = "canal_approx"
+        out["circle"] = ci if ci["ok"] else None
+        out["reason"] = "circle residual %.3e" % (ci.get("rms", -1.0)
+                                                  if ci["ok"] else -1.0)
+        return out
+    if thick <= 0.05 * radius:
+        ci = fit_circle3d(best["locus"])
+        out["kind"] = "canal_approx"
+        out["circle"] = ci if ci["ok"] else None
+        return out
+    out["kind"] = "unknown"
+    out["reason"] = "thickness %.4f > 0.05R" % thick
     return out
 
 
@@ -680,6 +715,7 @@ def torus_ring(wp, center, axis, major, radius, eps=0.02):
             c[0] + (major + dr) * u[0] + da * ax[0],
             c[1] + (major + dr) * u[1] + da * ax[1],
             c[2] + (major + dr) * u[2] + da * ax[2]))
+    before = set(b.Tag for b in wp.Bodies)
     curves = [wp.Curves.CreateLine(pts[i], pts[(i + 1) % 4]) for i in range(4)]
     ring = _revolve_uf(wp, curves, center, axis, 0.0, 2.0 * math.pi)
     if ring is None or ring.IsSheetBody:
@@ -690,6 +726,12 @@ def torus_ring(wp, center, axis, major, radius, eps=0.02):
             try:
                 face_blend_edge(wp, e, radius)
             except Exception:
+                for b in list(wp.Bodies):
+                    if b.Tag not in before:
+                        try:
+                            b.Feature.Delete()
+                        except Exception:
+                            pass
                 return None
     return ring
 
@@ -718,6 +760,7 @@ def torus_ring_outer(wp, center, axis, major, radius, eps=0.02):
             c[0] + dr * u[0] + da * ax[0],
             c[1] + dr * u[1] + da * ax[1],
             c[2] + dr * u[2] + da * ax[2]))
+    before = set(b.Tag for b in wp.Bodies)
     curves = [wp.Curves.CreateLine(pts[i], pts[(i + 1) % 4])
               for i in range(4)]
     ring = _revolve_uf(wp, curves, center, axis, 0.0, 2.0 * math.pi)
@@ -736,9 +779,23 @@ def torus_ring_outer(wp, center, axis, major, radius, eps=0.02):
         try:
             face_blend_edge(wp, e, radius)
         except Exception:
+            for b in list(wp.Bodies):
+                if b.Tag not in before:
+                    try:
+                        b.Feature.Delete()
+                    except Exception:
+                        pass
             return None
         got += 1
-    return ring if got else None
+    if got:
+        return ring
+    for b in list(wp.Bodies):
+        if b.Tag not in before:
+            try:
+                b.Feature.Delete()
+            except Exception:
+                pass
+    return None
 
 
 def _band_faces(part, body, radius, major, tol=0.05):
@@ -859,7 +916,13 @@ def roll_rim_analytic(wp, body, edge, radius, eps=0.02):
     锐边圆上的环带只与壁擦切，分割报“工具体完全在目标体外”。四个四分之一
     环带按“指向角区”排序逐个试分，用 Pappus 体积筛掉切错象限的结果；每次
     尝试独立 undo mark，失败原实体不动。只处理凸边（减料）；凹边返回失败。
+    多实体件直接拒绝：后续按体积挑最大体并删除其余体会误删无关体。
     """
+    others = [b for b in wp.Bodies
+              if not b.IsSheetBody and b.Tag != body.Tag]
+    if others:
+        return {"ok": False,
+                "reason": "multiple solid bodies: %d" % (len(others) + 1)}
     info = rim_roll_center(wp, edge, radius, False)
     if info is None:
         return {"ok": False, "reason": "roll center failed"}

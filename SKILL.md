@@ -224,7 +224,7 @@ python scripts/check_journal.py path/to/journal.py
 # 批处理试跑（journal 用绝对路径；workdir 可选）
 scripts\run_journal_batch.bat C:\abs\path\journal.py [workdir]
 
-# 全量回归（38 例 = 35 个批处理令牌校验 + 11-13 三个一次性探针）
+# 全量回归（40 例 = 37 个批处理令牌校验 + 11-13 三个一次性探针）
 # 逐例覆盖内容与令牌名只维护在 tests/README.md
 # 09 含 Nastran 求解较慢；跑完默认清理 parts\，KEEP_PARTS=1 保留
 # 末尾先跑 check_journal 规则自检（宿主 python），再用 pymupdf 复核 19 号 PDF 文本层
@@ -236,7 +236,7 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。35 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。37 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
 ⚠ **检查要有判别力**：期望值必须来自独立信息源（解析解、指令参数），不能取自被测数据本身；且要反向验证——故意改坏一处，确认对应检查 FAIL。
@@ -275,7 +275,7 @@ nxopen-journal/
 ├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 / 文档精简 / 路线优先）
 ├── scripts/run_journal_batch.bat   ← 批处理试跑（ugiicmd + run_journal.exe；NX 安装根走 NX_HOME）
 ├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、配方归属
-│   ├── 01…38_*.py                  ← 35 个并入令牌校验的用例（RUN_TESTS.bat 全量跑）
+│   ├── 01…40_*.py                  ← 37 个并入令牌校验的用例（RUN_TESTS.bat 全量跑；11–13 探针除外）
 │   ├── 11…13_api_probe*.py         ← 一次性 API 探针，不纳入检查
 │   ├── verify_check_rules.py       ← check_journal 规则自检（宿主解释器，反例必须命中）
 │   ├── verify_anno_pdf.py          ← 19 号用例的 PDF 文本层数值复核（宿主解释器 + pymupdf）
