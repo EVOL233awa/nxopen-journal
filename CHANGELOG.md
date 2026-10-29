@@ -7,6 +7,11 @@
 
 ### Added
 
+- `scripts/nxlib/reverse.py`：逆向测量编译层——候选结构目录、参数候选（design/data + 证据置信度）、全集站表与结构覆盖、接口表、圆角跑道表、`fillet_group_indexes`/`station_partition`（primary/fillet 分母开工前定）、结构表校验。
+- `scripts/nxlib/skeleton.py`：骨架层——方位帧（`from_azimuth`/`pt`/`vec`/`to_local`）、点线/圆弧/折线/闭环曲线、世界坐标系 datum 轴与面、正交校验与 `describe`。
+- `scripts/nxlib/structures.py`：结构构造层——布尔、棱柱/回转、圆柱/圆锥（直径与高度吃表达式）、边筛选与面环边、带 undo 保护的倒圆、孔与孔环、包络裁剪。
+- `scripts/nxlib/audit.py`：审计层——G8 活性（按结构核对声明参数，键名 `alive_ratio`）、局部性（对称差判形变、逐条还原、update 回滚记错误不中断）、预算、包盒、G1full 全集站表比对（平面站 0.5 mm 切、材料侧只看原件）。
+- `scripts/nxlib/__init__.py`：注册 `skeleton`/`structures`/`audit` 并补模块分工。
 - `references/reverse-engineering.md` §11.3/§11.4/§11.6：活参数全表普查（逐表达式 +10% → live/named ≥0.9、broken=0、派生量不进编辑集）、还原容差 1e-6 mm³、G1 逐站 IoU 留在模板路线硬门且站表取原件结构分界全集（自选站只作诊断）。
 - `references/modeling.md` §4.1b：编辑矩阵不能代替全表普查，派生量改 RHS 会破坏公式。
 - `scripts/nxlib/template.py`：参数化模板层——参数表/schema 读取、命名表达式与派生约束、告警原文读取、快照差异、`edit_check`/`edit_matrix`/`clean_cells` 局部编辑矩阵；docstring 记 NX12 边界（圆柱轴心字面值、边圆角拓扑引用会存盘告警）。

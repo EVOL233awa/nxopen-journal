@@ -25,6 +25,10 @@
   measure  —— 只读面表/同轴分组/孔锥参数/STL 截面面积与 IoU/件间比对
   rolling  —— 滚球角网：边几何/偏置坍缩判类/解析环带/直边刀（§9 过渡）
   template —— 参数化模板层：schema/参数表 → 命名表达式 → 局部编辑矩阵
+  reverse  —— 逆向测量编译：候选结构目录/全集站表/接口表/圆角跑道/参数候选
+  skeleton —— 骨架层：局部坐标系/二维轮廓曲线/基准轴与面（data 层字面值）
+  structures —— 构造层：参数(表达式)与数据(实测)分离的通用 builder
+  audit    —— 审计层：活性/局部性/特征预算/全集站表 G1full/包络偏差
 """
 from . import testing
 from . import session
@@ -34,11 +38,15 @@ from . import drafting
 from . import measure
 from . import rolling
 from . import template
+from . import reverse
+from . import skeleton
+from . import structures
+from . import audit
 
 NXLIB_VERSION = "0.1.0"
 
 __all__ = [
     "testing", "session", "modeling", "assembly", "drafting", "measure",
-    "rolling", "template",
+    "rolling", "template", "reverse", "skeleton", "structures", "audit",
     "NXLIB_VERSION",
 ]
