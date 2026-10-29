@@ -7,6 +7,10 @@
 
 ### Added
 
+- `scripts/nxlib/template.py`：参数化模板层——参数表/schema 读取、命名表达式与派生约束、告警原文读取、快照差异、`edit_check`/`edit_matrix`/`clean_cells` 局部编辑矩阵；docstring 记 NX12 边界（圆柱轴心字面值、边圆角拓扑引用会存盘告警）。
+- `scripts/tests/41_template.py`：18 项通用支架模板回归（全部尺寸命名表达式、派生量跟随父参数、板厚/板长局部性两条断言、4/4 编辑矩阵干净、未知结构与缺失参数报错）；`RUN_TESTS.bat` 登记 `TEST41_DONE`，`check_repo.py` 计数 40/37 → 41/38，`tests/README.md` 同步。
+- `references/reverse-engineering.md` §11：参数化模板逆向——何时用、参数表/schema/模板三件产物、每结构命名参数与引用稳定判据、局部编辑矩阵、NX12 三条边界、逐结构偏差报告替代面数覆盖、停止规则。
+- `references/modeling.md` §1.12/§4.1b：模板化建模配方（命名分层、派生约束写公式、无单位量 `Number` 表达式、轴心字面值陷阱、`nxlib.template` 入口）与参数表驱动/局部编辑检查配方。
 - `scripts/nxlib/rolling.py`：滚球角网标准层——边几何拟合、`±R` 偏置坍缩判类（`classify_corner`/`rim_from_face`）、锐边滚球中心圆（`rim_roll_center`）、解析环带（方截面环 + 4×FaceBlend + 面带分割，非喇叭/喇叭外侧两种）、直边刀与 `apply_roll_general` 统一入口。
 - `scripts/tests/40_rolling_network.py`：22 项滚球角网回归（直边 type16、Z/45° 轴/喇叭圆边的 type19 `rad_data=R`、分类反读）；`RUN_TESTS.bat` 登记 `TEST40_DONE`。
 - `references/reverse-engineering.md` §9：新增同半径延续判据（脊线共圆不是支撑面）、解析环带建在滚球中心圆上（含四象限试分与 Pappus 体积筛）、喇叭外侧环、§9.7 B 类角面管道重建。

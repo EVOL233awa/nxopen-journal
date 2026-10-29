@@ -112,6 +112,8 @@ call :gate 39_reverse_route.py TEST39_DONE
 if errorlevel 1 exit /b 1
 call :gate 40_rolling_network.py TEST40_DONE
 if errorlevel 1 exit /b 1
+call :gate 41_template.py TEST41_DONE
+if errorlevel 1 exit /b 1
 call :gate 09_fea_static.py BENCH_PASS
 if errorlevel 1 exit /b 1
 

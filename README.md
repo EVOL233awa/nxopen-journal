@@ -39,7 +39,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
 `scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
 标题栏、技术要求、尺寸道位，journal 中 `import gb_drawing` 后可直接使用）、用例标准层
-`scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀等七模块配方，回归用例直接 import，不各自复制），以及
+`scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀、参数化模板等八模块配方，回归用例直接 import，不各自复制），以及
 `scripts/render/` 的离线出图链（批处理截不了图，三维图由 STL 在 NX 外渲染，工程图 PDF 转成图片）。
 
 ## 示例产物
@@ -97,7 +97,7 @@ Drafting 图的 9 道尺寸都关联在几何上，导出 PDF 后用文本层核
 
 | # | 条件 | 怎么确认 | 缺了会怎样 |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（37 个带判定的用例）无法执行，只剩静态检查可用 |
+| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（38 个带判定的用例）无法执行，只剩静态检查可用 |
 | 2 | `NX_HOME` 指向 NX 安装根 | 默认 `D:\UG-NX12`，装在别处先设 `NX_HOME`（写法见下一节） | 批处理找不到 `run_journal.exe`，打印报错并以退出码 2 结束，不会进入错误路径 |
 | 3 | 一个能加载技能的 agent | 目录放进 agent 的技能目录后，让它读一次 `SKILL.md` | 技能不会被触发。本技能由 `SKILL.md` 头部的描述触发，不需要注册或编译 |
 | 4 | Python 3.11+（宿主） | `python -V`。`check_journal.py`、`check_repo.py` 与工程图 PDF 数值复核使用它（后者还用到 pymupdf） | journal 不受影响：它由 NX 内嵌的 Python 3.6.1 执行；宿主 Python 只跑检查与 MCP |
@@ -215,7 +215,7 @@ PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-37 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
+38 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
 文件；这些文件每次运行都会重新生成。
 
 ## 回归用例
@@ -224,7 +224,7 @@ PASS pdf value check - test 19 annotation values
 
 | 域 | 用例 |
 | --- | --- |
-| 三维建模 | 01 02 03 05 08 14 15 22 26 28 32 34 37 |
+| 三维建模 | 01 02 03 05 08 14 15 22 26 28 32 34 37 41 |
 | 装配 | 04 10 16 17 29 35 |
 | Drafting | 06 07 19 20 21 27 31 33 |
 | 有限元 | 09 24 25 30 |

@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：40 个用例（37 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：41 个用例（38 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -20,7 +20,7 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 成功标志：出现该用例的判决 token，且输出中没有任何 `_FAIL`（实现见 `:gate` 子过程）。退出码不可作判据：未捕获异常才返回非零，journal 按 SKILL.md §3 每步 try/except 后继续，失败被吞时退出码仍为 0；26 号原生崩溃反而把退出码变成 1。
 
-⚠ 22-30、38-40 十二个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
+⚠ 22-30、38-41 十三个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
 
 NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
 
@@ -76,6 +76,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 38 | `38_measure.py` | `TEST38_DONE` | 27 项只读测量链：块+Ø20 凸台+Ø10 通孔+90° 锪面+R2 圆角 → 面类型 16/17/19/22、孔组 D10 壁长 28（顶边被圆角吃掉 2）、锥半角 45°、STL 包盒 100×60×30、截面 z=10 面积 5843.147（解析 5842.920，0.0039%）、自 IoU 1.0、top 轮廓 IoU 1.0/面积 5849.176、自比对与功能清单比对均 0 未匹配且最大差 0、空分母时 G2 记 N/A；偏差自比对 0、已知 2 mm 平移双侧 RMS/P95 均为 2.0、种子复现；自动测站 18 站（7 平面+11 轴）自比对全过、预算 12 站时仍保留平面与轴站并报 dropped；`verify_parts` G0–G6 全过；B-rep `exact_section` 在 z=10 得 3 环，外环 6000.000、两孔各 78.414（解析 78.540）；命名表达式 `TEST_L` 驱动块长，`expression_survey` 报 named/live 1、dead 0、alive_ratio 1.0、单实体且通过；`measure_part` 报 units=mm/scale=1.0，自比对站表 only_a/only_b 在扫描线误差内，B-rep 截面闭环 gap=0 且 `open_gaps` 为空、截面特征/平面已销毁（特征数不变） |
 | 39 | `39_reverse_route.py` | `TEST39_DONE` | 27 项结构目录/圆角地图/过渡路线：块+Ø16×8 凸台（顶缘 R2）+Ø10 通孔+90° 锪孔 → 圆柱组 R8 壁长 6（顶缘被 R2 吃掉 2）、孔组 D10 壁长 24 轴 +Z、锥组半角 45°、z 平面族偏移 0/16/24、环面组 major 6/minor 2；凸台顶缘用 `face_blend_edge` 提交（成功法向组合随件记录），`fillet_map(radii=[2])` 命中 1 面且 `rad_data`=2（圆角半径）、`radius`=6（主半径），支撑面 22/R0 + 16/R8；`fillet_run_samples` 得 2 条同半径跑道且都有 UV 中心/3×3 样本，自比对 `fillet_coverage` 面覆盖/跑道覆盖 1.0、P95 0；`fillet_map(radii=[3])` 把 Ø6 孔壁列出来但支撑面只有锥/面、无柱无环面——孔按自身半径进地图是正确的，支撑面才是孔与圆角的判别；直凸边 `apply_roll(R4)` 体积退缩 276.4（解析 274.7）、滚出面是 R4 圆柱、平面族仍只有 0/16/24（精确圆弧无裙边平台），凹边（槽底）自动判凸凹并 unite、体积增 38.63（解析同式）、滚出面 R3 圆柱；负向：`hole_audit` 至少 2 组、空站表/空视图判失败、强制 G7 ceiling<0.7 记 blocked、G9 特征上限可被小结构数触发、`compare_parts` 参考组逆序仍 PASS 且无 `unmatched_a` |
 | 40 | `40_rolling_network.py` | `TEST40_DONE` | 24 项滚球角网：直边 `apply_roll_general` → type16 R4；R25 在 80 mm 边上被 4R 长度守卫拒绝；Z 凸缘 R2 与 45° 轴 R3.175 圆边 → 滚球中心圆（8−2 / 19.05−3.175）、`circle_analytic`、type19 `rad_data`=R、major=中心圆+0.02（6.02 / 15.895）；喇叭环（major=R3.175）`roll_rim` 拒绝、走外侧环 → type19 major 3.195；`classify_corner` 反读面带为 `canal_circle`、脊线 6.02、厚度 0，`rim_from_face` 回半径 6.02 |
+| 41 | `41_template.py` | `TEST41_DONE` | 18 项参数化模板层：支架（板 80×50×10 + 凸台 Ø24×12 + 派生孔 Ø12）全部尺寸走命名表达式，体积 42940.531 与解析式同值；`BOSS_D` +2 → ΔV 510.509（解析同值）、孔面半径 13.000 由 `HOLE_D = BOSS_D / 2` 自动跟随（字面值会停在本值）、包盒不动、还原逐位一致；`T_PLATE` +2 → ΔV 7773.805 且 z max 正好 +2，`L_LEN` +10 → ΔV 5000.000 且只动 x max（凸台不受影响），`BOSS_H` +2 → ΔV 678.584——编辑量与解析偏导逐一相符；4 参数编辑矩阵 4/4 干净；参数表单位（1.5 mm / 30°）解析、建件顺序；未知结构名抛 `KeyError`、参数名拼错记 `missing_expression` 而不是静默跳过 |
 
 ## 反向验证记录
 

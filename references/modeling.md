@@ -81,6 +81,26 @@ dp2.SetPointAndDirection(point, direction)  # (Point, Direction)
 
 - 脚本 `run_journal_batch.bat`/`check_journal.py` 通过；其余见 §6。
 
+### 1.12 参数化模板（结构模板 + 参数表）
+
+交付件要被按结构改尺寸（模板/零件族）时，尺寸与结构不是边建边定，而是先落参数表和 schema，再由模板实例化；决策与验收口径见 `reverse-engineering.md` §11，这里只记构造配方。
+
+- **命名分层**：`<结构>_<量>`（`PLATE_T`、`TOWER_H`、`EYE_U`、`SLOT_CEIL_R`），结构前缀让"改一个参数动哪个结构"可读；不用 `p`/`P` 前缀（§1.7）。
+- **派生约束写成公式**，不要在两处写相等的字面值：`ROOT_FILL_U = U_BACK - ROOT_FILL_R`、`TAPER_R1 = TAPER_R + TAN4 * TAPER_T1`。父参数一改子量自动跟；两处字面值会在第一次编辑时就分叉。
+- **无单位量**用 `CreateSystemExpression("Number", "TAN4 = tan(TAPER_HA)")`；`GetBase("Number")` 报错，长度/角度分别 `GetBase("Length")/("Angle")`（§4.1）。
+- **轴心/方向的字面值陷阱**：圆柱、圆锥 builder 的轴向点与方向是字面值，改半径表达式不移动轴心。需要"随板厚移动"时，让高度承担变化（起点固定、`Height = T + BOSS_H`），或改用草图圆拉伸；把轴心写成另一个 Expression 再赋给 builder 不可靠。
+- **模板层入口**：`nxlib.template` 负责参数表 → 表达式 → 告警读取 → 编辑矩阵；结构模板代码只读 `ctx`（工作部件 + 表达式表），零件常数留在 schema。
+
+```python
+from nxlib import template
+values, units = template.param_table(template.load_json(SCHEMA))
+exprs = template.create_expressions(wp, values, units)
+plane = template.structure_params(template.load_json(SCHEMA), "plate")
+cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
+```
+
+- **模板件里的圆角**：优先边圆角/解析圆环带；FaceBlend 的支撑面集合会随参数移动而硬失败（`Update undo happened`），不当可编辑件的主圆角机制。上游尺寸会重建被圆角边时，把上游改成派生约束让边不动，或把该边排除出圆角集合；`blend edges consumed` 告警会随文件存盘。
+
 ### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
 
 `NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：
@@ -601,6 +621,22 @@ session.UpdateManager.DoUpdate(mark)  # ⚠ Session 属性是 UpdateManager（�
   2. NX12 **无 atan/acos/asin/atan2**；渐开线改压力角参数化 `r=rb/cosα, φ=ψb−(tanα−α)`。**两套参数域不可混用**：压力角域上限 `degrees(atan(umax))`（31.32°），给成 `umax*180/π`（34.81°）会越过齿顶圆，报 "Section curves are not connected each other"。
   3. 规律曲线 `ZLaw` 缺常量报 "Expression does not exist for law" → `ZLaw.LawType=Constant` + `Value.RightHandSide="0"`。
   4. `FileNew` Commit 不落盘，以 `part.Save()` 为准。
+
+### 4.1b 参数表驱动与局部编辑检查
+
+参数表驱动的件，验收不是"建出来了"，而是"改一个参数只动一个结构、还原可逆"：
+
+```python
+base = template.snapshot(part)                      # 体积/体数/面数/包盒/告警
+cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
+cells = template.edit_matrix(wp, exprs, [("PLATE_T", +1.0), ("BOSS_D", 8.0)])
+print(template.clean_cells(cells))                  # 干净格/总格
+```
+
+- `edit_check` 是"改值 → DoUpdate → 读数 → 还原 → 再读"：`update_errors`/`restore_errors` 都必须是 0，`diff_snapshot(base, after)` 只列变化项（体积/面数/包盒/告警），本结构 `probe` 读数用来证明"动的是该结构"。
+- 还原后体积/面数与基线不逐位相同 → 更新过程重写了几何，该参数不适合直接驱动；先改引用，不要加豁免。
+- 单格异常（如 `Update undo happened`）记 `invalid` 继续下一格，整张矩阵跑完再归因；一格崩掉整轮等于没有可编辑性证据。
+- 局部性判据：无关结构的读数变化在 STL 噪声内（1e-6 相对或 1e-5 mm 量级）；超了就是引用串了结构。
 
 ### 4.2 自动约束 / 自动标注（替代手加约束）
 

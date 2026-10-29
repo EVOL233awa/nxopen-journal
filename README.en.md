@@ -116,7 +116,7 @@ analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path ci
 
 | # | Requirement | How to check | If missing |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 37 gated cases run, only the static check is left |
+| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 38 gated cases run, only the static check is left |
 | 2 | `NX_HOME` pointing at the NX install root | defaults to `D:\UG-NX12`; set `NX_HOME` if yours is elsewhere | The batch wrapper prints an error and exits with code 2 instead of silently using the wrong path |
 | 3 | An agent that loads skills | put the directory into the agent's skill directory and let the agent read `SKILL.md` | The skill never triggers. Routing comes from the frontmatter of `SKILL.md`; nothing to compile or register |
 | 4 | Python 3.11+ (host) | `python -V`. `check_journal.py`, `check_repo.py` and the PDF value check use it (the latter also needs pymupdf) | Journals are unaffected: NX runs them with its embedded Python 3.6.1; the host Python only runs checks and MCP |
@@ -235,7 +235,7 @@ PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-37 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
+38 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
 the check. By default the run deletes the artifacts under `scripts/tests/parts/`, including the
 Nastran intermediate files, because every run rebuilds them completely.
 
@@ -246,7 +246,7 @@ recorded in `scripts/tests/README.md`.
 
 | Domain | Cases |
 | --- | --- |
-| Modeling | 01 02 03 05 08 14 15 22 26 28 32 34 37 |
+| Modeling | 01 02 03 05 08 14 15 22 26 28 32 34 37 41 |
 | Assembly | 04 10 16 17 29 35 |
 | Drafting | 06 07 19 20 21 27 31 33 |
 | FEA | 09 24 25 30 |
@@ -302,7 +302,7 @@ nxopen-journal/
 │   ├── check_repo.py               repo self-check (Py3.6 syntax / case list / doc structure / file list / standard-layer exclusivity / doc conciseness)
 │   ├── run_journal_batch.bat       single-file batch replay (NX_HOME parameterised)
 │   ├── render/                     offline figure chain (shaded STL rendering, PDF rasterising, trim and scale bar)
-│   └── tests/                      regression suite (37 gated cases + 3 one-shot probes) plus its own README
+│   └── tests/                      regression suite (38 gated cases + 3 one-shot probes) plus its own README
 └── agents/openai.yaml              Codex / OpenAI front-end config for cross-agent portability
 ```
 
