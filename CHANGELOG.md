@@ -49,6 +49,7 @@
 - `scripts/check_journal.py`：`ast.parse(feature_version=(3,6))`；5.11/5.14b/5.15 升为错误；占位符改 tokenize 注释；5.13 接受 `save_checked` 并要求保存后校验；删除 `ui.getui` 警告。
 - `scripts/check_repo.py`：断言 40 用例 / 37 gate / 3 探针，计数再漂移即失败。
 - `references/reverse-engineering.md` §4.1/§9.5/§10.1：G2 先跑 `hole_audit`；G7 先算 `ceiling`，<70% 记 BLOCKED；G4 三面锐角记 BLOCKED；G9 硬式；共面站保留并记 `coplanar/offset_mm`；新增 §9 配方（闭合环切向规则边、样条段合并、环形射线尖刺、放样首末站、径向裁剪、凹坑双 R、滚球中心半径 >0、三面锐角补角、底面 z=0 判据）。
+- `references/reverse-engineering.md` §4.2/§10.1：新增体积差 >1% 而 G2/G8 全过时按“凹口面积 × 长度”对账凸包填平；自检站表须取 `station_plan(orig)` 全集，建模站不得顶替。
 - `SKILL.md`/`README.md`/`README.en.md`/`scripts/tests/README.md`/`RUN_TESTS.bat`：用例计数 40、gate 37、nxlib 七模块；`CHANGELOG.md` 的 `§1.5` 引用改 `§1`。
 - `scripts/tests/01/02/03/04/05/06/22/39`：`save()` 后断言 PRT 存在且非空，满足 5.13。
 
