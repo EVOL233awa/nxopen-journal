@@ -7,6 +7,8 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §11.3/§11.4/§11.6：活参数全表普查（逐表达式 +10% → live/named ≥0.9、broken=0、派生量不进编辑集）、还原容差 1e-6 mm³、G1 逐站 IoU 留在模板路线硬门且站表取原件结构分界全集（自选站只作诊断）。
+- `references/modeling.md` §4.1b：编辑矩阵不能代替全表普查，派生量改 RHS 会破坏公式。
 - `scripts/nxlib/template.py`：参数化模板层——参数表/schema 读取、命名表达式与派生约束、告警原文读取、快照差异、`edit_check`/`edit_matrix`/`clean_cells` 局部编辑矩阵；docstring 记 NX12 边界（圆柱轴心字面值、边圆角拓扑引用会存盘告警）。
 - `scripts/tests/41_template.py`：18 项通用支架模板回归（全部尺寸命名表达式、派生量跟随父参数、板厚/板长局部性两条断言、4/4 编辑矩阵干净、未知结构与缺失参数报错）；`RUN_TESTS.bat` 登记 `TEST41_DONE`，`check_repo.py` 计数 40/37 → 41/38，`tests/README.md` 同步。
 - `references/reverse-engineering.md` §11：参数化模板逆向——何时用、参数表/schema/模板三件产物、每结构命名参数与引用稳定判据、局部编辑矩阵、NX12 三条边界、逐结构偏差报告替代面数覆盖、停止规则。
