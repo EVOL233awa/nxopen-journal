@@ -17,6 +17,11 @@ children = assy.ComponentAssembly.RootComponent.GetChildren() # ⚠ 没有 .Comp
 - `MoveComponent` 不可靠 → Remove + `AddComponent` 新位姿；重加后 `Name`="MODEL"，显示名用 `DisplayName`。
 - 验证后才保存；GUI 不热重载，需重开（modeling.md §1.8）。
 
+**组件加载不到时先查加载方式**（三种方式互斥，不是叠加）：
+- `AsSaved` 按 .prt 里记录的组件目录找；`FromDirectory` 只搜父件所在目录，搜索目录列表完全不参与；`SearchDirectories` 只按列表找，不搜父件目录。装配或图纸副本被移到别处、组件留在原目录时，`FromDirectory` 会把组件全部卸载。
+- 未加载的唯一判据是 `PartLoadStatus.NumberUnloadedParts`（`GetPartName`/`GetStatusDescription` 给明细，按部件文件去重）；**`comp.Prototype` 对未加载组件也返回占位对象且不抛异常**，不能用来计数。
+- 跨机持久化：`Session.Parts.LoadOptions.Save(def_path)` 生成 def，`UGII_LOAD_OPTIONS` 指向它（NX 启动读一次，需重启）；会话内改 `ComponentLoadMethod` 不写回 def。反证法验收：把 def 改成另一种方式，新会话必须复现未加载；改回必须全加载——证明配置真被读取，而不是记住了上次会话状态。
+
 ### A.2 配对约束（用例 10）
 
 ```python

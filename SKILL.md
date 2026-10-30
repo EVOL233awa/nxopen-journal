@@ -157,6 +157,10 @@ for n in dir(s.DexManager):
 - NX12 全集：Acis/Catiav4/Catiav5/Proe/Step(203/214/242)/Iges/Dxfdwg/Asc/Virtuallab/Stl/Nxto2d；3dxml/cgr 不在支持列表，先转 STEP/Parasolid 再导入。
 - **假成功**：不支持几何复制成 `.CATPart` 再 Commit 不报错但 `part.Bodies` 为 0；导入后必须开文件读体数。
 - CATProduct 导入是扁平化的，只解析当前文件直接层级；组件本体坐标通常已是整车坐标。
+- **集合没有 `__len__`**：`len(part.Features)` 直接抛 `TypeError`，用 `ToArray()` 或直接迭代；异常落在报告第一行会让该件全部读数丢失。
+- **导入后 `Parts.Work` 可能是 `None`**：另起一轮按路径 `Parts.Open` 再量，也更快。
+- **`CATProduct` 可能长时间不返回**：批量一律只吃 `CATPart`；总成清单用 ASCII 串直接从 `.CATProduct` 枚举。
+- **报告增量落盘**：每写一行 flush，挂起或被终止时不丢已完成的读数。
 
 ### 导出 STEP
 

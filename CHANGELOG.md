@@ -53,6 +53,7 @@
 
 ### Changed
 
+- `references/reverse-engineering.md` §9.8/§9.5/§10/§10.1/§12.5/§4.2、`references/assembly.md` §A.1、`SKILL.md` 导入段：测量截面重建过渡长条、G7 建成侧计数先过支撑面分类、局部性仪器协议与三条排除、切割仪器自检与面内偏置读数、局部试件对齐后 IoU、装配加载方式与未加载判据、导入批处理四坑沉淀为通用判据。
 - `scripts/nxlib/measure.py`：G0 要求两侧均单实体且面表零失败；G1 空站表/开环截面判失败，`max_stations` 预算截断只报 `budget_skipped`/`plan_complete`（不判失败）；G2 分母改用 `hole_audit`（功能孔+锥孔+耳孔+锥口）并报 `missing_groups`，同半径面段按轴向覆盖合并后比（不比分段数）；G4/G7 增加 `BLOCKED` 证据；G4 的 R 默认取参考件主环面圆角半径并记 `corner_radius_basis`；`verify_parts` 每门带 `status` 与 `delivery_pass`。
 - `scripts/nxlib/measure.py`：`fillet_coverage` 半径容差 0.025、P95 按半径池；新增 `g7_reachability`（上限 = 参考圆角跑道数 / 参考圆角面数，半径组取环面 `rad_data` 或显式 `g7_radii`，纯圆柱半径组只进 `unjudged_radii`，建成体可滚边数只作诊断）、`g4_blocked_reason`（三面短边）、`g9_structure`（特征数/占比/深度/站栈；`verify_parts(g9=True)` 缺 `structure_count` 判 FAIL，不拿 `structure_directory` 逐面组数当分母）。
 - `scripts/nxlib/measure.py`：`expression_survey` 收集全部命名表达式，单条 broken 不中断，恢复失败抛错；`exact_section` 异常必回滚并支持 0.05 mm 回退；`view_iou` 支持 iso 且空输入 IoU=0；`brep_section_iou` 未闭合环默认失败。
