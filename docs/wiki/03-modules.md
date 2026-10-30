@@ -2,8 +2,9 @@
 
 ## nxlib 标准层（12 模块，188 个公开 API）
 
-用例不得复制配方，只能 `import nxlib`。注册与引导代码在 `scripts/nxlib/__init__.py:33`，引导片段（`__file__` 缺失时回退 `sys.argv[0]`）写在文件头 docstring 里（`scripts/nxlib/__init__.py:4`）。
+用例不得复制配方，只能 `import nxlib`。注册与引导代码在 `scripts/nxlib/__init__.py` 的 `from . import` 区块，引导片段（`__file__` 缺失时回退 `sys.argv[0]`）写在文件头 docstring 里（`scripts/nxlib/__init__.py` 的 docstring 引导段）。
 
+<!-- roster: nxlib -->
 | 模块 | 职责 | 入口 | 行数 |
 |---|---|---|---|
 | `testing` | 用例框架：`say` 逐行 flush、`stage` 包阶段、`check` 逐项累加、`stage_finish`/`check_finish` 出口 | `stage` / `check` | 75 |
@@ -19,12 +20,13 @@
 | `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder | `trim_box` / `hole_ring` / `blend_try` | 227 |
 | `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差 | `liveness` / `locality` / `g1full` | 289 |
 
-三层关系（逆向域专用）：`reverse` 产出表 → `skeleton`/`structures` 按表建几何 → `audit` 复核"几何是否真的跟着参数动"。分层口径写在各自 docstring：`structures` 只吃 `(frame, design 表达式名, data 字面量)`，`data` 永不建表达式（`scripts/nxlib/structures.py:4`、`scripts/nxlib/skeleton.py:8`）。
+三层关系（逆向域专用）：`reverse` 产出表 → `skeleton`/`structures` 按表建几何 → `audit` 复核"几何是否真的跟着参数动"。分层口径写在各自 docstring：`structures` 只吃 `(frame, design 表达式名, data 字面量)`，`data` 永不建表达式（`scripts/nxlib/structures.py` 的 docstring（"每个 builder 只吃"）、`scripts/nxlib/skeleton.py` 的 docstring（"data 永不建表达式"））。
 
-`measure` 是最大的模块（2826 行），因为它同时承载四条测量链：面表、STL 截面、双向偏差、G 系列验收。解析面类型约定写在 docstring 里：圆柱 16、圆锥 17、圆环 19、平面 22（`scripts/nxlib/measure.py:16`）。
+`measure` 是最大的模块（2826 行），因为它同时承载四条测量链：面表、STL 截面、双向偏差、G 系列验收。解析面类型约定写在 docstring 里：圆柱 16、圆锥 17、圆环 19、平面 22（`scripts/nxlib/measure.py` 的 docstring（面类型约定））。
 
 ## 工具脚本
 
+<!-- roster: scripts -->
 | 文件 | 作用 | 依赖 |
 |---|---|---|
 | `scripts/check_journal.py` | 单个 journal 的静态检查：语法 (Py3.6)、占位符、19 组已固化坑位 | 纯标准库 |
@@ -36,10 +38,11 @@
 | `scripts/render/pdf2png.py` | PDF 首页栅格化 | pymupdf |
 | `scripts/render/condition.py` | 裁边、限制最大尺寸、按边车重画比例尺 | Pillow |
 
-两个 `.bat` 的共同约束：必须纯 ASCII，因为 cmd 按 GBK 解析（`SKILL.md:47`）。
+两个 `.bat` 的共同约束：必须纯 ASCII，因为 cmd 按 GBK 解析（`SKILL.md` §2）。
 
 ## 8 个域文档
 
+<!-- roster: references -->
 | 文件 | 域 | 结构 | 对应用例 |
 |---|---|---|---|
 | `modeling.md` | 建模：方法论 §1、特征配方 §2、阵列/镜像 §3、螺纹 §4、可编辑性 §6 | 788 行 | 01 02 03 14 15 22 28 32 34 37 |
@@ -51,7 +54,7 @@
 | `motion.md` | 运动仿真：Link §M.2、运动副 §M.3、驱动 §M.4、连接件 §M.5a、求解 §M.6、结果 §M.7、静不定 §M.8 | 321 行 | 18 23 36 |
 | `reverse-engineering.md` | 逆向：流程 §1、结构表 §1.1、草图-拉伸 §2、分层基线 §3、验收门 §4、过渡 §9、测量链 §10、参数化模板 §11、测量编译 §12 | 592 行 | 38 39 40 41 42 43 44 45 |
 
-域文档之间不互相引用成链：`reverse-engineering.md` 把构造配方推给 `modeling.md`，自己不重复 API；`drafting.md` 把标注规则推给 `drafting-annotation.md`（`references/drafting.md:3`）。这种"只指路不复制"的写法让每个域的配方只有一处权威，代价是读跨域任务要读多个文件。
+域文档之间不互相引用成链：`reverse-engineering.md` 把构造配方推给 `modeling.md`，自己不重复 API；`drafting.md` 把标注规则推给 `drafting-annotation.md`（`references/drafting.md` 抬头）。这种"只指路不复制"的写法让每个域的配方只有一处权威，代价是读跨域任务要读多个文件。
 
 ## 模块改动的影响面
 
@@ -82,10 +85,10 @@
 | `check()` 逐项累加 | 单条失败只打 `REG_xxx=FAIL`，末尾统一判 | 断言型用例（22-30、38-45） |
 | 单一 benchmark 出口 | 直接打 `BENCH_PASS` / `CONSTRAINT_PASS` | 09 10 16 18 36 |
 
-第二种形态有一处刻意的设计：**单条失败不打 `_FAIL`**。原因是 `:gate` 用 `findstr /C:"_FAIL"` 扫全文，若每条失败都是 `_FAIL`，用例内层的预期失败（如 26 号的 ThreadedHole 崩溃探针）会误触门。所以逐项失败的 token 是 `REG_xxx=FAIL`，只有末尾汇总的 `TESTxx_FAIL` 才带 `_FAIL`（`scripts/tests/README.md:23`）。
+第二种形态有一处刻意的设计：**单条失败不打 `_FAIL`**。原因是 `:gate` 用 `findstr /C:"_FAIL"` 扫全文，若每条失败都是 `_FAIL`，用例内层的预期失败（如 26 号的 ThreadedHole 崩溃探针）会误触门。所以逐项失败的 token 是 `REG_xxx=FAIL`，只有末尾汇总的 `TESTxx_FAIL` 才带 `_FAIL`（`scripts/tests/README.md` §运行方式（`REG_xxx=FAIL` 段））。
 
 ## 探针与自包含用例
 
-7 个用例不用 nxlib，名单登记在 `check_repo.py` 的 `SELF_CONTAINED`（`scripts/check_repo.py:42`）。它们是有意的例外：探针的价值在原样记录调用方式，改成库调用反而失真（`scripts/check_repo.py:40`）。3 个一次性探针（11/12/13）连 gate 都不进（`scripts/check_repo.py:48`）。
+7 个用例不用 nxlib，名单登记在 `check_repo.py` 的 `SELF_CONTAINED`（`scripts/check_repo.py` 的 `SELF_CONTAINED`）。它们是有意的例外：探针的价值在原样记录调用方式，改成库调用反而失真（`scripts/check_repo.py` 的 `SELF_CONTAINED` 注释）。3 个一次性探针（11/12/13）连 gate 都不进（`scripts/check_repo.py` 的 `PROBES`）。
 
 新增同类探针必须显式登记，否则 `check_repo.py` 的 NOLIB 组会把它判成"配方被复制进用例"。

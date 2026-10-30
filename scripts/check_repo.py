@@ -21,6 +21,11 @@
                 日期与过程叙述词；新知识必须是结论/做法，不能把验证故事写回来。
   7) ROUTE      路线优先：域文件不新开坑位清单/坑位表；负面断言必须带做法。
                 跨域通用且高发（静默失败/崩溃）的陷阱才留在 SKILL.md 铁律。
+  8) WIKI       维护者导览 docs/wiki 必须跟代码同改：名册表（roster 标记后的
+                表格首列）要列出每个 nxlib 模块、域文件、工具脚本；用例/gate
+                计数要与本文件常量一致；页面必须被索引页链接；禁用"文件:行号"
+                锚点（行号随维护漂移，改用符号名或 §章节）；被引用的符号与
+                §章节必须仍然存在。
 
 用法：python scripts/check_repo.py [仓库根]
 退出码 0 = 全部通过，1 = 有问题（逐条打印在 stdout）。
@@ -36,6 +41,7 @@ ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
 TESTS = os.path.join(ROOT, "scripts", "tests")
 BATCH = os.path.join(TESTS, "RUN_TESTS.bat")
 NXLIB = os.path.join(ROOT, "scripts", "nxlib")
+WIKI = os.path.join(ROOT, "docs", "wiki")
 KEEP_DIRS = ("parts", "__pycache__", ".git")
 # 探针/死路类用例：自包含（不复用标准层）是设计决策——它们的价值在原样记录
 # 原样调用方式，改写成库调用反而失真。新增同类用例必须显式登记进来。
@@ -404,6 +410,162 @@ def check_routes():
           % (len(paths), bad_head, bad_tbl, bad_line, bad_long))
 
 
+def wiki_text():
+    """docs/wiki 下除索引外的全部页面，拼成一份文本（覆盖检查用）。"""
+    if not os.path.isdir(WIKI):
+        return ""
+    parts = []
+    for n in sorted(os.listdir(WIKI)):
+        if n.endswith(".md"):
+            parts.append(read(os.path.join(WIKI, n)))
+    return "\n".join(parts)
+
+
+def wiki_heading_has(text, token):
+    """token 是章节号（4.1 / B.4 / 0a）时要求存在对应标题；否则要求全文出现。
+
+    章节号后面通常是 `.`/`、` 或空格，所以只排除"更长数字"与"字母"：
+    §1 不能命中 `## 11.`，但能命中 `## 1. 铁律`。
+    """
+    if re.match(r"^[0-9]+(?:\.[0-9]+)*[a-z]?$", token) or re.match(r"^[A-Z]\.[0-9]+$", token):
+        pat = r"(?m)^#{2,6}\s*" + re.escape(token) + r"(?![0-9A-Za-z])(?!\.\d)"
+        return re.search(pat, text) is not None
+    return token in text
+
+
+def wiki_anchor_token(anchor):
+    """从锚点文字里取最有辨识度的标识符：优先最长 ASCII 标识符。"""
+    toks = re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", anchor)
+    if not toks:
+        return None
+    return max(toks, key=len)
+
+
+def check_wiki():
+    print("== 8. 维护者 wiki 与代码同步（docs/wiki）==")
+    if not os.path.isdir(WIKI):
+        problems.append("WIKI docs/wiki 不存在")
+        print("  FAIL docs/wiki 不存在")
+        return
+    index = os.path.join(WIKI, "README.md")
+    if not os.path.exists(index):
+        problems.append("WIKI docs/wiki/README.md（索引页）不存在")
+        print("  FAIL 缺索引页 README.md")
+        return
+    pages = [n for n in sorted(os.listdir(WIKI)) if n.endswith(".md") and n != "README.md"]
+    idx = read(index)
+    for n in pages:
+        if n not in idx:
+            problems.append("WIKI %s 未在索引页里链接" % n)
+            print("  FAIL 索引页未链接 %s" % n)
+    blob = wiki_text()
+
+    # 1) 覆盖：新增模块/域文件/工具脚本后，wiki 不改就过不去。
+    #    只在"整个 wiki 任意处出现"不够：删掉专责页面里的那一行，别页的
+    #    交叉引用还在，门照样绿。所以三个名册表用 `<!-- roster: X -->` 标记，
+    #    门只从标记后的紧邻表格取首列；表被删/改名，对应 roster 就缺项。
+    must = {}
+    if os.path.isdir(NXLIB):
+        must["nxlib"] = [n[:-3] for n in sorted(os.listdir(NXLIB))
+                         if n.endswith(".py") and n != "__init__.py"]
+    refdir = os.path.join(ROOT, "references")
+    if os.path.isdir(refdir):
+        must["references"] = [n for n in sorted(os.listdir(refdir)) if n.endswith(".md")]
+    must["scripts"] = [n for n in sorted(os.listdir(os.path.join(ROOT, "scripts")))
+                       if n.endswith((".py", ".bat"))]
+    rosters = {}
+    for n in pages:
+        lines = read(os.path.join(WIKI, n)).splitlines()
+        cur = None
+        for line in lines:
+            s = line.strip()
+            m = re.match(r"<!--\s*roster:\s*([A-Za-z0-9_]+)\s*-->", s)
+            if m:
+                cur = m.group(1)
+                rosters.setdefault(cur, set())
+                continue
+            if cur is None:
+                continue
+            if not s.startswith("|"):
+                if s:
+                    cur = None
+                continue
+            cells = s.strip("|").split("|")
+            if cells:
+                for mm in re.finditer(r"`([A-Za-z0-9_./\-]+)`", cells[0]):
+                    rosters[cur].add(os.path.basename(mm.group(1)))
+    missing = []
+    for group, names in must.items():
+        got = rosters.get(group, set())
+        for m in names:
+            base = os.path.basename(m)
+            stem = base.replace(".py", "").replace(".bat", "")
+            if not ({base, stem} & got):
+                missing.append("%s/%s" % (group, m))
+    for m in missing:
+        problems.append("WIKI 名册缺 %s（新增/改名后需同步 docs/wiki 的 roster 表）" % m)
+        print("  FAIL 名册缺 %s" % m)
+
+    # 2) 计数：用例数/gate 数在 wiki 里必须唯一自洽——既要有当前值，
+    #    也不得残留其它可能过期的数字（改一处漏一处就是旧的会留下来）。
+    #    wiki 里还有子集计数（自包含用例、一次性探针），它们远小于总数，
+    #    所以过期判定只看总数区间（>=20）内的数字，子集另按常量核对。
+    for value, label, pat in ((EXPECTED_CASES, "用例", r"(\d+)\s*(?:个)?\s*用例"),
+                              (EXPECTED_GATES, "gate", r"(\d+)\s*(?:个)?\s*(?:gate|门)")):
+        found = [int(x) for x in re.findall(pat, blob)]
+        if value not in found:
+            problems.append("WIKI 未出现当前%s数 %d（数字变了要同步 wiki）" % (label, value))
+            print("  FAIL 缺当前%s数 %d" % (label, value))
+        stale = sorted(set(v for v in found if v != value and v >= 20))
+        if stale:
+            problems.append("WIKI 出现过期%s数 %s（当前 %d）" % (label, stale, value))
+            print("  FAIL 过期%s数 %s" % (label, stale))
+    for value, label, pat in ((len(SELF_CONTAINED), "自包含用例", r"%d\s*(?:个)?\s*用例不用 nxlib"),
+                              (len(PROBES), "一次性探针", r"%d\s*(?:个)?\s*一次性探针")):
+        if not re.search(pat % value, blob):
+            problems.append("WIKI 的%s数应为 %d（与 check_repo.py 常量同步）" % (label, value))
+            print("  FAIL %s数应为 %d" % (label, value))
+
+    # 3) 行号锚点禁用：行号随维护漂移，wiki 会静默说谎
+    line_refs = 0
+    for n in pages + ["README.md"]:
+        s = read(os.path.join(WIKI, n))
+        for m in re.finditer(r"`[A-Za-z0-9_./\\-]+\.(?:py|bat|md|yml|json):\d+(?:-\d+)?`", s):
+            line_refs += 1
+            problems.append("WIKI %s 用了行号锚点 %s（改用符号名或 §章节）" % (n, m.group(0)))
+            print("  FAIL %s 行号锚点 %s" % (n, m.group(0)))
+
+    # 4) 锚点存在性：被引用的符号/章节必须还在
+    checked = bad_anchor = 0
+    for n in pages + ["README.md"]:
+        s = read(os.path.join(WIKI, n))
+        for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.(?:py|bat|md))`\s*的\s*`([^`]+)`", s):
+            target, anchor = m.group(1), m.group(2)
+            path = target if os.path.exists(target) else os.path.join(ROOT, target)
+            if not os.path.exists(path):
+                continue
+            tok = wiki_anchor_token(anchor)
+            checked += 1
+            if tok and tok not in read(path):
+                bad_anchor += 1
+                problems.append("WIKI %s 引用 %s 的 %s，但目标文件里已无 %s"
+                                % (n, target, anchor, tok))
+                print("  FAIL %s 锚点失效 %s -> %s" % (n, target, tok))
+        for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.md)`\s*§\s*([^\s，。；：、（）]+)", s):
+            target, token = m.group(1), m.group(2).rstrip("）")
+            path = target if os.path.exists(target) else os.path.join(ROOT, target)
+            if not os.path.exists(path):
+                continue
+            checked += 1
+            if not wiki_heading_has(read(path), token):
+                bad_anchor += 1
+                problems.append("WIKI %s 引用 %s §%s，但该章节不存在" % (n, target, token))
+                print("  FAIL %s 章节失效 %s §%s" % (n, target, token))
+
+    print("  页面 %d 个；名册 %d 组（缺 %d）；行号锚点 %d；锚点 %d 处（失效 %d）"
+          % (len(pages), len(must), len(missing), line_refs, checked, bad_anchor))
+
+
 def main():
     print("check_repo.py  root=%s" % ROOT)
     check_py36()
@@ -413,6 +575,7 @@ def main():
     check_nolib()
     check_concise()
     check_routes()
+    check_wiki()
     print("")
     if problems:
         print("CHECK_REPO_FAILED %d 项" % len(problems))
