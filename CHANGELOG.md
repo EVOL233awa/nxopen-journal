@@ -7,6 +7,7 @@
 
 ### Added
 
+- `docs/wiki/`：维护者导览五页（架构 / 主执行流 / 模块 / 数据流 / 边界与风险）+ 索引页；按代码实际位置标注 `文件:行号`，不进入 agent 必读路径；`SKILL.md` §8 与两个 README 的目录结构同步登记。
 - `references/reverse-engineering.md` §12：测量编译 + 骨架/草图驱动 + 结构库 + 审计（大件/整件默认路线）——五张冻结表先于建模、design（可驱动）与 data（测量轮廓）分层、骨架帧与草图驱动探针后用、结构库 builder 只吃 frame/参数/数据、活性/局部性/预算/G1full 四项审计口径；§11.3 只留边界并指向 §12.2，§11.6 站表分母改为 `station_plan_full` + `station_partition`。
 - `references/modeling.md` §1.13：草图驱动轮廓配方（`make_sketch_dims` 改指命名表达式、AutoConstrain 先跑必空、links 与改指数对账）、骨架帧构造即正交校验、设计/数据分层、datum 不当可驱动件、预算 4N+12 先算。
 - `scripts/tests/42_reverse_tables.py`、`43_skeleton_layers.py`、`44_structures_library.py`、`45_audit_g1full.py`：17/12/10/8 项新层回归；`RUN_TESTS.bat` 登记四门（42 gate），`check_repo.py` 计数 41/38 → 45/42，`tests/README.md` 与 `SKILL.md`/`README.md`/`README.en.md` 的用例计数、模块清单同步。

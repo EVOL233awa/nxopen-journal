@@ -262,6 +262,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 nxopen-journal/
 ├── SKILL.md                        ← 入口层：铁律 / 环境 / 脚本骨架 / 通用部件操作 / 日志导出 / 工作流 / 域路由
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog）
+├── docs/wiki/                      ← 维护者导览：架构 / 主执行流 / 模块 / 数据流 / 边界与风险（入口 [docs/wiki/README.md](docs/wiki/README.md)）
 ├── references/                     ← 八个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
 ├── images/                         ← 实际运行产物图（上面九张）
 ├── scripts/
