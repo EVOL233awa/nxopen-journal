@@ -85,7 +85,7 @@ def main():
     moved, _b = build(moved_path, 6.0)
     rep = au.g1full(ref, moved, plan, meas, [])
     say("moved: primary=%r" % (rep["primary"],))
-    check("T45_MOVED_FAILS", rep["primary"]["ratio"] < 1.0,
+    check("T45_MOVED_REJECTED", rep["primary"]["ratio"] < 1.0,
           "widening the plate by 6 mm must fail at least one primary station")
     check("T45_PARTITION_FIXED",
           [r["i"] for r in rep["partition"]] == [r["i"] for r in part_rows],
@@ -101,13 +101,13 @@ def main():
     short = [(i, round(rows[i]["area_a"], 1), round(rows[i]["area_b"], 1))
              for i in rep["primary"]["failed"]
              if rows[i]["area_b"] < rows[i]["area_a"] - 1.0]
-    check("T45_FAIL_DIRECTION", not short,
+    check("T45_MOVED_DIRECTION", not short,
           "a widened plate cannot lose material at any station, short=%r"
           % (short,))
     grew = [(i, round(rows[i]["area_b"] - rows[i]["area_a"], 1))
             for i in rep["primary"]["failed"]]
     say("failed station area growth=%r" % (grew,))
-    check("T45_FAIL_EXPLAINED", all(g > 0 for _i, g in grew),
+    check("T45_MOVED_EXPLAINED", all(g > 0 for _i, g in grew),
           "every failure must come from the added material, growth=%r"
           % (grew,))
 
