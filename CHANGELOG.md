@@ -7,6 +7,9 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §12：测量编译 + 骨架/草图驱动 + 结构库 + 审计（大件/整件默认路线）——五张冻结表先于建模、design（可驱动）与 data（测量轮廓）分层、骨架帧与草图驱动探针后用、结构库 builder 只吃 frame/参数/数据、活性/局部性/预算/G1full 四项审计口径；§11.3 只留边界并指向 §12.2，§11.6 站表分母改为 `station_plan_full` + `station_partition`。
+- `references/modeling.md` §1.13：草图驱动轮廓配方（`make_sketch_dims` 改指命名表达式、AutoConstrain 先跑必空、links 与改指数对账）、骨架帧构造即正交校验、设计/数据分层、datum 不当可驱动件、预算 4N+12 先算。
+- `scripts/tests/42_reverse_tables.py`、`43_skeleton_layers.py`、`44_structures_library.py`、`45_audit_g1full.py`：17/12/10/8 项新层回归；`RUN_TESTS.bat` 登记四门（42 gate），`check_repo.py` 计数 41/38 → 45/42，`tests/README.md` 与 `SKILL.md`/`README.md`/`README.en.md` 的用例计数、模块清单同步。
 - `scripts/nxlib/reverse.py`：逆向测量编译层——候选结构目录、参数候选（design/data + 证据置信度）、全集站表与结构覆盖、接口表、圆角跑道表、`fillet_group_indexes`/`station_partition`（primary/fillet 分母开工前定）、结构表校验。
 - `scripts/nxlib/skeleton.py`：骨架层——方位帧（`from_azimuth`/`pt`/`vec`/`to_local`）、点线/圆弧/折线/闭环曲线、世界坐标系 datum 轴与面、正交校验与 `describe`。
 - `scripts/nxlib/structures.py`：结构构造层——布尔、棱柱/回转、圆柱/圆锥（直径与高度吃表达式）、边筛选与面环边、带 undo 保护的倒圆、孔与孔环、包络裁剪。
@@ -66,6 +69,7 @@
 
 ### Fixed
 
+- `scripts/nxlib/reverse.py`：`fillet_group_indexes` 先把 `fillet_faces` 收成 int 集合（传 list 时 `set <= list` 抛 TypeError，分区调用直接失败）。
 - `scripts/nxlib/measure.py`：`compare_parts` 改按几何键匹配参考组，不以有序 face-tag 元组判 N/A；缺组进 `unmatched_a` 而非静默通过。
 - `scripts/nxlib/measure.py`：`group_coaxial` 改并查集，`hole_params`/`cone_params` 给逐段轴向区间；`structure_directory` 默认 `2R+2` 聚类。
 - `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。

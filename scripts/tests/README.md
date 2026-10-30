@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：41 个用例（38 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：45 个用例（42 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -20,7 +20,7 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 成功标志：出现该用例的判决 token，且输出中没有任何 `_FAIL`（实现见 `:gate` 子过程）。退出码不可作判据：未捕获异常才返回非零，journal 按 SKILL.md §3 每步 try/except 后继续，失败被吞时退出码仍为 0；26 号原生崩溃反而把退出码变成 1。
 
-⚠ 22-30、38-41 十三个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
+⚠ 22-30、38-45 十七个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
 
 NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
 
@@ -34,7 +34,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 
 ## 用例、文件与判决 token
 
-判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（17/19/20/21/31/32），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-40），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
+判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（17/19/20/21/31/32），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-45），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
 
 | 用例 | 文件 | 判决 token | 决定性判据（验收什么；数字为值） |
 | --- | --- | --- | --- |
@@ -77,6 +77,10 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 39 | `39_reverse_route.py` | `TEST39_DONE` | 27 项结构目录/圆角地图/过渡路线：块+Ø16×8 凸台（顶缘 R2）+Ø10 通孔+90° 锪孔 → 圆柱组 R8 壁长 6（顶缘被 R2 吃掉 2）、孔组 D10 壁长 24 轴 +Z、锥组半角 45°、z 平面族偏移 0/16/24、环面组 major 6/minor 2；凸台顶缘用 `face_blend_edge` 提交（成功法向组合随件记录），`fillet_map(radii=[2])` 命中 1 面且 `rad_data`=2（圆角半径）、`radius`=6（主半径），支撑面 22/R0 + 16/R8；`fillet_run_samples` 得 2 条同半径跑道且都有 UV 中心/3×3 样本，自比对 `fillet_coverage` 面覆盖/跑道覆盖 1.0、P95 0；`fillet_map(radii=[3])` 把 Ø6 孔壁列出来但支撑面只有锥/面、无柱无环面——孔按自身半径进地图是正确的，支撑面才是孔与圆角的判别；直凸边 `apply_roll(R4)` 体积退缩 276.4（解析 274.7）、滚出面是 R4 圆柱、平面族仍只有 0/16/24（精确圆弧无裙边平台），凹边（槽底）自动判凸凹并 unite、体积增 38.63（解析同式）、滚出面 R3 圆柱；负向：`hole_audit` 至少 2 组、空站表/空视图判失败、强制 G7 ceiling<0.7 记 blocked、G9 特征上限可被小结构数触发、`compare_parts` 参考组逆序仍 PASS 且无 `unmatched_a` |
 | 40 | `40_rolling_network.py` | `TEST40_DONE` | 24 项滚球角网：直边 `apply_roll_general` → type16 R4；R25 在 80 mm 边上被 4R 长度守卫拒绝；Z 凸缘 R2 与 45° 轴 R3.175 圆边 → 滚球中心圆（8−2 / 19.05−3.175）、`circle_analytic`、type19 `rad_data`=R、major=中心圆+0.02（6.02 / 15.895）；喇叭环（major=R3.175）`roll_rim` 拒绝、走外侧环 → type19 major 3.195；`classify_corner` 反读面带为 `canal_circle`、脊线 6.02、厚度 0，`rim_from_face` 回半径 6.02 |
 | 41 | `41_template.py` | `TEST41_DONE` | 18 项参数化模板层：支架（板 80×50×10 + 凸台 Ø24×12 + 派生孔 Ø12）全部尺寸走命名表达式，体积 42940.531 与解析式同值；`BOSS_D` +2 → ΔV 510.509（解析同值）、孔面半径 13.000 由 `HOLE_D = BOSS_D / 2` 自动跟随（字面值会停在本值）、包盒不动、还原逐位一致；`T_PLATE` +2 → ΔV 7773.805 且 z max 正好 +2，`L_LEN` +10 → ΔV 5000.000 且只动 x max（凸台不受影响），`BOSS_H` +2 → ΔV 678.584——编辑量与解析偏导逐一相符；4 参数编辑矩阵 4/4 干净；参数表单位（1.5 mm / 30°）解析、建件顺序；未知结构名抛 `KeyError`、参数名拼错记 `missing_expression` 而不是静默跳过 |
+| 42 | `42_reverse_tables.py` | `TEST42_DONE` | 17 项五表冻结：块 80×50×12 + Ø24×18 凸台 + Ø12 通孔 → `candidate_directory` 认出回转体与孔并带面标签；`param_candidates` 逐行分 design/data、design 行必为数值、轴与位置归 data（方向永不作驱动参数）；`validate_structure_table` 对冻结表零错误（面标签存在、无面被两组占用、重算包盒一致）；`station_plan_full` `budget_truncated` 为 False 且 `missing` 空；`station_partition` 与站表 1:1、类只有 primary/fillet、两次调用逐项相同（看到结果后分母不许动）；`schema_skeleton` 的 id 与建件顺序跟结构表一致且每结构 design∩data=∅ |
+| 43 | `43_skeleton_layers.py` | `TEST43_DONE` | 12 项设计/数据分层与骨架帧：`Frame.from_azimuth(45)` 两轴正交且 U 真指向 45°；非正交 frame 在构造处拒绝；`liveness` 在植入未用 `UNUSED_D` 时 ratio 0.75（3/4）且逐结构 live、无 missing；命名集合恰等于声明集合（测量轮廓坐标留在数据层，没被提成表达式）；驱动 `PLATE_T` +10% → ΔV = 面积×h×0.1 − π/4·BOSS_D²×(h×0.1)（凸台底是字面值，并集吃掉交界圆柱）、update 零错误、还原逐位 1e-6 |
+| 44 | `44_structures_library.py` | `TEST44_DONE` | 10 项结构库：板 80×50×12 → `trim_box` 包络求交把 v>15 裁成 38400.000（9600.000 去除）、`unite` 凸台 Ø24×18、`hole_cut` Ø12 穿透、`blend_try` 打凸台顶闭合圆环；体积等于 V1+V2−V3−V5 且 V5 落在 (R²−πR²/4)×周长 上界内（137.5，上界 145.6，符号不许反）；半径超过局部面时 `blend_try` 返回记录而不抛（undo 守卫，体与特征数都不留残迹）；`budget` 按结构数算 4N+12（N=4 → 28），不按特征数 |
+| 45 | `45_audit_g1full.py` | `TEST45_DONE` | 8 项审计层：`g1full` 自比对全过（空测试，比对本身不能自造失败）；板宽 +6 mm 后仅 5 个 primary 站失败、分区原样（分母不动，加宽不是加站）；失败方向恒为 `area_b ≥ area_a`（材料只增）；5 站全部由面积增长解释（300/300/300/84/84，逐站对得上）；`locality` 逐结构报被触站且无 outside；站表取自测量编译而非手选 |
 
 ## 反向验证记录
 
@@ -97,6 +101,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 32 | 等弦长改等角度均分 | `polygon_copies_per_side` FAIL（2.0823 mm）；`NCopies=2` 两模型重合仍 PASS，判别力来自 `NCopies≥4` |
 | 32 | 引用阵列期望写“新增 3 件” | `reference_layout`/`reference_base_instance` FAIL；改按整族 3 件核对后通过 |
 | 19 PDF | 图纸 PDF 与另一份无关 PDF 各跑一次 | 均 `VERIFY_FAIL missing 70,40,R2.,4x` RC=1 |
+| 43 / 44 / 45 | 内置负向：植入未用参数；圆角半径超局部面；板宽 +6 mm | 分别报 ratio 0.75 并记 dead；`blend_try` 返回记录、体与特征无残迹；恰好 5 个 primary 站失败且逐站面积增长可解 |
 
 四条判据设计规则：
 

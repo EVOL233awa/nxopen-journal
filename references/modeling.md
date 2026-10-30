@@ -101,6 +101,18 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 
 - **模板件里的圆角**：优先边圆角/解析圆环带；FaceBlend 的支撑面集合会随参数移动而硬失败（`Update undo happened`），不当可编辑件的主圆角机制。上游尺寸会重建被圆角边时，把上游改成派生约束让边不动，或把该边排除出圆角集合；`blend edges consumed` 告警会随文件存盘。
 
+### 1.13 草图驱动轮廓 + 骨架帧（让设计参数真的能驱动几何）
+
+**适用**：轮廓简单（圆/矩形/台阶/扇形）、尺寸要由命名表达式驱动（模板/零件族/逆向重建）。测量轮廓（短弧+倒角+偏移线）不要开自动尺寸——会被拉变形，走 §1.5 固定约束 + 数据层字面值。
+
+- **配方**：`make_sketch_dims(wp, curves, links=[(数值, "2 * R_TEST"), ...])` 建草图 → AutoDimension 出尺寸 → 按数值把尺寸改指命名表达式，返回 `(sketch, 改指数)`。改指后 `GetStatus()` 的 dof 归 0；`R_TEST ×1.5` 后体积按 r² 变 2.25 倍，还原回原值（`tests/37`）。
+- **唯一前提**：**不能先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。曾把"0 尺寸"归因于"少调 `GetStatus`"，受控实验证明 `GetStatus` 只用来读 dof，少调不影响出尺寸。
+- **links 的数值要写自动尺寸真会生成的量**（半径、直径 2r、长度），匹配按 `float(RightHandSide)` 1e-6；写推导量匹配不上时该尺寸不改指、也不报错，只表现为返回的改指数偏小——用改指数与 links 条数对账。
+- **骨架帧**：`Frame.from_azimuth(az, origin)` 给径向 U、切向 V、+Z；构造函数即校验两两正交，非正交在构造处抛 `ValueError`，不要等提交特征才失败。`frame.pt/vec/vec3` 是唯一坐标出口，结构代码里不手写 sin/cos。
+- **设计/数据分层**：设计量进命名表达式（`PLATE_T`），测量轮廓坐标留字面值（data 层，用 `polyline`/`loop_*` 传入），`schema_skeleton` 核对每个结构 design∩data=∅（分工见 `reverse-engineering.md` §12.2）。
+- **基准轴/面**：`skeleton.axis/plane` 建的是 SmartObject，位置与方向按 data 字面值；需要随参数移动的量交给草图尺寸或拉伸起止承担。datum 能否由表达式点驱动未验证，不要当可驱动件用（同 §1.12 轴心陷阱）。
+- **预算先算再建**：`audit.budget` 按结构数报 4N+12 特征上限（N=4 → 28），不是按特征数反算；建前过一遍，超了就减结构而不是加补丁特征。
+
 ### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
 
 `NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：

@@ -422,6 +422,7 @@ def fillet_group_indexes(measure, fillet_faces):
     截面，归 G7 跑道账本；否则归主结构截面。
     """
     groups = list(measure.get("cylinders", [])) + list(measure.get("cones", []))
+    fillet_faces = set(int(t) for t in (fillet_faces or ()))
     out = []
     for gi, g in enumerate(groups):
         fs = set(int(t) for t in g["faces"])

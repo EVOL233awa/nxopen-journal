@@ -42,8 +42,10 @@ Five tools come with it: `scripts/check_journal.py` (static check of a journal a
 a rule base of measured NX 12 pitfalls), `scripts/run_journal_batch.bat` (headless replay),
 `scripts/gb_drawing.py` (GB-style drawing kit: A4 frame, pinned views, title block, tech
 note and dimension lanes — any journal can `import gb_drawing`), the case standard layer
-`scripts/nxlib/` (test framework plus seven recipe modules: testing, session, modeling,
-assembly, drafting, measure and rolling; regression cases import it instead of copying their own), and the offline figure
+`scripts/nxlib/` (test framework plus recipe modules for modeling, assembly, drafting,
+measurement, rolling fillets, parameter templates, the reverse measurement compiler,
+skeletons, the structure library and auditing; regression cases import it instead of
+copying their own), and the offline figure
 chain in `scripts/render/` (batch sessions cannot capture images, so solids are rendered
 from STL outside NX and drawing PDFs are rasterised on the host).
 
@@ -246,7 +248,7 @@ recorded in `scripts/tests/README.md`.
 
 | Domain | Cases |
 | --- | --- |
-| Modeling | 01 02 03 05 08 14 15 22 26 28 32 34 37 41 |
+| Modeling | 01 02 03 05 08 14 15 22 26 28 32 34 37 41 42 43 44 45 |
 | Assembly | 04 10 16 17 29 35 |
 | Drafting | 06 07 19 20 21 27 31 33 |
 | FEA | 09 24 25 30 |
@@ -297,12 +299,12 @@ nxopen-journal/
 ├── images/                         figures from real runs
 ├── scripts/
 │   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)
-│   ├── nxlib/                      case standard layer (test framework + six recipe modules, imported by the cases)
+│   ├── nxlib/                      case standard layer (test framework + recipe modules, imported by the cases)
 │   ├── check_journal.py            static check (AST + rule base of measured pitfalls)
 │   ├── check_repo.py               repo self-check (Py3.6 syntax / case list / doc structure / file list / standard-layer exclusivity / doc conciseness)
 │   ├── run_journal_batch.bat       single-file batch replay (NX_HOME parameterised)
 │   ├── render/                     offline figure chain (shaded STL rendering, PDF rasterising, trim and scale bar)
-│   └── tests/                      regression suite (38 gated cases + 3 one-shot probes) plus its own README
+│   └── tests/                      regression suite (42 gated cases + 3 one-shot probes) plus its own README
 └── agents/openai.yaml              Codex / OpenAI front-end config for cross-agent portability
 ```
 
