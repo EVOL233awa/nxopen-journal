@@ -142,7 +142,23 @@ def plan_runway(run, faces_by_tag, radius=None):
                     seen.add(t)
                     sup_faces.append(g)
 
-    widths = [w for w in (_face_width(f) for f in sup_faces) if w]
+    # 支撑面里必须剔除**同半径延续**：一条圆角被布尔切成两段时，两段半径
+    # 与圆心几乎重合，同半径的两段会互相成为"邻面"，于是二面角算出 180°
+    # （共面），把它当成拓扑不可达就把每条被切开的圆角都判成 BLOCKED。判据
+    # 用半径而非类型：环面（type 19）只是圆角的一种表达，圆角也可能是同半径
+    # 的圆柱面（§9.2）。
+    runway_faces = set(int(t) for t in (run.get("faces") or []))
+    supports_only = []
+    for f in sup_faces:
+        if int(f.get("tag", -1)) in runway_faces:
+            continue
+        fr = (abs(float(f.get("rad_data") or 0.0))
+              if f.get("type") == ms.TORUS
+              else abs(float(f.get("radius") or 0.0)))
+        if fr > 0.0 and abs(fr - r) <= max(0.002, 0.01 * r):
+            continue          # 同半径延续，不是支撑面
+        supports_only.append(f)
+    widths = [w for w in (_face_width(f) for f in supports_only) if w]
     if widths and r > 0.0:
         need = 2.0 * r + SUPPORT_WIDTH_MARGIN
         narrow = [w for w in widths if w < need]
@@ -153,7 +169,7 @@ def plan_runway(run, faces_by_tag, radius=None):
                 "< 2R+%.1f = %.3f"
                 % (min(narrow), SUPPORT_WIDTH_MARGIN, need))
 
-    plane_sups = [f for f in sup_faces if f.get("type") == ms.PLANE]
+    plane_sups = [f for f in supports_only if f.get("type") == ms.PLANE]
     if len(plane_sups) >= 2:
         ang = _dihedral(plane_sups[0], plane_sups[1])
         if ang is not None:
@@ -181,14 +197,30 @@ def plan_runway(run, faces_by_tag, radius=None):
         mech = "measured_section"
     out["mechanism"] = mech
 
-    # 不可达才给 evidence（G7 只认这份）
+    # 不可达分两档，只有第二档能进 G7 的 BLOCKED：
+    #
+    #  * 宽度不足是**构建约束**——NX 的圆角要在支撑面上各吃掉一个 R，支撑比
+    #    2R 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明的是
+    #    "复刻难"而不是"这处圆角物理上不可达"。这一档记 `build_obstacle`，
+    #    是构建阶段的行动项（改支撑/改刀），不构成 BLOCKED 证据。
+    #  * 二面角越界与长度为 0 是**拓扑不可达**——近共面缝、相切缝、退化跑道
+    #    无论用什么机制都不该倒，这才是 BLOCKED 的证据。
     if not out["reachable"]:
-        out["evidence"] = {
+        topo = [x for x in out["reasons"]
+                if x.startswith("dihedral") or "length" in x]
+        out["build_obstacle"] = {
             "runway_faces": out["faces"],
             "radius": out["radius"],
             "reason": "; ".join(out["reasons"]),
             "supports": [s["key"] for s in sup_recs],
         }
+        if topo:
+            out["evidence"] = {
+                "runway_faces": out["faces"],
+                "radius": out["radius"],
+                "reason": "; ".join(topo),
+                "supports": [s["key"] for s in sup_recs],
+            }
     return out
 
 
@@ -218,13 +250,16 @@ def transitions_plan(part, measure, radii=None, fillet_faces=None):
     for row in rows:
         by_mech[row["mechanism"]] = by_mech.get(row["mechanism"], 0) + 1
     unreachable = [r for r in rows if r.get("evidence")]
+    obstacles = [r for r in rows if r.get("build_obstacle")]
     return {
         "radii": sorted(round(abs(float(x)), 6) for x in use_radii),
         "runs": rows,
         "run_count": len(rows),
         "by_mechanism": by_mech,
         "unreachable": unreachable,
-        "reachable_count": len(rows) - len(unreachable),
+        "build_obstacles": obstacles,
+        "reachable_count": len(rows) - len(obstacles),
         "status": ("unreachable" if unreachable else
-                   ("ok" if rows else "empty")),
+                   ("obstructed" if obstacles else
+                    ("ok" if rows else "empty"))),
     }

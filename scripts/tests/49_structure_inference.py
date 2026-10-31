@@ -360,16 +360,25 @@ def main():
     fbt[33] = narrow2
     plan_tight = tr.plan_runway(tight, fbt)
     say("transition tight=%r" % (plan_tight,))
+    obs = plan_tight.get("build_obstacle") or {}
     check("T49_TRANSITION_WIDTH_REASON",
           plan_tight["reachable"] is False and
-          "support width" in (plan_tight["evidence"] or {}).get("reason", ""),
-          "a 1 mm support cannot hold R3 and must say why: %r"
-          % (plan_tight["evidence"],))
+          "support width" in obs.get("reason", ""),
+          "a 1 mm support cannot hold R3 and must say why: %r" % (obs,))
     check("T49_TRANSITION_EVIDENCE_SHAPE",
-          (plan_tight["evidence"] or {}).get("runway_faces") == [50, 51] and
-          "supports" in (plan_tight["evidence"] or {}),
-          "evidence must name the runway and its supports (G7 BLOCKED needs "
-          "per-runway topology): %r" % (plan_tight["evidence"],))
+          obs.get("runway_faces") == [50, 51] and "supports" in obs,
+          "the obstacle record must name the runway and its supports: %r"
+          % (obs,))
+    # a support narrower than 2R is a BUILD obstacle, not topology: the
+    # reference part already has that fillet, so width proves "hard to
+    # reproduce", never "physically unreachable".  Mixing the two made the
+    # reference solution itself un-passable.
+    check("T49_TRANSITION_WIDTH_NOT_BLOCKED",
+          plan_tight["evidence"] is None and
+          (plan_tight.get("build_obstacle") or {}).get("reason"),
+          "a width shortfall must be a build obstacle, never BLOCKED evidence: "
+          "evidence=%r obstacle=%r"
+          % (plan_tight["evidence"], plan_tight.get("build_obstacle")))
 
     failed = [n for n, ok in RESULTS if not ok]
     say("TEST49_CASES=%d" % len(RESULTS))

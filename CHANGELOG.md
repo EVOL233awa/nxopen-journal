@@ -7,8 +7,9 @@
 
 ### Added
 
-- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。
-- `scripts/tests/49_structure_inference.py`：24 → 28 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面）。
+- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。"
+"宽度不足与二面角越界分两档：参考件自己的圆角已经存在，所以"支撑比 2R 窄"证明的是复刻难而不是物理不可达，记 `build_obstacle`（构建阶段行动项）；只有二面角越界/退化跑道进 `evidence`（BLOCKED 依据）。
+- `scripts/tests/49_structure_inference.py`：24 → 29 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面、宽度不足只能记 `build_obstacle` 不得进 BLOCKED）。
 - `references/reverse-engineering.md` §9.1b：过渡规划的接口、机制路由判据、证据口径与两个读法要点。
 - `scripts/nxlib/structure_inference.py`：结构判定补三条——① 同一轴上的多个半径并成一条 `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成多行 `cylinder`，而多行同轴 cylinder 正是 z 带堆叠的入场券），同轴凹面组不并入凸面行；② `_arc_fit` 用**等弧长重采样的局部圆拟合**提取边界圆弧并聚簇，给出瓣数/瓣半径/瓣心偏移（射线扇会把背后的整条臂算进半径，半径序列没有平台；局部圆拟合要按弧长重采样，否则样条陡段的近直三点拟合会给出半径任意的"圆"），参考点先判是否在料内、非星形截面另报；③ `_loft_structures` 沿板带行程取两张截面，面积比 >2% **且** 两截面形状不相似（`_sections_similar`：归一化到平均半径 1 后逐点比，拔模体是相似形、变截面臂不是）才判 `section_loft`。修 `_sampled_structures` 恒返回 `[]` 的交付漏洞（判据对、行被丢），行补齐 `id/build_order/frame`。
 - `scripts/tests/49_structure_inference.py`：20 → 24 项（同轴多半径并成一条 revolved 行、凹面不并入凸面、拔模相似形不判放样、变截面判放样）。
