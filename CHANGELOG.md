@@ -7,7 +7,11 @@
 
 ### Added
 
-- `scripts/nxlib/structures.py` 结构级 builder：`plate_2p5d`（轮廓+厚度+可选拔模）、`revolved_profile`（(t,r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（任意孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边失败原文账本）——一个结构一次调用，取代“一个结构一堆原语”。
+- `scripts/nxlib/measure.py`：新增 G8 门（声明对账 + 命名表达式活性）并入 `verify_parts` 默认门表；`station_report` 给空站分类（`na_reason`：`coplanar_section`/`no_material`）并新返回 `unmeasured`/`instrument_errors`/`measured_count`/`plan_measured_complete`；`station_report_hybrid` 把没量到的站判失败并把 B-rep 取代的站清掉 `na_reason`；G9 增加特征名映射（空名/默认名/未映射结构即 FAIL，结构数只能来自结构表）。
+- `scripts/nxlib/audit.py`：`g1full` 返回 `unmeasured`/`primary.unmeasured`/`plan_measured_complete`，没量到的主站不算通过、也不让 `plan_complete` 通过；新增 `plane_station_mode`/`brep_plane_count`/`stl_axis_count` 记录平面站口径。
+- `scripts/tests/48_audit_gates.py`（28 项）：把上列口径与审计层其余“失败要关门”负例钉成回归（空截面/空 primary 分母/未分配面/空特征名/默认名/站表缺覆盖/预算未映射/同名既 design 又 data）；`RUN_TESTS.bat` 登记第 48 门，`check_repo.py` 计数 47/44 → 48/45。
+- `references/reverse-engineering.md` §12.4：结构级 builder 的能力边界与缺口照实写（`hole_set` 只吃同向同直径同深度孔位表；眼/叉耳、同轴孔链、多分界截面放样、拔模窗口与斜切端壁目前只能用原语拼，并列出拼装四条自检）。
+- `scripts/nxlib/structures.py` 结构级 builder：`plate_2p5d`（轮廓+厚度+可选拔模）、`revolved_profile`（(t,r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（同向同直径同深度孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边失败原文账本）——一个结构一次调用，取代“一个结构一堆原语”。
 - `scripts/tests/47_structure_builders.py`（20 项）：六种 builder 全对解析体积（板 32000.0000/6 面、拔模 29282.0083、阶梯轴 21614.1575/2 段、锥孔 7023.9729、孔组 4712.3890、腔 16000.0000）；同一阶梯轴 z 带堆叠 131 面 vs 回转 5 面（26.2×）而体积一致；超半径倒圆留原文；`RUN_TESTS.bat` 登记第 47 门，`check_repo.py` 计数 46/43 → 47/44。
 - `references/reverse-engineering.md` §12.4：结构级 builder 清单与四条硬边界——分段回转替代 z 带堆叠、拔模必须有 `DraftOption` 且只能按锥台体积验、360° 回转只吃凸轮廓、圆角账本逐边一条且失败原文须来自半径本身。
 - `scripts/nxlib/audit.py` `edit_envelope`/`edit_envelope_summary`：逐参数按倍率递增测可用包络，折成 bounded/narrow/stuck 三档，把“超出物理范围”与“结构脆弱”分开。
@@ -81,7 +85,14 @@
 - `scripts/nxlib/reverse.py`：`fillet_group_indexes` 先把 `fillet_faces` 收成 int 集合（传 list 时 `set <= list` 抛 TypeError，分区调用直接失败）。
 - `scripts/nxlib/measure.py`：`compare_parts` 改按几何键匹配参考组，不以有序 face-tag 元组判 N/A；缺组进 `unmatched_a` 而非静默通过。
 - `scripts/nxlib/measure.py`：`group_coaxial` 改并查集，`hole_params`/`cone_params` 给逐段轴向区间；`structure_directory` 默认 `2R+2` 聚类。
-- `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。
+- `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败（空站另有分类，见下）；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。
+- `scripts/nxlib/measure.py` `section_iou`：两侧截面皆空返回 `iou=None` 并带 `empty_a/empty_b/both_empty`（旧口径报 1.0，空截面直接过门）；`station_report` 的空站按 `na_reason` 分 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线）与 `no_material`（站表缺口），`pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性走 `plan_measured_complete`/`unmeasured`，判定链（`station_report_hybrid`、`verify_parts` 的 G1）要求未测站为空。
+- `scripts/nxlib/measure.py` `g7_reachability`：`ceiling`（跑道数/参考圆角面数）改诊断值并在 `ceiling_basis` 标明，判 BLOCKED 需逐跑道拓扑证据（`evidence` 非空），不再凭比例把门记 BLOCKED。
+- `scripts/nxlib/audit.py`：`liveness` 的 `pass` 合并 `missing`/dead/broken/skipped（声明未建出不再显示 `alive_ratio=1.0` 判定通过）；`edit_envelope` 记首次失败倍率 `failed_at` 与最后一次成功 `max_ok_factor`，还原按体积/体数/面数/告警逐位校验并在漂移时抛错；`locality` 默认 ×1.10 起自适应、剔除开口与近切站、区域取截面质心、返回 `inconclusive`；`envelope` 阈值统一走 `tol`（默认 0.05/0.05）。
+- `scripts/nxlib/reverse.py`：`station_plan_full` 按面归属判覆盖（每结构 ≥1 站、`missing` 非空即 `complete=False`、跨平面族另记 `families_ok`、每站带 `station_kind`/`primary_fillet_class`）；`param_candidates` 去重并加 `derived_from`；`validate_structure_table` 未分配面改 error（`allow_unassigned` 显式豁免）、新增 `validate_feature_mapping`。
+- `scripts/nxlib/template.py`：`param_table` 不把 data/derived 行当独立参数，`structure_params` 恒返回字典，新增 `structure_param_names`/`validate_schema`（重复 id、未定模板、design 与 data 混用、缺 `build_order` 即报错）。
+- `scripts/tests/38/39/42/45/46`：适配上列口径——38 增加 hybrid 自比对（判定口径必须量到每一站）与空站分类；39 的 G7 ceiling 只作诊断、G9 对无名特征判失败；42 未分配面严格模式；45/46 用新的返回结构。
+- `SKILL.md`/`README.md`/`README.en.md`/`docs/wiki`/`scripts/tests/README.md`：计数与模块行数同步（48 用例 / 45 gate、`check_journal` 20 组、`check_repo` 八组、nxlib 199 个公开 API），模块依赖表与用例域表补齐 46–48。
 - `scripts/nxlib/rolling.py`：`classify_corner` 精确管道要求 `rms≤1e-9`，0.005R–0.05R 记 `canal_approx`，更大记 `unknown`；`roll_rim_analytic` 多体拒绝且只删自建体。
 - `scripts/check_journal.py`/`verify_check_rules.py`：5.13 正则支持 `Part.Save()`；占位符负例改 `legitimate no-op`；反例覆盖 walrus、必设参数、保存校验。
 

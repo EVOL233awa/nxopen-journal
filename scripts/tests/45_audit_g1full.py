@@ -126,16 +126,26 @@ def main():
     design = dict((k, v) for k, v in design.items() if v["exprs"] and v["stations"])
     say("locality design=%r" % (design,))
     loc = au.locality(ref, design, plan, primary=prim)
+    loc_rows = loc["structures"]
     outs = dict((sid, [r.get("outside") for r in rows])
-                for sid, rows in loc.items())
-    say("locality outside=%r" % (outs,))
-    check("T45_LOCALITY_RAN", bool(loc),
+                for sid, rows in loc_rows.items())
+    say("locality usable=%d excluded=%d factors=%r outside=%r"
+        % (len(loc["usable_stations"]), len(loc["excluded_stations"]),
+           loc["factors"], outs))
+    check("T45_LOCALITY_RAN", bool(loc_rows),
           "locality must return one record per structure")
     check("T45_LOCALITY_NO_OUTSIDE",
-          all(not (r.get("outside") or []) for rows in loc.values()
+          all(not (r.get("outside") or []) for rows in loc_rows.values()
               for r in rows),
           "a design parameter must not move stations of other structures: %r"
           % (outs,))
+    check("T45_LOCALITY_ADAPTIVE", loc["factors"][0] <= 1.10,
+          "the scan must start at the smallest resolvable factor: %r"
+          % loc["factors"])
+    check("T45_LOCALITY_EXCLUDED_REPORTED",
+          isinstance(loc["excluded_stations"], list) and
+          "usable_stations" in loc,
+          "excluded stations must be reported, not silently dropped")
 
     failed = [n for n, ok in RESULTS if not ok]
     say("TEST45_CASES=%d" % len(RESULTS))

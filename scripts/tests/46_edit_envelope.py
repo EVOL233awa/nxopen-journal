@@ -83,6 +83,9 @@ def main():
           and not live["structures"]["ghost"]["live"],
           "the per-structure record must carry its own missing list: %r"
           % (live["structures"]["ghost"],))
+    check("T46_MISSING_BLOCKS_LIVENESS", live["pass"] is False,
+          "a declared-but-missing parameter must fail liveness, not only be "
+          "listed: pass=%r" % live["pass"])
     check("T46_FORMULA_PARAM_IS_LIVE",
           live["structures"]["boss_formula"]["live"] == ["RECESS_R"],
           "a parameter consumed inside another's formula must still read live: %r"
@@ -108,6 +111,18 @@ def main():
     say("narrow stop detail=%r" % (detail[:1],))
     check("T46_NARROW_HAS_TEXT", bool(detail),
           "the stopping trial must carry the verbatim failure: %r" % (detail,))
+    # failed_at is the FIRST failing factor, max_ok_factor the last success:
+    # the old code stored the last success as failed_at, so a report could not
+    # tell "still fine at 1.45" from "broke at 1.50"
+    check("T46_FIRST_BREAK_FACTOR",
+          rows["RECESS_R"]["failed_at"] > rows["RECESS_R"]["max_ok_factor"],
+          "failed_at must be the first failing factor, not the last success: %r"
+          % (rows["RECESS_R"],))
+    check("T46_BOUNDED_FLAG",
+          rows["PLATE_T"]["bounded"] is True and
+          rows["RECESS_R"]["bounded"] is False,
+          "the bounded flag must follow failed_at: %r"
+          % ([(n, r.get("bounded")) for n, r in rows.items()],))
 
     summary = au.edit_envelope_summary(env)
     say("summary bounded=%r narrow=%r stuck=%r"

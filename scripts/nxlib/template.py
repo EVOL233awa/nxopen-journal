@@ -39,20 +39,28 @@ def load_json(path):
         return json.load(fh)
 
 
-def param_table(doc):
-    """参数文档 → ({名: 值}, {名: "mm"|"deg"|"unit"}）。
+def param_table(doc, include_data=False):
+    """参数文档 → ({名: 值}, {名: "mm"|"deg"|"unit"})。
 
     接受两种布局：
-      1) {"structures": [{"id":..., "parameters": [{name,value,unit}, ...]}]}
-         （extract_params.py 的输出）
+      1) {"structures": [{"id":..., "parameters": [{name,value,unit,kind}, …]}]}
+         （`reverse.schema_skeleton` / extract_params.py 的输出）
       2) {"name": value, ...}（手写的最小参数表，单位统一按 mm）
     列表/向量值跳过（轴向量不进表达式表，由调用方按几何用）。
+
+    只收 `kind` 为 `design`（或缺 `kind`）的标量行：`data` 是测量数据，
+    `derived_from` 非空的量是别的参数的结果，把二者建成立表达式会与派生
+    公式冲突。要一并取出时传 `include_data=True`。
     """
     values = {}
     units = {}
     if isinstance(doc, dict) and "structures" in doc:
         for st in doc["structures"]:
             for rec in st.get("parameters", []):
+                if not include_data and rec.get("kind") not in (None, "design"):
+                    continue
+                if not include_data and rec.get("derived_from"):
+                    continue
                 v = rec.get("value")
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
                     values[rec["name"]] = float(v)
@@ -128,8 +136,98 @@ def structure(schema, sid):
 
 
 def structure_params(schema, sid):
-    """某结构的参数名 → 值（模板注册表里的参数列表）。"""
-    return dict(structure(schema, sid).get("parameters", {}))
+    """某结构的参数名 → 值。
+
+    `parameters` 写成一列 dict（带 `name`/`value`）时返回 {名: 值}；写成
+    一列名字（`schema_skeleton` 的形态）时返回 {名: None}——只有名字没有
+    值，取值请先过 `param_table`。两种形态都返回 dict，签名不再随 schema
+    布局变化。
+    """
+    params = structure(schema, sid).get("parameters", [])
+    out = {}
+    if isinstance(params, dict):
+        return dict(params)
+    for rec in params:
+        if isinstance(rec, dict):
+            out[rec.get("name")] = rec.get("value")
+        else:
+            out[rec] = None
+    return out
+
+
+def structure_param_names(schema, sid):
+    """某结构声明的独立设计参数名列表（顺序保留）。"""
+    return list(structure_params(schema, sid).keys())
+
+
+def validate_schema(schema, templates=None, param_table_doc=None):
+    """schema 骨架的规范性校验。
+
+    返回 {errors, warnings}。硬错误：结构 id 重复；模板缺失或为
+    `unassigned`；`build_order` 未覆盖全部结构或含未知 id；`depends_on`
+    指向未知结构；同一参数名同时出现在独立参数与派生/data 里（design 与
+    derived 混用）。warnings：没有任何参数的结构；参数表里有未被任何结构
+    引用的名字。
+    """
+    errors = []
+    warnings = []
+    structures = schema.get("structures") or []
+    ids = [st.get("id") for st in structures]
+    dup = sorted(set(i for i in ids if ids.count(i) > 1))
+    if dup:
+        errors.append({"reason": "duplicate structure ids", "ids": dup})
+    id_set = set(i for i in ids if i)
+    known = set(templates) if templates else None
+    for st in structures:
+        sid = st.get("id")
+        tpl = st.get("template")
+        if not tpl or tpl == "unassigned":
+            errors.append({"structure": sid, "reason": "template unassigned"})
+        elif known is not None and tpl not in known:
+            errors.append({"structure": sid, "reason": "unknown template %s"
+                           % tpl})
+        for dep in st.get("depends_on") or []:
+            if dep not in id_set:
+                errors.append({"structure": sid,
+                               "reason": "depends_on unknown id %s" % dep})
+        params = set(structure_params(schema, sid).keys())
+        data = set(st.get("data") or [])
+        both = sorted(params & data)
+        if both:
+            errors.append({"structure": sid,
+                           "reason": "parameter listed as both design and "
+                                     "data", "names": both})
+        if not params:
+            warnings.append({"structure": sid,
+                             "reason": "no independent design parameter"})
+    order = list(schema.get("build_order") or [])
+    if id_set:
+        if not order:
+            errors.append({"reason": "build_order missing"})
+        else:
+            unknown = [o for o in order if o not in id_set]
+            uncovered = sorted(id_set - set(order))
+            if unknown:
+                errors.append({"reason": "build_order has unknown ids",
+                               "ids": unknown})
+            if uncovered:
+                errors.append({"reason": "build_order does not cover all "
+                                         "structures", "ids": uncovered})
+    if isinstance(param_table_doc, dict) and "structures" in param_table_doc:
+        declared = set()
+        for st in param_table_doc["structures"]:
+            for rec in st.get("parameters", []):
+                declared.add(rec.get("name"))
+        used = set()
+        for st in structures:
+            used |= set(structure_params(schema, st.get("id")).keys())
+            used |= set(st.get("data") or [])
+        unused = sorted(n for n in declared - used if n)
+        if unused:
+            warnings.append({"reason": "params not referenced by any structure",
+                             "names": unused})
+    return {"errors": errors, "warnings": warnings,
+            "complete": not errors}
 
 
 def structure_template(schema, sid):

@@ -382,20 +382,40 @@ def main():
     check("REG_VIEW_EMPTY", vi["iou"] == 0.0 and vi.get("empty") is True,
           "empty view iou=%s empty=%s" % (vi["iou"], vi.get("empty")))
 
+    # 一条跑道对数万个参考面时 ceiling 必趋 0，但那是诊断值：判 BLOCKED 需要
+    # 逐跑道的拓扑证据（支撑面宽度/二面角/边已被消费），比例本身证明不了不可达。
     reach = g7_reachability([{"radius": BLEND_R, "nfaces": 10000}], faces)
-    check("REG_G7_CEILING", reach["blocked"] and reach["ceiling"] < 0.70,
-          "forced ceiling=%.4f blocked=%s" %
-          (reach["ceiling"], reach["blocked"]))
+    say("g7 reach ceiling=%.4f blocked=%s evidence=%r"
+        % (reach["ceiling"], reach["blocked"], reach["evidence"]))
+    check("REG_G7_CEILING",
+          reach["blocked"] is False and reach["evidence"] == [] and
+          reach["ceiling"] < 0.70 and
+          "diagnostic" in reach["ceiling_basis"],
+          "ceiling must stay a diagnostic: ceiling=%.4f blocked=%s "
+          "evidence=%r basis=%r" %
+          (reach["ceiling"], reach["blocked"], reach["evidence"],
+           reach["ceiling_basis"]))
 
     structures = (len(d["cylinders"]) + len(d["cones"]) +
                   len(d["torus_groups"]))
-    g9_good = g9_structure(part, 100)
-    g9_bad = g9_structure(part, structures, feature_factor=0.1,
-                          feature_offset=0)
-    check("REG_G9_LIMIT", g9_good["pass"] and not g9_bad["pass"] and
-          any("features" in r for r in g9_bad["reasons"]),
-          "good pass=%s bad pass=%s reasons=%s" %
-          (g9_good["pass"], g9_bad["pass"], g9_bad["reasons"]))
+    g9_loose = g9_structure(part, 100)
+    g9_tight = g9_structure(part, structures, feature_factor=0.1,
+                            feature_offset=0)
+    say("g9 loose=%r tight=%r"
+        % (g9_loose["reasons"], g9_tight["reasons"]))
+    # 只报特征数的 G9 会放过"11 个无名 extrude"：名字缺失本身就要 FAIL，
+    # 预算超限要单独给出"features N > limit"的原因。
+    check("REG_G9_NAMES_REQUIRED",
+          not g9_loose["pass"] and
+          any("names" in r for r in g9_loose["reasons"]),
+          "unnamed features must fail G9: %r" % (g9_loose["reasons"],))
+    check("REG_G9_LIMIT",
+          not g9_tight["pass"] and
+          g9_tight["feature_count"] > g9_tight["feature_limit"] and
+          any("features" in r for r in g9_tight["reasons"]),
+          "loose pass=%s tight pass=%s limit=%.1f reasons=%s" %
+          (g9_loose["pass"], g9_tight["pass"], g9_tight["feature_limit"],
+           g9_tight["reasons"]))
 
     rev = list(reversed(audit["denominator"]))
     cmp_rev = compare_parts(part_path, part_path, ref_a=rev)

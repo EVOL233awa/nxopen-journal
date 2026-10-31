@@ -101,7 +101,23 @@ def main():
     structures = [{"id": r["id"], "name": r["role"], "bbox": r["bbox"],
                    "faces": r["faces"], "template": "revolved_hub"}
                   for r in directory["revolved"]]
-    val = rv.validate_structure_table(structures, meas)
+    # this frozen table covers the revolved family only; the plate/band faces
+    # belong to a second family that is deliberately not in the table, so they
+    # must be declared exempt -- otherwise "no structure explains this face" is
+    # an error (a table that leaves faces unexplained is not validated)
+    covered = set()
+    for s in structures:
+        covered.update(int(t) for t in s["faces"])
+    exempt = sorted(set(int(f["tag"]) for f in meas["faces"]) - covered)
+    strict = rv.validate_structure_table(structures, meas)
+    say("strict errors=%r unassigned=%d"
+        % (strict["errors"][:1], len(strict["unassigned"])))
+    check("T42_UNASSIGNED_IS_ERROR",
+          bool(strict["errors"]) and strict["complete"] is False,
+          "unexplained faces must be an error, not a warning: %r"
+          % (strict["errors"][:1],))
+    val = rv.validate_structure_table(structures, meas,
+                                      allow_unassigned=exempt)
     check("T42_STRUCT_VALID", not val["errors"],
           "errors=%r" % (val["errors"][:2],))
     check("T42_STRUCT_FACES",
@@ -109,13 +125,23 @@ def main():
           "rows=%r" % (val["rows"],))
 
     plan = rv.station_plan_full(meas, structures)
-    say("plan stations=%d missing=%r" % (len(plan["stations"]), plan["missing"]))
+    say("plan stations=%d missing=%r families=%r complete=%s"
+        % (len(plan["stations"]), plan["missing"], plan["plane_families"],
+           plan["complete"]))
     check("T42_PLAN_NOTRUNC", plan.get("budget_truncated") is False,
           "the full plan must not be budget truncated")
     check("T42_PLAN_COVERS", not plan["missing"],
           "structures without a station=%r" % (plan["missing"],))
     check("T42_PLAN_NONEMPTY", len(plan["stations"]) >= 2,
           "stations=%d" % len(plan["stations"]))
+    check("T42_PLAN_FACE_COVERAGE",
+          all(v["n_stations"] > 0 for v in plan["structure_detail"].values())
+          and plan["complete"] is True,
+          "coverage must be decided on face ownership: complete=%r detail=%r"
+          % (plan["complete"], plan["structure_detail"]))
+    say("plan families=%r families_ok=%s quality_ok=%s"
+        % (plan["plane_families"], plan["families_ok"],
+           plan["plan_quality_ok"]))
 
     p1 = rv.station_partition(meas, plan, [])
     p2 = rv.station_partition(meas, plan, [])

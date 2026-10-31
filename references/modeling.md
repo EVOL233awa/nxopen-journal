@@ -81,6 +81,23 @@ dp2.SetPointAndDirection(point, direction)  # (Point, Direction)
 
 - 脚本 `run_journal_batch.bat`/`check_journal.py` 通过；其余见 §6。
 
+### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
+
+`NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：
+
+```python
+import NXOpen
+import NXOpen.Preferences          # 显式导入子模块，否则枚举路径不可达
+
+session = NXOpen.Session.GetSession()
+session.Preferences.Modeling.BodyType = \
+    NXOpen.Preferences.SessionModeling.BodyTypeOption.Solid
+```
+
+- `session.Preferences` 返回 `SessionPreferences`，没有 `SessionModeling` 成员；建模偏好挂在它的 `Modeling` 属性下（类型 `SessionModeling`）。
+- 枚举在 `NXOpen.Preferences.SessionModeling.BodyTypeOption`；批处理回读 `BodyType`：`Solid=0`、`Sheet=1`，可读可写。
+- 多数建模特征自带 `BodyPreference`（如 `ThroughCurves`），不依赖会话偏好；只有需要全局切换时才设这一项。
+
 ### 1.12 参数化模板（结构模板 + 参数表）
 
 交付件要被按结构改尺寸（模板/零件族）时，尺寸与结构不是边建边定，而是先落参数表和 schema，再由模板实例化；决策与验收口径见 `reverse-engineering.md` §11，这里只记构造配方。
@@ -106,7 +123,7 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 **适用**：轮廓简单（圆/矩形/台阶/扇形）、尺寸要由命名表达式驱动（模板/零件族/逆向重建）。测量轮廓（短弧+倒角+偏移线）不要开自动尺寸——会被拉变形，走 §1.5 固定约束 + 数据层字面值。
 
 - **配方**：`make_sketch_dims(wp, curves, links=[(数值, "2 * R_TEST"), ...])` 建草图 → AutoDimension 出尺寸 → 按数值把尺寸改指命名表达式，返回 `(sketch, 改指数)`。改指后 `GetStatus()` 的 dof 归 0；`R_TEST ×1.5` 后体积按 r² 变 2.25 倍，还原回原值（`tests/37`）。
-- **唯一前提**：**不能先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。曾把"0 尺寸"归因于"少调 `GetStatus`"，受控实验证明 `GetStatus` 只用来读 dof，少调不影响出尺寸。
+- **主要前提**：**不要先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。曾把"0 尺寸"归因于"少调 `GetStatus`"，受控实验证明 `GetStatus` 只用来读 dof，少调不影响出尺寸。已知证据只覆盖简单轮廓上的这种抢占；复杂轮廓的其它 0 尺寸成因未逐一排除，别把这一条当唯一解释。
 - **links 的数值要写自动尺寸真会生成的量**（半径、直径 2r、长度），匹配按 `float(RightHandSide)` 1e-6；写推导量匹配不上时该尺寸不改指、也不报错，只表现为返回的改指数偏小——用改指数与 links 条数对账。
 - **骨架帧**：`Frame.from_azimuth(az, origin)` 给径向 U、切向 V、+Z；构造函数即校验两两正交，非正交在构造处抛 `ValueError`，不要等提交特征才失败。`frame.pt/vec/vec3` 是唯一坐标出口，结构代码里不手写 sin/cos。
 - **设计/数据分层**：设计量进命名表达式（`PLATE_T`），测量轮廓坐标留字面值（data 层，用 `polyline`/`loop_*` 传入），`schema_skeleton` 核对每个结构 design∩data=∅（分工见 `reverse-engineering.md` §12.2）。
@@ -133,23 +150,6 @@ res = structures.revolved_profile(wp, [(0.0, 20.0), (10.0, 20.0),
 ```
 
 同一阶梯轴，64 边形 z 带堆叠 131 面、分段回转 5 面（26.2×），体积一致——**面数爆炸是构造选择，不是网格化偶然**（`tests/47`）。（同 §2.2 的"共面堆叠要用表达式定起点"；那里是层的起点，这里是层的构造方式。）
-
-### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
-
-`NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：
-
-```python
-import NXOpen
-import NXOpen.Preferences          # 显式导入子模块，否则枚举路径不可达
-
-session = NXOpen.Session.GetSession()
-session.Preferences.Modeling.BodyType = \
-    NXOpen.Preferences.SessionModeling.BodyTypeOption.Solid
-```
-
-- `session.Preferences` 返回 `SessionPreferences`，没有 `SessionModeling` 成员；建模偏好挂在它的 `Modeling` 属性下（类型 `SessionModeling`）。
-- 枚举在 `NXOpen.Preferences.SessionModeling.BodyTypeOption`；批处理回读 `BodyType`：`Solid=0`、`Sheet=1`，可读可写。
-- 多数建模特征自带 `BodyPreference`（如 `ThroughCurves`），不依赖会话偏好；只有需要全局切换时才设这一项。
 
 ## 2. 特征配方
 
@@ -687,12 +687,12 @@ adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 sk.GetStatus()
 ```
 
-- **“AutoDimension 不出尺寸”的唯一原因是先跑了 AutoConstrain**：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
+- **“AutoDimension 不出尺寸”的已知主因是先跑了 AutoConstrain**：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
 - **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出；0 尺寸的原因是先跑了 AutoConstrain，不是少调 `GetStatus`。
 - ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小圆弧）会被拉到自交，拉伸体体积异常增大。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
 - **适用边界**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；曲线多、段长的轮毂轮廓会生成大量线长/角度尺寸而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
 
-### 4.2b 自动尺寸 → 命名参数（唯一可行的参数化路线）
+### 4.2b 自动尺寸 → 命名参数（简单轮廓上的可行参数化路线）
 
 ```python
 for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸

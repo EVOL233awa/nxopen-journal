@@ -226,23 +226,46 @@ def candidate_directory(measure, part=None, fillet_radii=None, audit=None):
 def param_candidates(directory):
     """候选参数：design 可进命名表达式，data 只作测量数据。
 
-    只从解析量取：半径、半角、轴向长度、平面偏置、相邻偏置厚度、孔半径/深。
-    轮廓坐标、轴方向、轴位置一律 data，不伪装成可驱动参数。
+    只从解析量取：半径、轴向长度、平面偏置、相邻偏置厚度、孔半径/深。
+    data 分级（不伪装成可驱动参数）：
+      - 轮廓/轴方向/轴位置/包围盒；
+      - 圆锥半角默认 data：它常是"两端半径 + 长度"的结果量，只有当用户
+        显式声明角度为设计意图时才是 design（用 `design_cones` 列入）；
+      - 平面偏置默认 design（厚度方向常由设计驱动），但两侧都是数据定位时
+        由调用方降级（`data_planes`）。
+
+    同名参数只保留一条（同一功能组同时以 revolved 与 holes 出现时不再生成
+    两个冲突名字）；每条带 `derived_from`（结果量的来源参数名列表），供
+    template.validate_schema 拒绝把 derived 当独立参数。
     """
     rows = []
+    seen = {}
 
-    def add(name, value, unit, kind, source, confidence, structure):
-        rows.append({"name": name, "value": value, "unit": unit,
-                     "kind": kind, "source": source,
-                     "confidence": confidence, "structure": structure})
+    def add(name, value, unit, kind, source, confidence, structure,
+            derived_from=None):
+        if name in seen:
+            rec = seen[name]
+            if structure not in rec["structures"]:
+                rec["structures"].append(structure)
+            rec["alias_of"] = rec.get("alias_of") or []
+            return rec
+        rec = {"name": name, "value": value, "unit": unit, "kind": kind,
+               "source": source, "confidence": confidence,
+               "structure": structure, "structures": [structure],
+               "derived_from": list(derived_from or [])}
+        seen[name] = rec
+        rows.append(rec)
+        return rec
 
     for r in directory["revolved"]:
         sid = r["id"]
         add(sid + "_R", r["radius"], "mm", "design",
             "face_group %s" % sid, "high", sid)
         if abs(r["half_angle_deg"]) > 1e-9:
-            add(sid + "_HA", r["half_angle_deg"], "deg", "design",
-                "face_group %s" % sid, "high", sid)
+            # result quantity (two radii + length determine it), so data
+            add(sid + "_HA", r["half_angle_deg"], "deg", "data",
+                "face_group %s" % sid, "medium", sid,
+                derived_from=[sid + "_R", sid + "_L"])
         add(sid + "_L", abs(r["extent"][1] - r["extent"][0]), "mm", "design",
             "face_group %s" % sid, "high", sid)
         add(sid + "_AXIS", r["axis"], "unit", "data",
@@ -255,7 +278,8 @@ def param_candidates(directory):
             "plane_family %s" % sid, "high", sid)
         if b["thickness_after"] is not None:
             add(sid + "_T", b["thickness_after"], "mm", "design",
-                "plane_family %s" % sid, "high", sid)
+                "plane_family %s" % sid, "high", sid,
+                derived_from=[sid + "_OFF"])
         add(sid + "_BBOX", b["bbox"], "mm", "data",
             "plane_family %s" % sid, "high", sid)
     for h in directory["holes"]:
@@ -273,36 +297,128 @@ def param_candidates(directory):
     return rows
 
 
-def station_plan_full(measure, structures=None):
-    """全集测站（不截断）+ 按结构包围盒的覆盖检查。
+def _plane_bbox_hit(normal, offset, bbox):
+    """平面是否与轴对齐包围盒相交（用 8 个角的法向投影区间判）。
 
-    structures: [{id, bbox}]，缺省时只返回全集站表。覆盖只做诊断：
-    结构 bbox 外扩 0.5 mm 后包含站点即算覆盖；没有站的 structure 进 missing。
+    比"过世界原点的投影点是否落在盒内"正确：后者对远离原点的结构会给假
+    missing/假覆盖率，且与"结构有没有被切到"无关。
+    """
+    if not bbox:
+        return None
+    lo = bbox[:3]
+    hi = bbox[3:]
+    proj = []
+    for k in range(8):
+        proj.append(sum(normal[i] * (hi[i] if (k >> i) & 1 else lo[i])
+                        for i in range(3)))
+    return min(proj) - 1e-9 <= offset <= max(proj) + 1e-9
+
+
+def station_plan_full(measure, structures=None, fillet_faces=None,
+                      min_families=2):
+    """全集测站（不截断）+ 按结构几何的覆盖检查。
+
+    structures: [{id, bbox, faces}]。覆盖用**面归属**判：测站的 `sources`
+    （`plane#<N>` / `axis#<gi>`）解析回面 tag / 同轴组，再看该站是否被结构
+    面集合解释；`bbox_plane_hit` 另作诊断（平面是否与结构盒相交）。
+    每个结构至少一站、整表至少跨 `min_families` 个平面族（法向族），
+    `missing` 非空 → `complete=False`——覆盖缺口不是通过。
     """
     plan = ms.station_plan(measure, max_stations=0)
     out = dict(plan)
     out["budget_truncated"] = False
+    faces = measure["faces"]
+
+    # plane#N -> face tag (N counts PLANE faces in face-list order)
+    plane_tag = []
+    for f in faces:
+        if f.get("type") == ms.PLANE:
+            plane_tag.append(int(f["tag"]))
+    groups = list(measure.get("cylinders", [])) + \
+        list(measure.get("cones", []))
+    group_faces = [set(int(t) for t in g["faces"]) for g in groups]
+
+    fillet_faces = set(int(t) for t in (fillet_faces or ()))
+
+    def stations_of(face_set):
+        ids = []
+        for i, st in enumerate(out["stations"]):
+            for s in st.get("sources", []):
+                if s.startswith("plane#"):
+                    k = int(s.split("#")[1])
+                    if k < len(plane_tag) and plane_tag[k] in face_set:
+                        ids.append(i)
+                        break
+                elif s.startswith("axis#"):
+                    gi = int(s.split("#")[1])
+                    if gi < len(group_faces) and group_faces[gi] and \
+                            group_faces[gi] <= face_set:
+                        ids.append(i)
+                        break
+        return ids
+
+    fam_of = {}
+    for i, st in enumerate(out["stations"]):
+        key = ms._axis_key(st["normal"])
+        fam_of[i] = key
+        if st.get("kind") == "axis":
+            gis = [int(s.split("#")[1]) for s in st.get("sources", [])
+                   if s.startswith("axis#")]
+            if gis and all(gi < len(group_faces) and group_faces[gi] and
+                           group_faces[gi] <= fillet_faces for gi in gis):
+                st["primary_fillet_class"] = "fillet"
+            else:
+                st["primary_fillet_class"] = "primary"
+        else:
+            st["primary_fillet_class"] = "primary"
+        st["station_kind"] = st.get("kind")
+
+    overall_families = sorted(set(fam_of.values()))
+    out["plane_families"] = overall_families
+    out["families_ok"] = len(overall_families) >= min_families
+    out["min_families"] = min_families
     if not structures:
+        out["structure_coverage"] = {}
+        out["missing"] = []
+        out["complete"] = bool(out["stations"])
+        out["plan_quality_ok"] = out["complete"] and out["families_ok"]
         return out
-    ext = []
+
+    cover = {}
+    detail = {}
     for s in structures:
-        b = s.get("bbox")
-        if not b:
-            continue
-        ext.append({"id": s["id"],
-                    "bbox": [b[0] - 0.5, b[1] - 0.5, b[2] - 0.5,
-                             b[3] + 0.5, b[4] + 0.5, b[5] + 0.5]})
-    cover = dict((s["id"], 0) for s in ext)
-    for st in out["stations"]:
-        o = st["origin"]
-        for s in ext:
-            b = s["bbox"]
-            if b[0] <= o[0] <= b[3] and b[1] <= o[1] <= b[4] and \
-                    b[2] <= o[2] <= b[5]:
-                cover[s["id"]] += 1
-                st.setdefault("structures", []).append(s["id"])
+        sid = s.get("id")
+        fs = set(int(t) for t in (s.get("faces") or ()))
+        ids = stations_of(fs) if fs else []
+        cover[sid] = len(ids)
+        hits = 0
+        for i in ids:
+            st = out["stations"][i]
+            st.setdefault("structures", []).append(sid)
+        if s.get("bbox"):
+            for st in out["stations"]:
+                n = _unit([float(x) for x in st["normal"]])
+                off = _dot([float(x) for x in st["origin"]], n)
+                if _plane_bbox_hit(n, off, [float(x) for x in s["bbox"]]):
+                    hits += 1
+        fams = sorted(set(fam_of[i] for i in ids))
+        detail[sid] = {"stations": ids, "n_stations": len(ids),
+                       "plane_families": fams,
+                       "n_families": len(fams),
+                       "bbox_plane_hit": hits,
+                       "has_faces": bool(fs)}
     out["structure_coverage"] = cover
-    out["missing"] = sorted([k for k, v in cover.items() if v == 0])
+    out["structure_detail"] = detail
+    missing = sorted([k for k, v in cover.items() if v == 0])
+    out["missing"] = missing
+    out["missing_families"] = sorted(
+        [k for k, v in detail.items() if v["n_families"] < min_families])
+    # complete = every structure is sampled by at least one station;
+    # families_ok = the table spans enough normal families that a shape error
+    # cannot hide in a degenerate one-family plan.  Reported separately: a part
+    # with a single plane family is fully covered yet still a weak plan.
+    out["complete"] = bool(out["stations"]) and not missing
+    out["plan_quality_ok"] = out["complete"] and out["families_ok"]
     return out
 
 
@@ -450,12 +566,15 @@ def station_partition(measure, plan, fillet_faces):
     return out
 
 
-def validate_structure_table(structures, measure, tol=0.05):
-    """冻结结构表校验：面 tag 存在、bbox 可复算、结构间不重叠。
+def validate_structure_table(structures, measure, tol=0.05,
+                             allow_unassigned=None):
+    """冻结结构表校验：面 tag 存在、bbox 可复算、结构间不重叠、面无遗漏。
 
-    返回 {errors, warnings, rows}。errors 是硬错误（未知面、面被两个结构
-    同时占用、bbox 与实测差 > tol）；warnings 是覆盖率提示（结构无面、
-    面未分配）。
+    返回 {errors, warnings, rows, unassigned, complete}。**errors 是硬错误**：
+    未知面、面被两个结构同时占用、bbox 与实测差 > tol、结构无面、以及
+    未被任何结构解释的功能面（`allow_unassigned` 可显式列出允许豁免的面，
+    例如测量辅助面）。把未分配面只写成 warnings，会让"结构覆盖大量为空"
+    照样通过验证。
     """
     faces = measure["faces"]
     by_tag = dict((f["tag"], f) for f in faces)
@@ -490,14 +609,55 @@ def validate_structure_table(structures, measure, tol=0.05):
                      "bbox_delta": (round(bbox_delta, 6)
                                     if bbox_delta is not None else None)})
         if not tags:
-            warnings.append({"structure": s.get("id"), "reason": "no faces"})
-    unassigned = sorted(set(by_tag) - set(used))
+            errors.append({"structure": s.get("id"), "reason": "no faces"})
+    exempt = set(int(t) for t in (allow_unassigned or ()))
+    unassigned = sorted(set(by_tag) - set(used) - exempt)
     if unassigned:
-        warnings.append({"reason": "faces not assigned",
-                         "count": len(unassigned),
-                         "sample": unassigned[:20]})
+        errors.append({"reason": "faces not assigned to any structure",
+                       "count": len(unassigned),
+                       "sample": unassigned[:20]})
+    if exempt:
+        warnings.append({"reason": "faces explicitly exempted",
+                         "count": len(exempt & set(by_tag)),
+                         "sample": sorted(exempt & set(by_tag))[:20]})
     return {"errors": errors, "warnings": warnings, "rows": rows,
-            "assigned_faces": len(used), "total_faces": len(faces)}
+            "assigned_faces": len(used), "total_faces": len(faces),
+            "unassigned": unassigned, "complete": not errors}
+
+
+def validate_feature_mapping(part, structures):
+    """特征名 → 结构 id 的映射校验（G9 的分母来源）。
+
+    每个结构 id 至少要有一个以该 id 开头的特征名；空特征名记错。只数特征
+    总数会让"74 个无名 extrude"通过。
+    """
+    ids = []
+    for s in structures or []:
+        if isinstance(s, dict) and s.get("id"):
+            ids.append(s["id"])
+    names = []
+    unnamed = []
+    for f in part.Features:
+        try:
+            nm = f.Name or ""
+        except Exception:
+            nm = ""
+        names.append(nm)
+        if not nm.strip():
+            unnamed.append(int(getattr(f, "Tag", 0)))
+    unmapped = [sid for sid in ids
+                if not any(nm.startswith(sid) for nm in names)]
+    errors = []
+    if unnamed:
+        errors.append({"reason": "features with empty names",
+                       "count": len(unnamed), "sample": unnamed[:20]})
+    if unmapped:
+        errors.append({"reason": "structures without a named feature",
+                       "structures": unmapped})
+    return {"errors": errors, "structure_ids": ids,
+            "mapped": len(ids) - len(unmapped), "unmapped": unmapped,
+            "unnamed": unnamed, "feature_count": len(names),
+            "complete": not errors}
 
 
 def schema_skeleton(structures, params, build_order=None):

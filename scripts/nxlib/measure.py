@@ -413,7 +413,8 @@ def _end_faces(group_faces, d, p0, all_faces):
 
 
 def hole_params(group):
-    """圆柱组的孔参数：直径/轴/中心/轴向长度/端面。中心取组包盒中心（G2 口径）。"""
+    """圆柱组的孔参数：直径/轴/中心/轴向长度/端面。中心是组轴向中点
+    （`group_coaxial` 给的轴线上一点），不是包盒中心（包盒在 `group["bbox"]`）。"""
     return {
         "diameter": 2.0 * group["radius"],
         "radius": group["radius"],
@@ -868,13 +869,21 @@ def g7_reachability(ref_runs, built_faces, radius_tol=0.025,
                         if g["ref_faces"] else 0.0)
     ceilings = [g["ceiling"] for g in groups.values()]
     ceiling = min(ceilings) if ceilings else 1.0
+    # `evidence` is the only thing that may set BLOCKED: an empty list means the
+    # ceiling ratio is a diagnostic, not a verdict.  Per-runway unreachability
+    # (support width below 2R+0.5, dihedral outside 20-160 deg, or an edge that
+    # a previous blend consumed) is filled in by the transition planner
+    # (references/reverse-engineering.md section 9); the ratio alone cannot
+    # prove a runway unreachable.
     return {
         "groups": sorted(groups.values(), key=lambda r: -r["ref_faces"]),
         "ceiling": ceiling,
         "ceiling_min": ceiling_min,
         "min_len_factor": min_len_factor,
-        "ceiling_basis": "reference fillet runs / reference fillet faces",
-        "blocked": bool(ceilings) and any(c < ceiling_min for c in ceilings),
+        "ceiling_basis": ("reference fillet runs / reference fillet faces "
+                          "(diagnostic only)"),
+        "blocked": False,
+        "evidence": [],
         "eligible_edges_total": len(edges),
         "edge_length_min": min(edges) if edges else None,
     }
@@ -966,12 +975,56 @@ def g4_blocked_reason(part, axis_index, side, delta, limit,
     }
 
 
+def _is_default_feature_name(name):
+    """NX 自动特征名（`Extrude(3)` / `Revolve(1)` / `Boss(2)`）。
+
+    这类名字不带结构 id，且空名同样是"没有结构归属"。只数特征总数的 G9
+    会放过一整套默认名的 extrude 栈。
+    """
+    if not name:
+        return True
+    nm = name.strip()
+    if not nm.endswith(")"):
+        return False
+    i = nm.rfind("(")
+    if i <= 0:
+        return False
+    head = nm[:i]
+    digits = nm[i + 1:-1]
+    if not digits.isdigit():
+        return False
+    return head.replace("_", "").replace(" ", "").isalpha()
+
+
 def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
                  type_share=0.50, max_depth=8, min_features_share=8):
-    """G9 特征树结构：特征数/结构数同量级，禁止逐层截面站栈。"""
+    """G9 特征树结构：特征数/结构数同量级，禁止逐层截面站栈。
+
+    `structures` 可以是结构数（int，调用方自证）或冻结结构表（list of
+    {id,...}/`schema_skeleton` 的 dict）。给表时每个结构 id 必须至少有一个
+    以该 id 开头的特征名，且特征不得为空名——只报特征数的 G9 会放过“74 个
+    无名 extrude”的交付件。
+    """
+    ids = []
+    source = "caller-int"
+    if isinstance(structures, dict):
+        ids = [s.get("id") for s in (structures.get("structures") or [])
+               if s.get("id")]
+        n_structures = len(ids)
+        source = "structure_table"
+    elif isinstance(structures, (list, tuple)):
+        ids = [s.get("id") for s in structures
+               if isinstance(s, dict) and s.get("id")]
+        n_structures = len(ids)
+        source = "structure_table"
+    else:
+        n_structures = int(structures)
     feats = list(part.Features)
     by_type = {}
     parents = {}
+    names = []
+    unnamed = []
+    default_named = []
     for f in feats:
         try:
             typ = str(f.FeatureType)
@@ -982,6 +1035,15 @@ def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
             parents[int(f.Tag)] = [int(p.Tag) for p in f.GetParents()]
         except Exception:
             parents[int(f.Tag)] = []
+        try:
+            nm = f.Name or ""
+        except Exception:
+            nm = ""
+        names.append(nm)
+        if not nm.strip():
+            unnamed.append(int(getattr(f, "Tag", 0)))
+        elif _is_default_feature_name(nm):
+            default_named.append(int(getattr(f, "Tag", 0)))
     memo = {}
 
     def depth(tag, stack):
@@ -1006,9 +1068,11 @@ def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
                      "SWEEP", "SWEPT")
     station_like = sum(n for t, n in by_type.items()
                        if any(t.upper().startswith(x) for x in station_types))
-    limit = feature_factor * float(structures) + feature_offset
+    limit = feature_factor * float(n_structures) + feature_offset
     station_stack = (feature_count > 24 and
                      station_like > 0.5 * feature_count)
+    unmapped = [sid for sid in ids
+                if not any(nm.startswith(sid) for nm in names)]
     reasons = []
     if feature_count > limit:
         reasons.append("features %d > %.1f" % (feature_count, limit))
@@ -1019,17 +1083,32 @@ def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
     if station_stack:
         reasons.append("station-like features %d/%d" %
                        (station_like, feature_count))
+    if unnamed:
+        reasons.append("%d features have empty names" % len(unnamed))
+    elif feature_count >= min_features_share and \
+            len(default_named) == feature_count:
+        reasons.append("all %d features carry NX default names (no structure "
+                       "mapping)" % feature_count)
+    if unmapped:
+        reasons.append("structures without a named feature: %s"
+                       % ",".join(unmapped))
     return {
         "feature_count": feature_count,
-        "structure_count": int(structures),
+        "structure_count": int(n_structures),
+        "structure_count_source": source,
+        "structure_ids": ids,
         "feature_limit": limit,
-        "ratio": (feature_count / float(structures) if structures else None),
+        "ratio": (feature_count / float(n_structures)
+                  if n_structures else None),
         "max_type_share": max_share,
         "max_type": max(by_type, key=by_type.get) if by_type else None,
         "min_features_share": min_features_share,
         "station_like": station_like,
         "tree_depth": max_depth_seen,
         "types": by_type,
+        "unnamed": unnamed,
+        "default_named_count": len(default_named),
+        "unmapped_structures": unmapped,
         "reasons": reasons,
         "pass": not reasons,
     }
@@ -1912,9 +1991,13 @@ def section_iou(mesh_a, mesh_b, origin, normal, step=None, weld=1e-4):
                 us.append(u)
                 vs.append(v)
     if not us:
-        return {"iou": 1.0 if not ob["loops"] else 0.0,
+        # Neither side produced a loop.  IoU is undefined, not 1.0: an
+        # empty/empty raster used to report a perfect match and pass a gate.
+        return {"iou": None,
                 "area_a": oa["area"], "area_b": ob["area"],
-                "area_inter": 0.0, "area_union": 0.0, "step": 0.0}
+                "area_inter": 0.0, "area_union": 0.0, "step": 0.0,
+                "empty_a": not oa["loops"], "empty_b": not ob["loops"],
+                "both_empty": True}
     umin, umax, vmin, vmax = min(us), max(us), min(vs), max(vs)
     diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
     if step is None:
@@ -1931,12 +2014,15 @@ def section_iou(mesh_a, mesh_b, origin, normal, step=None, weld=1e-4):
     area_inter = inter * step
     area_union = union * step
     return {
-        "iou": (area_inter / area_union) if area_union > 0.0 else 1.0,
+        "iou": ((area_inter / area_union) if area_union > 0.0 else None),
         "area_a": oa["area"],
         "area_b": ob["area"],
         "area_inter": area_inter,
         "area_union": area_union,
         "step": step,
+        "empty_a": not oa["loops"],
+        "empty_b": not ob["loops"],
+        "both_empty": False,
     }
 
 
@@ -2370,6 +2456,25 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
     }
 
 
+def _coplanar_faces(mesh, origin, normal, tol=1e-6):
+    """网格里与切平面共面的三角面数：分辨"空截面"是共面伪影还是真空。
+
+    STL 截面按"三角面跨过切平面"求交，共面三角面（三个顶点都落在平面上）
+    既不跨过也不产生交线；面表平面站正好落在原件某个平面面上，于是量成
+    空截面，而原件在该站其实有材料。这个计数只用于给空站分类，不参与
+    形状判定。
+    """
+    n = _canon(normal)
+    off = _dot(origin, n)
+    cnt = 0
+    for _, v0, v1, v2 in mesh:
+        if (abs(_dot(v0, n) - off) <= tol and
+                abs(_dot(v1, n) - off) <= tol and
+                abs(_dot(v2, n) - off) <= tol):
+            cnt += 1
+    return cnt
+
+
 def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
                    area_err_max_pct=5.0):
     """逐站截面 IoU / 面积差 / 缺料与多料面积；plan 取 station_plan 的返回值。
@@ -2377,11 +2482,20 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     `only_a` 是原件有、自建件缺的面积，`only_b` 是自建件多出的面积
     （单位随网格）。面积差只能说明总量，修结构时按 `only_a/only_b` 区分
     漏建与过建。
+
+    每站四态：两侧截面都空 → `status="N/A"`（该站没有读数，既不判 PASS
+    也不判 FAIL），并给出 `na_reason`：`coplanar_section`（切平面与原件
+    某个平面面共面，STL 求交看不到交线，是仪器限制）或 `no_material`
+    （该站确实没有材料，是站表覆盖缺口）。`pass` 只回答"有读数的站里
+    有没有 FAIL"；空站的覆盖完整性看 `plan_measured_complete`/`unmeasured`
+    ——判定链（`station_report_hybrid`、`verify_parts` 的 G1）对平面站改用
+    B-rep 精确截面，并把仍未测到的站判失败，所以空站不会静默通过。
     """
     stations = plan["stations"] if isinstance(plan, dict) else plan
     dropped = plan.get("dropped", 0) if isinstance(plan, dict) else 0
     rows = []
     failed = []
+    na = []
     for i, st in enumerate(stations):
         res = section_iou(mesh_a, mesh_b, st["origin"], st["normal"])
         aa, ab = res["area_a"], res["area_b"]
@@ -2389,7 +2503,17 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             err = abs(ab - aa) / abs(aa) * 100.0
         else:
             err = 0.0 if abs(ab) <= 1e-9 else 100.0
-        ok = res["iou"] >= iou_min and err <= area_err_max_pct
+        na_reason = None
+        if res.get("both_empty"):
+            status = "N/A"
+            ok = False
+            na_reason = ("coplanar_section"
+                         if _coplanar_faces(mesh_a, st["origin"],
+                                            st["normal"]) else "no_material")
+        else:
+            ok = (res["iou"] is not None and res["iou"] >= iou_min and
+                  err <= area_err_max_pct)
+            status = "PASS" if ok else "FAIL"
         rows.append({
             "index": i,
             "origin": list(st["origin"]),
@@ -2403,10 +2527,16 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             "only_a": max(0.0, aa - res["area_inter"]),
             "only_b": max(0.0, ab - res["area_inter"]),
             "area_err_pct": err,
+            "status": status,
+            "na_reason": na_reason,
             "pass": ok,
         })
-        if not ok:
+        if status == "FAIL":
             failed.append(i)
+        elif status == "N/A":
+            na.append(i)
+    coplanar = [r["index"] for r in rows
+                if r["na_reason"] == "coplanar_section"]
     reasons = []
     if not rows:
         reasons.append("no stations")
@@ -2414,13 +2544,22 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
         reasons.append("%d stations skipped by budget (sampling)" % dropped)
     if failed:
         reasons.append("%d stations failed" % len(failed))
+    if na:
+        reasons.append("%d stations unmeasured (%d coplanar plane stations, "
+                       "%d no material at the station)"
+                       % (len(na), len(coplanar), len(na) - len(coplanar)))
     return {
         "stations": rows,
         "count": len(rows),
         "failed": failed,
+        "na": na,
+        "unmeasured": list(na),
+        "instrument_errors": coplanar,
+        "measured_count": len(rows) - len(na),
         "dropped": dropped,
         "budget_skipped": dropped,
         "plan_complete": (bool(rows) and dropped == 0),
+        "plan_measured_complete": (bool(rows) and dropped == 0 and not na),
         "iou_min": iou_min,
         "area_err_max_pct": area_err_max_pct,
         "reasons": reasons,
@@ -2473,10 +2612,10 @@ def _polygons_iou(pa, pb):
         ab += lb
         inter += ia
         union += la + lb - ia
-    return {"iou": inter / union if union > 0 else 1.0,
+    return {"iou": (inter / union if union > 0 else None),
             "area_a": aa * step, "area_b": ab * step,
             "area_inter": inter * step, "area_union": union * step,
-            "step": step}
+            "step": step, "empty": False}
 
 
 def brep_section_iou(part_a, part_b, origin, normal,
@@ -2496,7 +2635,8 @@ def brep_section_iou(part_a, part_b, origin, normal,
     else:
         err = 0.0 if abs(ab) <= 1e-9 else 100.0
     open_ok = allow_open or (sa["open"] == 0 and sb["open"] == 0)
-    ok = (ca["iou"] >= iou_min and err <= area_err_max_pct and open_ok and
+    ok = (ca["iou"] is not None and ca["iou"] >= iou_min and
+          err <= area_err_max_pct and open_ok and
           not ca.get("empty", False))
     return {
         "iou": ca["iou"],
@@ -2524,6 +2664,11 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
     STL 切面在切平面与模型平面共面时会漏/重算三角面，不能把该站读数
     当形状判据；B-rep 原样站位（不偏移）才是平面站的判定口径。两者
     使用同一组阈值。
+
+    `station_report` 把空站记成 N/A 并放过（它只回答"有读数的站有没有
+    FAIL"）；这里把平面站换成 B-rep 读数，剩下的空站就是判定口径上的
+    覆盖缺口——`pass` 要求既无 FAIL 也无 N/A，`no_material` 与
+    `coplanar_section` 都进 `reasons`。
     """
     base = station_report(mesh_a, mesh_b, plan, iou_min, area_err_max_pct)
     rows = base["stations"]
@@ -2539,13 +2684,38 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
                                     st["normal"], iou_min,
                                     area_err_max_pct))
         row["section_mode"] = "brep"
+        # the B-rep reading replaces the STL reading for this station, so the
+        # coplanar reason goes with it
+        row["na_reason"] = None
+        row["status"] = "PASS" if row["pass"] else "FAIL"
         brep_count += 1
     failed = [r["index"] for r in rows if not r["pass"]]
+    na = [r["index"] for r in rows if r.get("status") == "N/A"]
+    coplanar = [r["index"] for r in rows
+                if r.get("status") == "N/A"
+                and r.get("na_reason") == "coplanar_section"]
     base["stations"] = rows
     base["failed"] = failed
-    base["pass"] = base["pass"] and not failed
+    base["na"] = na
+    base["unmeasured"] = list(na)
+    base["instrument_errors"] = coplanar
+    base["measured_count"] = len(rows) - len(na)
+    base["plan_measured_complete"] = bool(rows) and not na
+    # B-rep rows supersede the STL rows on plane stations, so the verdict is
+    # recomputed from the final rows.  ANDing with the STL verdict let a
+    # coplanar STL artefact veto a station the B-rep cut judged correct.
+    base["pass"] = bool(rows) and not failed and not na
     base["brep_plane_count"] = brep_count
     base["stl_axis_count"] = len(rows) - brep_count
+    reasons = [r for r in base["reasons"]
+               if "stations failed" not in r and "stations unmeasured" not in r]
+    if failed:
+        reasons.append("%d stations failed" % len(failed))
+    if na:
+        reasons.append("%d stations unmeasured (%d coplanar plane stations, "
+                       "%d no material at the station)"
+                       % (len(na), len(coplanar), len(na) - len(coplanar)))
+    base["reasons"] = reasons
     return base
 
 
@@ -2577,20 +2747,23 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
                  section_iou_min=0.95, section_area_pct=5.0,
                  ref_a=None, ref_b=None, g7="auto", g7_radii=None,
-                 g7_ceiling=None, g9=False, structure_count=None,
+                 g7_ceiling=None, g9=True, structure_count=None,
+                 g8=True, design=None, derived=None, factor=1.1,
                  g9_feature_factor=4.0, g9_feature_offset=12,
                  g9_type_share=0.50, g9_depth=8, blocked_g4=True,
                  g4_corner_radius=None):
     """原件/自建件几何门 G0–G9 一次汇总（G2–G9 长度换算到毫米）。
 
     G0 要求两件都是单实体且面表可读；G1 的面表平面站用 B-rep 精确截面，
-    其余站用 STL 截面，空站表/未闭合环判失败，`max_stations` 预算截断只
-    报 `budget_skipped`/`plan_complete`（采样范围，不判失败）；G2 用
+    其余站用 STL 截面，空站表/未闭合环/两侧皆空的站判失败或 N/A，
+    `max_stations` 预算截断只报 `budget_skipped`/`plan_complete`，但
+    `plan_complete=false` 时 G1 **不通过**（未覆盖不等于覆盖）；G2 用
     `hole_audit` 的分母（功能孔 + 独立锥孔），按几何键匹配；G3–G6 按毫米
-    换算；G7 默认 `auto`（参考件有圆角面才计算），半径组取环面 rad_data
-    （纯圆柱半径组只作 `unjudged_radii` 诊断），先算可达上限，低于 70% 时
-    记 BLOCKED 而不是伪装 PASS/FAIL；G9 默认关闭，逆向验收显式 `g9=True`
-    并传结构表的 `structure_count`（缺省判 FAIL，不拿
+    换算；G7 默认 `auto`（参考件有环面才计算，纯圆柱半径组只进
+    `unjudged_radii`，需要判圆柱圆角时显式传 `g7_radii`），状态先看可达性
+    证据再判覆盖，无逐跑道证据时不记 BLOCKED；G8 逐条改命名表达式量体积
+    （`design` 给了就与声明对账，missing/dead/broken 任一非空即失败）；
+    G9 默认开启，结构数只能来自结构表（缺省判 FAIL，不拿
     `structure_directory` 的逐面组数当分母）。每门带
     `status: PASS|FAIL|BLOCKED|N/A`；总 `pass` 只对全 PASS（或 N/A）为真，
     `delivery_pass` 在任一 BLOCKED 时为 false。
@@ -2616,6 +2789,13 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     else:
         sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
                                     section_iou_min, section_area_pct)
+    if not sec.get("plan_complete", True):
+        sec["pass"] = False
+        sec["status"] = "FAIL"
+        sec["reasons"] = list(sec.get("reasons", [])) + [
+            "station plan incomplete (%d dropped, %d na): uncovered is not "
+            "covered" % (sec.get("dropped", 0), len(sec.get("na", [])))]
+    sec.setdefault("status", "PASS" if sec.get("pass") else "FAIL")
     audit_o = hole_audit(mo, part_o)
     audit_b = hole_audit(mb, part_b)
     if ref_a is None:
@@ -2658,7 +2838,11 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                     r = round(abs(f.get("radius", 0.0)), 3)
                     if r > 1e-6:
                         cyl_hist[r] = cyl_hist.get(r, 0) + 1
-            ref_radii = sorted(torus_hist) if torus_hist else sorted(cyl_hist)
+            ref_radii = sorted(torus_hist)
+            # pure cylinder radii mix bore walls, bosses and outer diameters;
+            # using them as the goal radius pool let G7 judge a part against
+            # its own holes.  They stay diagnostics, and cylinder-based
+            # fillets must be declared through g7_radii.
             unjudged_radii = sorted(set(cyl_hist) - set(ref_radii))
     ref_runs = []
     built_runs = []
@@ -2678,15 +2862,21 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                               run_frac=0.70, radius_tol=0.025)
         reach = g7_reachability(ref_runs, mb["faces"], radius_tol=0.025)
         if g7_ceiling is not None:
+            # override the reported ceiling (diagnostic) only; it does not set
+            # BLOCKED, which now requires per-runway topology evidence
             reach["ceiling"] = float(g7_ceiling)
-            reach["blocked"] = reach["ceiling"] < 0.70
             reach["override"] = True
         ref_faces = sum(r["nfaces"] for r in ref_runs)
         built_faces = sum(r["nfaces"] for r in built_runs)
         raw_cov = built_faces / float(ref_faces) if ref_faces else 0.0
+        # BLOCKED needs explicit per-runway topology evidence that a runway is
+        # unreachable; the ceiling ratio alone (runs/faces) says nothing about
+        # whether a correct build can cover the fillet, and scoring it as
+        # BLOCKED made the reference solution itself un-passable.
+        evidence = [e for e in (reach.get("evidence") or []) if e.get("reason")]
         if cov["pass"]:
             status = "PASS"
-        elif reach["blocked"]:
+        elif evidence:
             status = "BLOCKED"
         else:
             status = "FAIL"
@@ -2697,11 +2887,52 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
             "raw": {"ref_faces": ref_faces, "built_faces": built_faces,
                     "coverage": raw_cov, "note": "report only"},
             "reach": reach,
+            "unreachable_evidence": evidence,
             "ref_radii": ref_radii,
             "unjudged_radii": unjudged_radii,
-                "reason": ("reachability ceiling %.3f < 0.70" %
-                           reach["ceiling"] if status == "BLOCKED" else None),
+                "reason": ("unreachable runways with evidence: %d"
+                           % len(evidence) if status == "BLOCKED" else None),
         }
+
+    # G8: every named expression must actually drive the model, and every
+    # declared design parameter must be built.  Without this gate a delivery
+    # full of dead parameters or literal-value features passes G0-G7.
+    if g8:
+        g8_survey = expression_survey(part_b, factor=factor)
+        if isinstance(design, dict):
+            declared_names = []
+            for nm in design.values():
+                declared_names.extend(nm)
+        elif isinstance(design, (list, tuple)):
+            declared_names = list(design)
+        else:
+            declared_names = []
+        named_set = set(g8_survey["named"])
+        dead_set = set(g8_survey["dead"])
+        skipped_set = set(g8_survey["skipped"])
+        broken_set = set(b.get("name") for b in g8_survey["broken"])
+        missing = [n for n in declared_names if n not in named_set]
+        declared_dead = [n for n in declared_names if n in dead_set]
+        declared_broken = [n for n in declared_names if n in broken_set]
+        declared_skipped = [n for n in declared_names if n in skipped_set]
+        g8_pass = (bool(g8_survey.get("pass", False)) and not missing and
+                   not declared_dead and not declared_broken and
+                   not declared_skipped)
+        g8_gate = {
+            "status": "PASS" if g8_pass else "FAIL", "pass": g8_pass,
+            "bodies": len(list(part_b.Bodies)),
+            "alerts": len(g8_survey.get("alerts") or []),
+            "named": len(g8_survey["named"]),
+            "alive_ratio": g8_survey.get("alive_ratio"),
+            "dead": g8_survey["dead"], "broken": g8_survey["broken"],
+            "skipped": g8_survey["skipped"],
+            "declared": declared_names, "missing": missing,
+            "declared_dead": declared_dead, "declared_broken": declared_broken,
+            "declared_skipped": declared_skipped,
+            "derived": list(derived or []),
+        }
+    else:
+        g8_gate = {"status": "N/A", "pass": True, "reason": "g8 off"}
 
     g4_axes = []
     g4_fail = pos_d > bbox_pos_mm or size_d > bbox_size_mm
@@ -2793,6 +3024,7 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                "iou_min": view_iou_min},
         "G6": dev,
         "G7": g7_gate,
+        "G8": g8_gate,
         "G9": g9_gate,
     }
     for key, gate in gates.items():

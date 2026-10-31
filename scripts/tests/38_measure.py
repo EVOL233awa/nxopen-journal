@@ -58,7 +58,8 @@ from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            hole_params, cone_params, measure_part, mesh_bbox,
                            read_stl, mesh_deviation, sample_surface,
                            section_area, section_iou, station_plan,
-                           station_report, verify_parts, view_iou)
+                           station_report, station_report_hybrid,
+                           verify_parts, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -376,18 +377,50 @@ def main():
           (plan["count"], plan["plane_count"], plan["axis_count"],
            sorted(set(normals))))
     rep = station_report(mesh, mesh, plan)
+    say("self stations=%d measured=%d failed=%r unmeasured=%r instrument=%r"
+        % (rep["count"], rep["measured_count"], rep["failed"],
+           rep["unmeasured"], rep["instrument_errors"]))
+    say("self reasons=%r" % (rep["reasons"],))
+    # 空站只准出现在平面站上，且必须被归到"共面伪影"：站位来自某个平面面，
+    # 原件在该处确实有材料，只是 STL 求交看不到共面交线。
+    empty = [r for r in rep["stations"] if r["status"] == "N/A"]
     check("REG_STATION_SELF",
           rep["pass"] and rep["count"] == plan["count"] and
+          rep["measured_count"] + len(rep["unmeasured"]) == rep["count"] and
+          all(r["na_reason"] is not None for r in empty) and
+          all(r["na_reason"] is None for r in rep["stations"]
+              if r["status"] != "N/A") and
+          all(r["na_reason"] == "coplanar_section" and
+              any(str(s).startswith("plane#") for s in r["sources"])
+              for r in empty) and
+          rep["plan_measured_complete"] is (not empty) and
           all(abs(r["iou"] - 1.0) < 1e-9 and
               r["only_a"] <= max(1.0, 0.01 * abs(r["area_a"])) and
               r["only_b"] <= max(1.0, 0.01 * abs(r["area_b"]))
-              for r in rep["stations"]),
-          "self station report count=%d failed=%d max only=%.3e/%.3e" %
-          (rep["count"], len(rep["failed"]),
+              for r in rep["stations"] if r["status"] == "PASS"),
+          "self station report count=%d failed=%d unmeasured=%r max only="
+          "%.3e/%.3e" %
+          (rep["count"], len(rep["failed"]), rep["unmeasured"],
            max(r["only_a"] for r in rep["stations"]),
            max(r["only_b"] for r in rep["stations"])))
+    # 判定口径（平面站换 B-rep）必须把每一站都量出来：STL 的共面空站在这里
+    # 不存在，剩下的空站就是真覆盖缺口。
+    reph = station_report_hybrid(mesh, mesh, part, part, plan)
+    say("hybrid self brep=%d stl=%d unmeasured=%r instrument=%r"
+        % (reph["brep_plane_count"], reph["stl_axis_count"],
+           reph["unmeasured"], reph["instrument_errors"]))
+    check("REG_STATION_HYBRID_SELF",
+          reph["pass"] and not reph["unmeasured"] and
+          reph["brep_plane_count"] == plan["plane_count"] and
+          reph["stl_axis_count"] == plan["axis_count"] and
+          reph["plan_measured_complete"] is True,
+          "the judging caliber must measure every planned station: brep=%d "
+          "plane=%d stl=%d axis=%d unmeasured=%r" %
+          (reph["brep_plane_count"], plan["plane_count"],
+           reph["stl_axis_count"], plan["axis_count"], reph["unmeasured"]))
 
-    ver = verify_parts(part_path, part_path, samples=800, max_stations=48)
+    ver = verify_parts(part_path, part_path, samples=800, max_stations=48,
+                       g8=False, g9=False)
     check("REG_VERIFY_SELF",
           ver["pass"] and ver["gates"]["G1"]["pass"] and
           ver["gates"]["G1"].get("brep_plane_count", 0) >= 1 and
@@ -400,6 +433,21 @@ def main():
            ver["stations"]["count"],
            ver["gates"]["G1"].get("brep_plane_count", 0)))
 
+    # the default call must carry G8 and G9 and must not pass without a
+    # structure table / a live parameter set
+    vdef = verify_parts(part_path, part_path, samples=200, max_stations=12)
+    say("verify_parts default gates=%s statuses=%s"
+        % (sorted(vdef["gates"]), vdef["statuses"]))
+    check("REG_VERIFY_HAS_G8_G9",
+          "G8" in vdef["gates"] and "G9" in vdef["gates"] and
+          vdef["gates"]["G9"]["status"] == "FAIL",
+          "G9 must default on and fail without a structure table: %r"
+          % vdef["gates"]["G9"])
+    check("REG_VERIFY_DEFAULT_NOT_PASS",
+          vdef["pass"] is False and vdef["delivery_pass"] is False,
+          "a delivery missing G9 evidence must not report pass: %r"
+          % vdef["statuses"])
+
     fake_faces = [{"type": PLANE, "point": [0.0, 0.0, float(i)],
                    "dir": [0.0, 0.0, 1.0]} for i in range(40)]
     fake_groups = [{"point": [float(i), 0.0, 0.0], "axis": [1.0, 0.0, 0.0],
@@ -410,15 +458,21 @@ def main():
     thin_full = dict(plan)
     thin_full["dropped"] = 7
     thin_rep = station_report(mesh, mesh, thin_full)
+    # 预算截断是采样范围，不是几何剔除：有读数的站仍按形状判（这里自比全
+    # PASS），但 `plan_complete`/`plan_measured_complete` 必须同时为假，
+    # 调用方不能把"没量到的站"当成"量过没问题"。
     check("REG_STATION_BUDGET",
           thin["count"] <= 12 and thin["plane_count"] >= 1 and
           thin["axis_count"] >= 1 and not thin["complete"] and
           thin["dropped"] > 0 and thin_rep["pass"] and
           thin_rep["budget_skipped"] == 7 and
-          thin_rep["plan_complete"] is False,
-          "budget=12 stations=%d plane=%d axis=%d dropped=%d report_pass=%s" %
+          thin_rep["plan_complete"] is False and
+          thin_rep["plan_measured_complete"] is False,
+          "budget=12 stations=%d plane=%d axis=%d dropped=%d report_pass=%s "
+          "measured_complete=%s" %
           (thin["count"], thin["plane_count"], thin["axis_count"],
-           thin["dropped"], thin_rep["pass"]))
+           thin["dropped"], thin_rep["pass"],
+           thin_rep["plan_measured_complete"]))
 
     # B-rep section, not STL: block minus two D10 holes at z=10.
     feat_before = len(list(part.Features))

@@ -47,16 +47,18 @@ graph TD
 graph LR
   O[原件] --> V
   B[建成件] --> V
-  V["verify_parts<br>G0–G6"] --> J["每门 PASS/FAIL/BLOCKED/N/A"]
-  V --> G7["G7 双轨<br>ceiling + G7geo/G7raw"]
-  V --> G9["G9 特征树结构<br>4N+12"]
+  V["verify_parts<br>G0–G9"] --> J["每门 PASS/FAIL/BLOCKED/N/A"]
+  V --> G7["G7 双轨<br>跑道覆盖 + 可达性证据"]
+  V --> G8["G8 可编辑性<br>声明对账 + 命名表达式"]
+  V --> G9["G9 特征树结构<br>4N+12 + 结构名册"]
   J --> D["delivery_pass<br>任一 BLOCKED 即 false"]
 ```
 
-验收项的机器键、阈值、数据源与"抓什么错"逐项钉在 `references/reverse-engineering.md` §4.1 的表里。两条设计原则：
+验收项的机器键、阈值、数据源与"抓什么错"逐项钉在 `references/reverse-engineering.md` §4.1 的表里。三条设计原则：
 
 - 四态判定。`BLOCKED` 只用于几何不可达且已给出上限与残差分解的项，不等于通过（`references/reverse-engineering.md` §4.1（四态判定））。
 - 分母不能是自选站。G1 用原件结构分界全集，G7 用同半径跑道数，G9 用结构表行数，三者都不是"我建了几个面/几个特征"。
+- G8/G9 默认开启且只能来自结构表：G9 缺结构表直接 FAIL（不拿逐面组数当分母），G8 只看设计参数（`data`/派生量不进分母），声明了没建出的参数进 `missing` 而不是被当成通过（`references/reverse-engineering.md` §12.5）。
 
 ## 4. FEA 链
 
