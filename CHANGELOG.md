@@ -7,6 +7,8 @@
 
 ### Added
 
+- `scripts/nxlib/structures.py` 结构级 builder（第三批）：`section_loft`（结构分界截面 → 一张放样实体；截面基向量从首张取、逐张投影正交化，索引才连续；先查同点数是提交前条件；提交后查实体性与体积，因为对应关系扭曲时 `ThroughCurves` 会给出 `IsSolidBody=True`、体积 0 的自交实体）、`_resample_ring`（绕参考点等角 N 点；参考点在料外与环非星形分别报错，不静默填凹口）、`window_cut`（一平面轮廓 + 可选拔模拉伸的切除体，成功/被拒都逐刀记新增面型与去料体积，布尔被拒时用 undo mark 把刀具体一起回滚）；`plate_2p5d` 的拔模路径抽成 `_extrude_z` 供两者共用。
+- `scripts/tests/47_structure_builders.py`：38 → 57 项，新增变截面放样（17083.2680 对圆台 17132.1519、1 特征 50 面、段数不一致提交前拒绝）、等角重采样（方环落点、两次逐位一致、料外参考点/非星形两种报错分开、凸环保留）、拔模窗口（直壁 4000.0000 只新增平面；拔模 1531.2116 且四面墙偏离 uv 面 4.0000°——直边轮廓拔模出直纹面而非锥面，判据是法向倾角）、窗口落空（布尔原文进 checks、体数不变）。
 - `scripts/nxlib/structure_inference.py`（新层）：测量 → 结构表。`face_graph` 给每面角色（功能面/圆角面，按类型与 `fillet_radii`），`_planar_families`/`_bands` 按法向聚族并**按族法向**取有符号偏置（反向平行的两面属同族，板厚不丢），`_hole_chains` 把**同一轴线的凹面段**归成一条链（阶梯孔逐段保留半径/长度，凸台外圆不入链），`infer_structures` 出结构行（id/模板/证据面/design 与 data 分层/建件顺序/置信度）与 `unresolved`（附证据面与下一步探针），`plan_validation_stations` 把站按结构 id 归组并回写 `validation_stations`，`inference_report` 写确定性 JSON（两次逐字节相同）。缺口照实拒绝：同法向 ≥6 个偏置的平行面堆叠（层号表特征树的指纹）不出板行；需要面采样的眼/耳与纵剖面结构在没给 `part` 时进 `unresolved`，不猜模板。
 - `scripts/tests/49_structure_inference.py`（20 项）：上列判据的合成面表回归（含板厚方向取宽面、孔链按轴线归组、坏例拒绝、报告字节一致、缺站结构进 `missing`）；`RUN_TESTS.bat` 登记第 49 门，`check_repo.py` 计数 48/45 → 49/46。
 - `scripts/nxlib/__init__.py`：注册 `structure_inference`。

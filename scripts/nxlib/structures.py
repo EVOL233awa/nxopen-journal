@@ -258,28 +258,20 @@ def _centroid_pt(wp, frame, pts_uv, z=0.0):
     return frame.pt(u, v, z)
 
 
-def plate_2p5d(wp, frame, plan_uv, z0, z1, name="PLATE", draft_expr=None,
-               help_pt=None):
-    """2.5D 板：一条平面轮廓 + 拉伸厚度（+ 可选拔模角），一个特征。
+def _extrude_z(wp, curves, frame, z0, z1, help_pt, draft_expr=None):
+    """沿 frame.Z 拉伸（可选拔模），z0/z1 可传表达式名；返回 feature。
 
-    plan_uv: [(u,v)] 实测轮廓（data 层）；
-    z0/z1:  起止（可传表达式名，T_PLATE 这类设计参数就是这里进来的）；
-    draft_expr: 拔模角表达式名（Angle），正值向拉伸端收缩。
-
-    拔模必须走 `Draft.DraftOption` + `SetDraftAngle`：只设角度不设类型时
-    提交成功、无告警、体积与直壁逐位相同。
+    SimpleFromStart 的起剖面在 z0，正角度向 z1 端收缩。拔模只设角度不设
+    类型时提交成功、无告警、体积与直壁逐位相同，所以类型与角度必须一起设。
     """
-    cs = sk.loop_uv(wp, frame, plan_uv)
     direction = sk.normalize(frame.Z)
-    hp = help_pt if help_pt is not None else _centroid_pt(wp, frame, plan_uv)
     if draft_expr is None:
-        f = mdl._extrude_along(wp, cs, direction, z1, z0, hp)
-        return {"features": [_named(f, name)], "bodies": bodies_of(f)}
+        return mdl._extrude_along(wp, curves, direction, z1, z0, help_pt)
     section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
-    rule = wp.ScRuleFactory.CreateRuleCurveDumb(cs)
+    rule = wp.ScRuleFactory.CreateRuleCurveDumb(curves)
     section.AddToSection([rule], NXOpen.NXObject.Null, NXOpen.NXObject.Null,
-                         NXOpen.NXObject.Null, hp, NXOpen.Section.Mode.Create,
-                         False)
+                         NXOpen.NXObject.Null, help_pt,
+                         NXOpen.Section.Mode.Create, False)
     b = wp.Features.CreateExtrudeBuilder(NULL)
     b.Section = section
     b.Direction = wp.Directions.CreateDirection(
@@ -294,6 +286,23 @@ def plate_2p5d(wp, frame, plan_uv, z0, z1, name="PLATE", draft_expr=None,
     f = b.CommitFeature()
     b.Destroy()
     section.Destroy()
+    return f
+
+
+def plate_2p5d(wp, frame, plan_uv, z0, z1, name="PLATE", draft_expr=None,
+               help_pt=None):
+    """2.5D 板：一条平面轮廓 + 拉伸厚度（+ 可选拔模角），一个特征。
+
+    plan_uv: [(u,v)] 实测轮廓（data 层）；
+    z0/z1:  起止（可传表达式名，T_PLATE 这类设计参数就是这里进来的）；
+    draft_expr: 拔模角表达式名（Angle），正值向拉伸端收缩。
+
+    拔模必须走 `Draft.DraftOption` + `SetDraftAngle`：只设角度不设类型时
+    提交成功、无告警、体积与直壁逐位相同。
+    """
+    cs = sk.loop_uv(wp, frame, plan_uv)
+    hp = help_pt if help_pt is not None else _centroid_pt(wp, frame, plan_uv)
+    f = _extrude_z(wp, cs, frame, z0, z1, hp, draft_expr)
     return {"features": [_named(f, name)], "bodies": bodies_of(f)}
 
 
@@ -875,3 +884,221 @@ def trim_planes(wp, target, trims, name="TRIM", span=1000.0):
             })
     return {"features": feats, "bodies": [target], "checks": checks,
             "pass": all(c["ok"] for c in checks) if checks else False}
+
+
+# ------------------------------------------------------------------ 变截面臂
+
+def _point_in_ring(p, ring):
+    """射线法判点是否在闭合折线内（环可以凹，不要求星形）。"""
+    x, y = float(p[0]), float(p[1])
+    inside = False
+    for i in range(len(ring)):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % len(ring)]
+        if (y0 > y) != (y1 > y):
+            t = (y - y0) / (y1 - y0)
+            if x < x0 + t * (x1 - x0):
+                inside = not inside
+    return inside
+
+
+def _resample_ring(pts_uv, n, phase=0, center=None):
+    """闭合轮廓 → 等角 N 点：绕参考点取射线，每角取边界交点。
+
+    为什么不用弧长等分：相邻截面拓扑不同（一边是直壁+圆角，另一边是样条）
+    时弧长参数化的对应点会漂，放样自交。等角参数化的索引就是角度，与起点
+    无关；代价是只对星形截面保形。
+
+    `center` 缺省取顶点平均；顶点平均不是面积形心，C/L/U 形的平均值常落在
+    开口里，所以先判参考点是否在料内，不在就报错（"参考点选错"与"形状凹"
+    是两回事，混在一起无法归因）。
+
+    非星形截面**抛错**，不静默填凹口：每条射线与边界的交点必须恰好一个
+    （两个共点算一个，顶点处的两条边就是这么数的）。射线进出两次说明参考
+    点看不到那片料，"最外交点"会落到凹口另一侧的壁上——放样出来就是自交
+    或把凹口填平。凹口要么放样后切，要么换一条沿轮廓的定位线做参数化。
+    """
+    cen = ((float(center[0]), float(center[1])) if center is not None
+           else (sum(p[0] for p in pts_uv) / float(len(pts_uv)),
+                 sum(p[1] for p in pts_uv) / float(len(pts_uv))))
+    if not _point_in_ring(cen, pts_uv):
+        # 顶点平均不是面积形心：C/L/U 形的平均顶点常落在开口里。参考点不在
+        # 料内时射线参数化没有定义，必须先说清是"参考点选错"而不是"形状不好"
+        raise ValueError(
+            "resample: reference point (%.3f, %.3f) is outside the ring; "
+            "pass a point that lies inside the section" % cen)
+    span = max(max(abs(p[0] - cen[0]), abs(p[1] - cen[1])) for p in pts_uv)
+    eps = max(span * 1e-7, 1e-12)
+    out = []
+    for k in range(int(n)):
+        a = 2.0 * math.pi * (k + float(phase)) / float(n)
+        dx, dy = math.cos(a), math.sin(a)
+        hits = []
+        for i in range(len(pts_uv)):
+            x0, y0 = pts_uv[i]
+            x1, y1 = pts_uv[(i + 1) % len(pts_uv)]
+            ex, ey = x1 - x0, y1 - y0
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            t = ((x0 - cen[0]) * ey - (y0 - cen[1]) * ex) / den
+            s = ((x0 - cen[0]) * dy - (y0 - cen[1]) * dx) / den
+            if t <= 0.0 or s < 0.0 or s > 1.0:
+                continue
+            if not hits or abs(t - hits[-1]) > eps:
+                hits.append(t)
+        if len(hits) > 1:
+            raise ValueError(
+                "resample: non-star ring at angle %.4f deg (%d boundary "
+                "crossings); cut the notch after the loft instead"
+                % (math.degrees(a), len(hits)))
+        if not hits:
+            raise ValueError("resample: no boundary crossing at angle %.4f deg"
+                             % math.degrees(a))
+        out.append((cen[0] + hits[0] * dx, cen[1] + hits[0] * dy))
+    return out
+
+
+def section_loft(wp, sections, name="LOFT", body_preference=True):
+    """结构分界截面 → 一张放样实体（变截面臂的唯一正解，不是 z 带堆叠）。
+
+    sections 每张：{"plane": (origin, normal), "uv": [(u, v)]} —— 平面按
+    实测法向/原点（data），`uv` 是该平面内绕形心等角参数化的轮廓点
+    （`_resample_ring` 的输出，或调用方自己按同一角度表采的点）。所有截面
+    必须先归一到**同一 N**，否则放样的对应点会扭。
+
+    截面基向量不是各算各的：`sk.perpendicular(normal)` 对相邻法向会跳到
+    不同的参考轴，索引相同但方向不同，放样照样是扭的。这里从首张截面取
+    (u, v)，往后逐张把 u 投影到本截面平面再正交化（法向转 <90° 时索引
+    连续）；相邻法向转得太多就无法保持对应，由调用方负责插中间截面。
+
+    为什么必须查体积：对应关系扭曲时 `ThroughCurves` 仍然提交，得到
+    `IsSolidBody=True`、体积 0 的自交实体；截面 IoU 还能到 0.99。所以
+    `checks` 里既记实体性也记体积，体积 0 即失败。
+
+    首末截面外侧各加一张等形平移截面可压住端部塌陷；需要时由调用方把平移
+    截面一起放进 `sections`，builder 不自己猜外延量。
+    """
+    if len(sections) < 2:
+        raise ValueError("section_loft needs >= 2 sections")
+    counts = set(len(s["uv"]) for s in sections)
+    if len(counts) != 1:
+        raise ValueError("sections must share one resampled count: %r"
+                         % (sorted(counts),))
+    n = counts.pop()
+    curves = []
+    prev_u = None
+    for sec in sections:
+        origin, normal = sec["plane"]
+        origin = _pt3(origin)
+        nrm = sk.normalize(normal)
+        if prev_u is None:
+            u = sk.perpendicular(nrm)
+        else:
+            w = sk.dot(prev_u, nrm)
+            u = sk.normalize([prev_u[i] - w * nrm[i] for i in range(3)])
+        v = sk.cross(nrm, u)
+        prev_u = u
+        pts = []
+        for (a, b) in sec["uv"]:
+            pts.append(NXOpen.Point3d(origin[0] + a * u[0] + b * v[0],
+                                      origin[1] + a * u[1] + b * v[1],
+                                      origin[2] + a * u[2] + b * v[2]))
+        curves.extend([wp.Curves.CreateLine(pts[k], pts[(k + 1) % n])
+                       for k in range(n)])
+    secs = wp.Sections.CreateSectionsUsingCurves(
+        curves, NXOpen.SectionCollection.LoopOption.Separate, 0.01, 0.01, 0.5)
+    tb = wp.Features.CreateThroughCurvesBuilder(NULL)
+    if body_preference:
+        tb.BodyPreference = \
+            NXOpen.Features.ThroughCurvesBuilder.BodyPreferenceTypes.Solid
+    for sec in secs:
+        tb.SectionsList.Append(sec)
+    tb.Validate()
+    f = tb.CommitFeature()
+    tb.Destroy()
+    bs = bodies_of(f)
+    _named(f, name)
+    body = bs[0] if bs else None
+    vol = mdl.volume(wp, body) if body is not None else 0.0
+    sheet = bool(body.IsSheetBody) if body is not None else True
+    nf = len(list(body.GetFaces())) if body is not None else 0
+    checks = {
+        "sections": len(sections),
+        "ring_points": n,
+        "bodies": len(bs),
+        "is_solid": (not sheet) and len(bs) == 1,
+        "volume": vol,
+        "faces": nf,
+        "features": 1,
+    }
+    return {"features": [f], "bodies": bs, "checks": checks,
+            "pass": checks["is_solid"] and vol > 1e-6}
+
+
+# ------------------------------------------------------------------ 拔模窗口
+
+def window_cut(wp, target, frame, plan_uv, z0, z1, name="WINDOW",
+               draft_expr=None):
+    """窗口/袋的切除体：一平面轮廓 + 拉伸（可带拔模），再对 target 求差。
+
+    与 `pocket_intersect` 的分工：那是"侧视 ∩ 俯视"的双轮廓腔；窗口只需要
+    一个平面轮廓沿自身法向切透，侧壁由拔模角决定（铸造窗口的常见形态：口
+    大底小）。`draft_expr` 给表达式名时走 `plate_2p5d` 的拔模路径——只设
+    角度不设类型在 NX12 是静默无效，所以这里不提供"只给角度"的入口。
+
+    为什么不在这里做口部圆角：圆角必须在减料之后按支撑面宽度前置判定
+    （`fillet_feasible`），且支撑面宽度 < 2R 时会失败；把它塞进这个函数
+    会让失败原因和窗口本身混在一起。调用方在 `cut` 之后单独跑 `fillet_run`。
+
+    `checks` 记：单实体、去掉的体积、新增面类型（平面窗口应只多平面与锥面）。
+    """
+    n0 = len(list(wp.Bodies))
+    v0 = mdl.volume(wp, target)
+    before = face_signature(target)
+    # 刀具与求差要一起回滚：布尔被拒时刀具体留在部件里（体数 +1），
+    # 下次读体数就会把"上次失败的刀具体"算成本次的成功
+    session = NXOpen.Session.GetSession()
+    mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
+                              name)
+    try:
+        tool = plate_2p5d(wp, frame, plan_uv, str(z0), str(z1),
+                          name=name + "_TOOL", draft_expr=draft_expr)
+        tf = tool["features"][0]
+        cut(wp, target, tf)
+    except Exception as exc:
+        # 刀具整个在目标体外时 NX12 直接拒绝布尔（"completely outside"）：
+        # 这是"窗口位置选错"的指纹，原文照记，不吞不重试
+        first = (str(exc).splitlines() or [""])[0][:200]
+        try:
+            session.UndoToMark(mark, name)
+            session.DeleteUndoMark(mark, name)
+        except Exception:
+            pass
+        return {"features": [], "bodies": [],
+                "checks": {"removed": 0.0,
+                           "bodies": len(list(wp.Bodies)),
+                           "single_body_build": True, "ok": False,
+                           "added_types": [],
+                           "reason": "boolean rejected: %s" % first},
+                "pass": False}
+    session.DeleteUndoMark(mark, name)
+    v1 = mdl.volume(wp, target)
+    n1 = len(list(wp.Bodies))
+    added = added_faces(before, face_signature(target))
+    types = sorted(set(a["type"] for a in added))
+    removed = v0 - v1
+    checks = {
+        "added": [{"tag": a["tag"], "type": a["type"],
+                   "radius": round(a["radius"], 6)} for a in added],
+        "added_types": types,
+        "removed": removed,
+        "bodies": n1,
+        "single_body_build": n1 == n0,
+        "ok": (n1 == n0) and removed > 1e-9,
+    }
+    if not checks["ok"]:
+        checks["reason"] = ("body count %d -> %d" % (n0, n1)
+                            if n1 != n0 else "removed nothing")
+    return {"features": list(tool["features"]), "bodies": [target],
+            "checks": checks, "pass": checks["ok"]}

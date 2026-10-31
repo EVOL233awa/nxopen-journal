@@ -469,6 +469,206 @@ def case_fillet_precheck(wp):
     return body
 
 
+def case_section_loft(wp):
+    """Variable-section arm: two rings loft to the frustum, not to a band stack."""
+    frame = sk.Frame()
+    n = 48
+    # a round-to-round frustum: r 15 at t=0, r 8 at t=40 -> analytic frustum
+    a = [(15.0 * math.cos(2.0 * math.pi * k / n),
+          15.0 * math.sin(2.0 * math.pi * k / n)) for k in range(n)]
+    b = [(8.0 * math.cos(2.0 * math.pi * k / n),
+          8.0 * math.sin(2.0 * math.pi * k / n)) for k in range(n)]
+    secs = [{"plane": ((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)), "uv": a},
+            {"plane": ((0.0, 0.0, 40.0), (0.0, 0.0, 1.0)), "uv": b}]
+    res = st.section_loft(wp, secs, name="ARM")
+    v = mdl.volume(wp, res["bodies"][0])
+    v_expect = math.pi * 40.0 / 3.0 * (15.0 ** 2 + 15.0 * 8.0 + 8.0 ** 2)
+    say("loft volume=%.4f expect=%.4f checks=%r" % (v, v_expect,
+                                                    res["checks"]))
+    check("T47_LOFT_VOLUME", abs(v - v_expect) < 0.02 * v_expect,
+          "two-ring loft %.4f vs frustum %.4f" % (v, v_expect))
+    check("T47_LOFT_SOLID", res["pass"] is True and
+          res["checks"]["is_solid"] is True and
+          res["checks"]["bodies"] == 1,
+          "a loft must come back as one solid body, not a sheet: %r"
+          % (res["checks"],))
+    check("T47_LOFT_ONE_FEATURE_ID", [f.Name for f in res["features"]] ==
+          ["ARM"],
+          "one structure = one feature, named by the structure id: %r"
+          % ([f.Name for f in res["features"]],))
+    # the z-band alternative costs one prism per slice AND leaves flat steps;
+    # the loft's side wall must be a single ruled face per angular sector
+    check("T47_LOFT_FEW_FACES", res["checks"]["faces"] <= n + 2,
+          "a two-ring loft must not slice into bands: %d faces for a %d-gon"
+          % (res["checks"]["faces"], n))
+    bad = None
+    try:
+        st.section_loft(wp, [secs[0], {"plane": secs[1]["plane"],
+                                       "uv": b[:24]}], name="ARMBAD")
+    except ValueError as exc:
+        bad = str(exc)
+    say("loft mismatched ring counts rejected=%r" % (bad,))
+    check("T47_LOFT_COUNT_MISMATCH_REJECTED",
+          bad is not None and "resampled count" in bad,
+          "sections with different point counts must be refused before "
+          "commit, not lofted into a twist: %r" % (bad,))
+    return res["bodies"][0]
+
+
+def case_resample_ring(wp):
+    """Equal-angle resampling keeps a square square and is index-stable."""
+    square = [(-10.0, -10.0), (10.0, -10.0), (10.0, 10.0), (-10.0, 10.0)]
+    ring = st._resample_ring(square, 40)
+    ring2 = st._resample_ring(square, 40)
+    r_min = min(math.hypot(p[0], p[1]) for p in ring)
+    r_max = max(math.hypot(p[0], p[1]) for p in ring)
+    say("resample n=%d r=%.4f..%.4f identical=%s"
+        % (len(ring), r_min, r_max, ring == ring2))
+    check("T47_RESAMPLE_COUNT", len(ring) == 40,
+          "resampling must return exactly the asked count: %d" % len(ring))
+    # a square inradius 10, circumradius 14.14: the ring must stay between
+    check("T47_RESAMPLE_ON_SQUARE",
+          abs(r_min - 10.0) < 0.2 and abs(r_max - 14.142) < 0.35,
+          "equal-angle rays on a square must hit the boundary between the "
+          "inradius and the corner radius: %.4f..%.4f" % (r_min, r_max))
+    check("T47_RESAMPLE_DETERMINISTIC", ring == ring2,
+          "the same ring resampled twice must be identical")
+    # a C: outer 0..10, mouth notch x 0..5 / y 3..7 cut in from the left. Its
+    # vertex average (3.75, 5.0) lies in the notch, i.e. outside the material.
+    cring = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0),
+             (0.0, 7.0), (5.0, 7.0), (5.0, 3.0), (0.0, 3.0)]
+    bad_center = ""
+    try:
+        st._resample_ring(cring, 48)
+        bad_center = "accepted with the vertex average"
+    except ValueError as exc:
+        bad_center = str(exc)
+    say("resample C vertex-average detail=%r" % (bad_center,))
+    check("T47_RESAMPLE_CENTER_CHECK",
+          "outside the ring" in bad_center,
+          "a reference point that falls outside the material must be named "
+          "as the cause: %r" % (bad_center,))
+    # with a point that IS inside the material the C is still not star-shaped
+    # about it: a ray into the mouth leaves at the notch wall and re-enters at
+    # the far arm, so the fill would close the mouth
+    rejected = False
+    detail = ""
+    try:
+        got = st._resample_ring(cring, 48, center=(7.0, 5.0))
+        detail = "accepted %d points" % len(got)
+    except ValueError as exc:
+        rejected = True
+        detail = str(exc)
+    say("resample C inside-ref rejected=%s detail=%r" % (rejected, detail))
+    check("T47_RESAMPLE_REJECTS_NONSTAR",
+          rejected and "non-star" in detail,
+          "a non-star ring must raise instead of silently filling its notch: "
+          "%r" % (detail,))
+    # ... while a convex ring is accepted at any interior point: the refusal is
+    # about the section's visibility, not about resampling being unavailable
+    ok_conv = st._resample_ring(
+        [(0.0, 0.0), (10.0, 0.0), (12.0, 5.0), (10.0, 10.0), (0.0, 10.0)], 48)
+    say("resample convex points=%d" % len(ok_conv))
+    check("T47_RESAMPLE_CONVEX_ACCEPTED", len(ok_conv) == 48,
+          "a convex ring must resample to the asked count: %d" % len(ok_conv))
+    return None
+
+
+def case_window_cut(wp):
+    """Drafted window: straight and drafted removal, per-cut face evidence."""
+    frame = sk.Frame()
+    blk = mdl.block(wp, NXOpen.Point3d(-30.0, -30.0, 0.0), "60", "60", "20")
+    body = list(blk.GetBodies())[0]
+    tpl.create_expressions(wp, {"WIN_D": 0.0, "WIN_DRAFT": 4.0},
+                           {"WIN_D": "mm", "WIN_DRAFT": "deg"})
+    v0 = mdl.volume(wp, body)
+    win = [(-10.0, -5.0), (10.0, -5.0), (10.0, 5.0), (-10.0, 5.0)]
+    res = st.window_cut(wp, body, frame, win, -2.0, 22.0, name="WIN")
+    v1 = mdl.volume(wp, body)
+    say("window straight removed=%.4f expect=%.4f checks=%r"
+        % (v1 and v0 - v1, 20.0 * 10.0 * 20.0, res["checks"]))
+    v_win = 20.0 * 10.0 * 20.0
+    check("T47_WINDOW_VOLUME", abs((v0 - v1) - v_win) < 1e-2 * v_win,
+          "straight window removed %.4f vs 20x10x20 %.4f" % (v0 - v1, v_win))
+    check("T47_WINDOW_SINGLE_BODY", res["checks"]["single_body_build"] is True
+          and res["checks"]["bodies"] == 1,
+          "cutting a window must not split the body: %r" % (res["checks"],))
+    check("T47_WINDOW_ONLY_PLANES",
+          all(t == 22 for t in res["checks"]["added_types"]),
+          "a straight window adds only planar walls: %r"
+          % (res["checks"]["added_types"],))
+
+    # the drafted window sits on its own block, with the ring fully inside it:
+    # a ring straddling a block face would draft against that face too, and
+    # the wall count would be 3 drafted + 1 coincident instead of 4 drafted
+    frame2 = sk.Frame(origin=(90.0, 0.0, 0.0))
+    blk2 = mdl.block(wp, NXOpen.Point3d(60.0, -30.0, 0.0), "60", "60", "20")
+    b2 = list(blk2.GetBodies())[0]
+    v2 = mdl.volume(wp, b2)
+    dres = st.window_cut(wp, b2, frame2, win, -2.0, 22.0, name="WINDRAFT",
+                         draft_expr="WIN_DRAFT")
+    v3 = mdl.volume(wp, b2)
+    # the draft starts on the z0 section and shrinks toward z1, so the mouth
+    # (z0 side) is the wide end; a mouth-up window just flips the frame
+    say("window drafted removed=%.4f types=%r"
+        % (v2 - v3, dres["checks"]["added_types"]))
+    check("T47_WINDOW_DRAFT_EFFECTIVE",
+          (v2 - v3) < v_win * 0.90,
+          "a drafted window must remove clearly less than the straight one "
+          "at the far end (otherwise the DraftOption was ignored): drafted "
+          "%.4f vs straight %.4f" % (v2 - v3, v_win))
+    # A drafted extrusion of a straight-edged plan gives RULED PLANES tilted by
+    # the draft angle, not cones -- cones only appear where the plan has arcs.
+    # So the wall evidence is the normal tilt, not the face type: a straight
+    # wall has its normal in the frame's uv plane, a drafted one is tilted by
+    # the draft angle away from z.
+    tilts = []
+    uf = NXOpen.UF.UFSession.GetUFSession()
+    for a in dres["checks"]["added"]:
+        d = uf.Modeling.AskFaceData(a["tag"])
+        nz = abs(float(d[2][2]))
+        # walls have a normal in the uv plane at 0 deg draft; a drafted wall's
+        # normal leaves that plane by the draft angle. Faces whose normal is
+        # near +z are the tool's cap faces, not walls.
+        from_z = math.degrees(math.acos(min(1.0, nz)))
+        if from_z > 45.0:
+            tilts.append(round(90.0 - from_z, 3))
+    say("window drafted wall dev from uv plane (deg)=%r" % (tilts,))
+    check("T47_WINDOW_DRAFT_TILT",
+          len(tilts) == 4 and abs(min(tilts) - 4.0) < 0.5,
+          "the four drafted walls must leave the uv plane by the declared "
+          "draft angle: devs=%r" % (tilts,))
+    check("T47_WINDOW_DRAFT_CONES",
+          all(t == 22 for t in dres["checks"]["added_types"]),
+          "a straight-edged plan drafts to ruled planes (cones only come from "
+          "arc segments), so the added types must be planar: %r"
+          % (dres["checks"]["added_types"],))
+    return body
+
+
+def case_window_no_material(wp):
+    """A window that lands outside the body must report 'removed nothing'."""
+    frame = sk.Frame()
+    n0 = len(list(wp.Bodies))
+    blk = mdl.block(wp, NXOpen.Point3d(0.0, 0.0, 0.0), "20", "20", "10")
+    body = list(blk.GetBodies())[0]
+    win = [(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)]
+    before = len(list(wp.Bodies))
+    res = st.window_cut(wp, body, frame, win, 100.0, 120.0, name="WINOUT")
+    after = len(list(wp.Bodies))
+    say("window out of body checks=%r bodies %d->%d"
+        % (res["checks"], before, after))
+    check("T47_WINDOW_EMPTY_REPORTED",
+          res["pass"] is False and res["checks"]["removed"] == 0.0 and
+          "completely outside" in res["checks"]["reason"],
+          "a window that removes nothing must say so instead of passing: %r"
+          % (res["checks"],))
+    check("T47_WINDOW_ROLLBACK", after == before,
+          "a rejected boolean must roll the tool body back, not leave it "
+          "behind: bodies %d -> %d" % (before, after))
+    return body
+
+
 def main():
     out = os.getcwd()
 
@@ -527,6 +727,18 @@ def main():
     path = os.path.join(out, "t47_precheck.prt")
     wp = new_part("t47k", path)
     case_fillet_precheck(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_loft.prt")
+    wp = new_part("t47l", path)
+    case_section_loft(wp)
+    case_resample_ring(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_window.prt")
+    wp = new_part("t47m", path)
+    case_window_cut(wp)
+    case_window_no_material(wp)
     save_checked(path)
 
     failed = [n for n, good in RESULTS if not good]
