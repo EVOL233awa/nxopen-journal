@@ -53,8 +53,8 @@ SELF_CONTAINED = {
 # 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
 PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
 # 期望计数：文档/批次头写错数字时在这里拦，而不是靠人眼比对。
-EXPECTED_CASES = 45
-EXPECTED_GATES = 42
+EXPECTED_CASES = 46
+EXPECTED_GATES = 43
 EXPECTED_PROBES = 3
 CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件

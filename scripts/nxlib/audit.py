@@ -287,3 +287,109 @@ def g1full(orig_part, built_part, plan, measure, fillet_faces,
         "area_err_max_pct": area_err_max_pct,
         "plane_depth": plane_depth,
     }
+
+
+# ------------------------------------------------------------------ 设计包络
+
+def edit_envelope(part, names=None, factor_max=1.5, steps=(1.10, 1.20, 1.25, 1.30,
+                                                     1.35, 1.40, 1.45),
+             body=None):
+    """逐参数测"能改到多远"，把超出设计范围与模型脆弱分开。
+
+    `liveness` 只回答"改 10% 会不会动"，`locality` 只回答"动了谁"。两者都
+    不回答"能改多少"：一个把孔半径从 40 改到 60（外径才 52.7）的失败，和
+    一条撑不住 20% 的结构，在 ×1.1 普查里长得一模一样。这里对每条表达式
+    按 steps 递增改值并 DoUpdate，记下最后一个仍然 update_errors==0 的倍率，
+    再还原。
+
+    返回每项 {name, value, max_ok_factor, failed_at, trials}：
+    `max_ok_factor` 等于 factor_max 说明到扫描上界都没崩（参数本身不脆），
+    小于上界则给出第一次失败的位置与原文——报告据此判"超出物理范围"还是
+    "结构脆弱"，不把两者混成一个 broken 计数。
+    """
+    bs = list(part.Bodies)
+    if body is None:
+        body = bs[0]
+    v0 = mdl.volume(part, body)
+    exprs = {}
+    for e in part.Expressions:
+        try:
+            lhs = e.Equation.split("=")[0].strip()
+        except Exception:
+            continue
+        if lhs:
+            exprs[lhs] = e
+    if names is None:
+        names = sorted(exprs)
+    out = []
+    for name in names:
+        e = exprs.get(name)
+        rec = {"name": name, "trials": []}
+        if e is None:
+            rec["error"] = "expression not found"
+            out.append(rec)
+            continue
+        base = e.RightHandSide
+        try:
+            val = float(base)
+        except Exception:
+            rec["error"] = "non-numeric rhs"
+            out.append(rec)
+            continue
+        rec["value"] = val
+        last_ok = None
+        for fac in steps:
+            ok = True
+            try:
+                e.RightHandSide = "%.6f" % (val * fac)
+                errs = ms._do_update("env_%s_%d" % (name, int(fac * 100)))
+                v1 = mdl.volume(part, body)
+                if errs:
+                    ok = False
+                rec["trials"].append({"factor": fac, "errors": errs,
+                                      "delta_volume": v1 - v0})
+            except Exception as exc:
+                ok = False
+                rec["trials"].append({
+                    "factor": fac, "errors": "exception",
+                    "detail": str(exc).splitlines()[0][:160]})
+            finally:
+                try:
+                    e.RightHandSide = base
+                    ms._do_update("env_restore_%s_%d"
+                                  % (name, int(fac * 100)))
+                except Exception:
+                    rec.setdefault("restore_failed_at", []).append(fac)
+            if not ok:
+                break
+            last_ok = fac
+        rec["max_ok_factor"] = last_ok
+        rec["failed_at"] = None if last_ok == steps[-1] else last_ok
+        out.append(rec)
+    return {"rows": out, "v0": v0, "v1": mdl.volume(part, body),
+            "factor_max": max(steps), "steps": list(steps)}
+
+
+def edit_envelope_summary(env):
+    """把 `edit_envelope` 的输出折成可判的三档。
+
+    - `bounded`：到扫描上界都没崩，参数本身不脆；
+    - `narrow`：在上界以下崩了，给出倍率——这一档才是"结构脆弱"；
+    - `stuck`：连 ×1.10 都不过。
+    `narrow`/`stuck` 都要在报告里逐条写倍率与原文，不能用总数代替。
+    """
+    bounded, narrow, stuck = [], [], []
+    for r in env.get("rows") or []:
+        if r.get("error"):
+            stuck.append({"name": r["name"], "why": r["error"]})
+            continue
+        top = r.get("max_ok_factor")
+        if top is None:
+            stuck.append({"name": r["name"], "why": "no factor resolved"})
+        elif r["failed_at"] is None:
+            bounded.append(r["name"])
+        else:
+            narrow.append({"name": r["name"], "max_ok_factor": top,
+                           "failed_at": r["failed_at"]})
+    return {"bounded": bounded, "narrow": narrow, "stuck": stuck,
+            "pass": not stuck}

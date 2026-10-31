@@ -49,7 +49,7 @@ graph TD
 
 | 段 | 判据 | 位置 |
 |---|---|---|
-| 42 个 gate | 逐个 `call :gate <file> <token>`，任一失败 `exit /b 1` | `scripts/tests/RUN_TESTS.bat` 的 `call :gate` 列表 起 |
+| 43 个 gate | 逐个 `call :gate <file> <token>`，任一失败 `exit /b 1` | `scripts/tests/RUN_TESTS.bat` 的 `call :gate` 列表 起 |
 | ruleselftest | `verify_check_rules.py` 反例全命中、干净样本通过 | `:ruleselftest` 段 |
 | pdfverify | 用例 19 的 PDF 用 pymupdf 读文本层核数值；无 pymupdf 返回 3 判 SKIP 而非 FAIL | `:pdfverify` 段 |
 

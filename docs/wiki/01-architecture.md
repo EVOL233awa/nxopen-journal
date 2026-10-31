@@ -11,7 +11,7 @@ graph TD
   A["入口层 SKILL.md<br>铁律/环境/骨架/路由"] --> B["域文档 references/*.md<br>8 个域，按任务选读"]
   B --> C["工具脚本 scripts/<br>check_journal / run_journal_batch / gb_drawing / render"]
   B --> D["标准层 scripts/nxlib/<br>12 模块，import 复用"]
-  C --> E["回归套件 scripts/tests/<br>45 用例 = 42 门 + 3 探针"]
+  C --> E["回归套件 scripts/tests/<br>46 用例 = 43 门 + 3 探针"]
   D --> E
   E --> F["NX 12 批处理<br>run_journal.exe"]
   G["check_repo.py<br>仓库结构门"] --> A
@@ -30,7 +30,7 @@ graph TD
 | 域文档 | `references/*.md` | 8 个域的成功路线与域内约束 | 域之间不互相依赖；负面事实写成路线里的一句约束，不新开坑位表（`SKILL.md` §7 第 6 条） |
 | 工具脚本 | `scripts/*.py`、`*.bat` | 静态检查、批处理执行、国标出图、离线渲染 | 不依赖 NX 也能跑的部分放宿主 Python（`check_journal.py`、`check_repo.py`） |
 | 标准层 | `scripts/nxlib/` | 被用例复用的配方：测试框架、部件生命周期、建模、装配、制图、测量、滚球圆角、模板、逆向五表、骨架、结构库、审计 | 配方只在 nxlib 里有一份，用例复制同名函数会被 `check_repo.py` 拦（`scripts/check_repo.py` 的 `check_nolib()`） |
-| 回归套件 | `scripts/tests/` | 45 个用例，其中 42 个有判决 token | 判据看输出 token 不看退出码（`scripts/tests/RUN_TESTS.bat` 文件头的令牌判定说明） |
+| 回归套件 | `scripts/tests/` | 46 个用例，其中 43 个有判决 token | 判据看输出 token 不看退出码（`scripts/tests/RUN_TESTS.bat` 文件头的令牌判定说明） |
 
 ## 三份权威，互不重叠
 

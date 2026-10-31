@@ -7,6 +7,9 @@
 
 ### Added
 
+- `scripts/nxlib/audit.py` `edit_envelope`/`edit_envelope_summary`：逐参数按倍率递增测可用包络，折成 bounded/narrow/stuck 三档，把“超出物理范围”与“结构脆弱”分开。
+- `scripts/tests/46_edit_envelope.py`（11 项）：声明未建出→`missing` 而非 ratio 下降；公式内消费的参数仍 live；窄参数停在上界内并带 `Update undo happened.` 原文；还原逐位一致；`RUN_TESTS.bat` 登记第 46 门，`check_repo.py` 计数 45/42 → 46/43。
+- `references/reverse-engineering.md` §11.3：声明对账（`alive_ratio` 只含建出的量，`missing` 非空即不过）与可编辑性三层证据（对账 / +10% 普查 / 逐参数包络）；§12.5 补 `edit_envelope` 的读法。
 - `scripts/check_repo.py` 第 8 组 `WIKI`：维护者导览与代码同步的机器门——名册表（`<!-- roster: nxlib|scripts|references -->` 标记后紧邻表格的首列）必须列出每个模块/域文件/工具脚本，索引页必须链接每一页，用例/gate/子集计数与常量一致，禁用 `文件:行号` 锚点，被引用的符号与 §章节必须仍存在。组数 7 → 8，`SKILL.md` §7 第 11 条登记该义务。
 - `docs/wiki/`：维护者导览五页（架构 / 主执行流 / 模块 / 数据流 / 边界与风险）+ 索引页；锚点用符号名与 §章节（72 处 `文件:行号` 已换掉，行号随维护漂移会静默过期），不进入 agent 必读路径；`SKILL.md` §8 与两个 README 的目录结构同步登记。
 - `references/reverse-engineering.md` §12：测量编译 + 骨架/草图驱动 + 结构库 + 审计（大件/整件默认路线）——五张冻结表先于建模、design（可驱动）与 data（测量轮廓）分层、骨架帧与草图驱动探针后用、结构库 builder 只吃 frame/参数/数据、活性/局部性/预算/G1full 四项审计口径；§11.3 只留边界并指向 §12.2，§11.6 站表分母改为 `station_plan_full` + `station_partition`。
