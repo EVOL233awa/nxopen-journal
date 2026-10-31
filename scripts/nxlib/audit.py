@@ -9,6 +9,8 @@
 原件定的分母，不由构建结果决定；G1full 的硬门只算 primary，fillet 站进
 G7 跑道账本。
 """
+import time
+
 import nxlib.measure as ms
 import nxlib.modeling as mdl
 import nxlib.reverse as rv
@@ -317,7 +319,8 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
 
 
 def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
-                    rel_tol=0.005, area_tol=1.0, report=None):
+                    rel_tol=0.005, area_tol=1.0, report=None, base_mesh=None,
+                    budget_s=None, only=None, precompute_outlines=True):
     """整件穿透筛查：不指定参数，直接看有没有"大块没被任何站覆盖"。
 
     `locality` 回答"改 A 会不会动到 B"，需要一条条改参数；整件上百条参数时
@@ -328,12 +331,41 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
     `structures` 是 {sid: {exprs, stations}}；返回每个参数的
     {expr, structure, changed_structures, covered}。它不替代 `locality`：
     穿透筛查只回答覆盖，回答不了"动到的是不是自己的站"。
+
+    `base_mesh` 复用调用方已导出的基线网格（整件上一次导出可达分钟级）；
+    `precompute_outlines`（默认开）把基准侧截面轮廓按站先算一次，每条参数
+    只切改动后的件——整件 366 站 × 41 参数时这是两倍的重复计算；
+    `budget_s` 超时后剩余参数记 `inconclusive` 而不是静默跳过；`only` 只测
+    列出的表达式（代表集），未列入的在 `skipped` 里点名，不当作已覆盖。
     """
     exprs = _expr_map(part)
-    base = _mesh(part)          # 基线网格只取一次：每次改完都要跟它比
+    base = base_mesh if base_mesh is not None else _mesh(part)
+    pre_outlines = None
+    t_pre = 0.0
+    if precompute_outlines:
+        # 基准侧轮廓按站固定：先算一次，之后每条参数只切"改动后的件"
+        t_p0 = time.time()
+        pre_outlines = {}
+        for st in plan.get("stations", []):
+            key = (tuple(st["origin"]), tuple(st["normal"]))
+            if key not in pre_outlines:
+                pre_outlines[key] = ms.section_outline(base, st["origin"],
+                                                       st["normal"])
+        t_pre = time.time() - t_p0
+    t0 = time.time()
     out = []
+    skipped = []
     for sid in sorted(structures):
         for name in (structures[sid].get("exprs") or []):
+            if only is not None and name not in only:
+                skipped.append({"expr": name, "structure": sid,
+                                "reason": "not in representative set"})
+                continue
+            if budget_s is not None and time.time() - t0 > float(budget_s):
+                out.append({"expr": name, "structure": sid,
+                            "inconclusive": "budget %.0fs exhausted" %
+                            float(budget_s)})
+                continue
             e = exprs.get(name)
             if e is None:
                 out.append({"expr": name, "structure": sid,
@@ -363,7 +395,12 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
             ms._do_update("scr_restore_%s" % name)
             touched = []
             for i, st in enumerate(plan.get("stations", [])):
-                r = ms.section_iou(base, moved, st["origin"], st["normal"])
+                key = (tuple(st["origin"]), tuple(st["normal"]))
+                oa = pre_outlines.get(key) if pre_outlines is not None else None
+                if oa is None:
+                    r = ms.section_iou(base, moved, st["origin"], st["normal"])
+                else:
+                    r = ms.section_iou_pre(oa, moved, st["origin"], st["normal"])
                 sym = r["area_union"] - r["area_inter"]
                 lim = max(area_tol,
                           rel_tol * max(abs(r["area_union"]), 1.0))
@@ -375,8 +412,14 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
             _say(report, "screen: %s changed %d stations"
                  % (name, len(touched)))
     uncovered = [o["expr"] for o in out if o.get("covered") is False]
-    return {"rows": out, "uncovered": uncovered,
-            "checked": len(out), "pass": bool(out) and not uncovered}
+    inconclusive = [o["expr"] for o in out if o.get("inconclusive")]
+    return {"rows": out, "uncovered": uncovered, "skipped": skipped,
+            "inconclusive": inconclusive,
+            "checked": len(out) - len(inconclusive),
+            "precompute_s": round(t_pre, 1),
+            "elapsed_s": round(time.time() - t0, 1),
+            "pass": (bool(out) and not uncovered and not inconclusive and
+                     not any(o.get("error") for o in out))}
 
 
 # ------------------------------------------------------------------ 预算
@@ -417,10 +460,12 @@ def budget(part, structures, feature_factor=4.0, feature_offset=12):
             unnamed.append(int(getattr(f, "Tag", 0)))
     unmapped = [sid for sid in ids
                 if not any(nm.startswith(sid) for nm in names)]
+    # g9_structure 已经报过空特征名与结构未映射；这里只在传数字（ids 为空）
+    # 时补报，否则同一条原因会重复计入 reasons。
     reasons = list(g9["reasons"])
-    if unnamed:
+    if unnamed and not any("empty names" in r for r in reasons):
         reasons.append("%d features have empty names" % len(unnamed))
-    if unmapped:
+    if unmapped and not any("without a named feature" in r for r in reasons):
         reasons.append("structures without a named feature: %s"
                        % ",".join(unmapped))
     return {

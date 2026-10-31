@@ -32,6 +32,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part, save_checked
 import nxlib.modeling as mdl
+import nxlib.measure as ms
 import nxlib.skeleton as sk
 import nxlib.structures as st
 import nxlib.template as tpl
@@ -197,6 +198,67 @@ def main():
           scr["pass"] is (len(scr["uncovered"]) == 0),
           "pass must follow the uncovered list, not be hardwired: %r"
           % ({"pass": scr["pass"], "uncovered": scr["uncovered"]},))
+
+    # representative set: an expression outside `only` must be named as
+    # skipped, never counted as covered
+    rep = au.locality_screen(part, loc_plan,
+                             {"plate": {"exprs": ["PLATE_T"]},
+                              "boss": {"exprs": ["BOSS_D", "BOSS_H"]}},
+                             only=["BOSS_D"])
+    say("screen representative=%r" % ({"checked": rep["checked"],
+                                       "skipped": [s["expr"] for s in
+                                                   rep["skipped"]]},))
+    check("T46_SCREEN_REPRESENTATIVE_HONEST",
+          rep["checked"] == 1 and
+          sorted(s["expr"] for s in rep["skipped"]) == ["BOSS_H", "PLATE_T"]
+          and all(s["reason"] for s in rep["skipped"]),
+          "a representative set must list what it did not test: %r"
+          % ({"checked": rep["checked"], "skipped": rep["skipped"]},))
+
+    # budget exhaustion must surface as inconclusive, not as silence; the rows
+    # carry no coverage verdict at all, so nothing may be read as tested
+    slow = au.locality_screen(part, loc_plan,
+                              {"plate": {"exprs": ["PLATE_T"]},
+                               "boss": {"exprs": ["BOSS_D"]}},
+                              budget_s=-1.0)
+    say("screen budget=%r" % ({"inconclusive": slow["inconclusive"],
+                               "checked": slow["checked"],
+                               "uncovered": slow["uncovered"],
+                               "pass": slow["pass"]},))
+    check("T46_SCREEN_BUDGET_INCONCLUSIVE",
+          sorted(slow["inconclusive"]) == ["BOSS_D", "PLATE_T"] and
+          slow["uncovered"] == [] and slow["pass"] is False,
+          "an exhausted budget must report inconclusive and fail: %r"
+          % ({"inconclusive": slow["inconclusive"], "pass": slow["pass"]},))
+
+    # a reused baseline mesh must give the same verdict as a fresh one
+    reuse = au.locality_screen(part, loc_plan,
+                               {"plate": {"exprs": ["PLATE_T"]},
+                                "boss": {"exprs": ["BOSS_D"]}},
+                               base_mesh=au._mesh(part))
+    fresh = dict((r["expr"], r.get("changed_stations"))
+                 for r in scr["rows"])
+    again = dict((r["expr"], r.get("changed_stations")) for r in reuse["rows"])
+    check("T46_SCREEN_BASE_MESH_REUSE", fresh == again,
+          "reusing the baseline mesh must not change the result: %r vs %r"
+          % (fresh, again))
+
+    # section_iou and section_iou_pre must agree exactly: the precomputed
+    # outline path exists only to skip a redundant re-slice of the baseline,
+    # so a numeric difference would mean the precompute changed the verdict
+    st0 = loc_plan["stations"][0]
+    mesh_a = au._mesh(part)
+    same = ms.section_iou(mesh_a, mesh_a, st0["origin"], st0["normal"])
+    pre = ms.section_iou_pre(
+        ms.section_outline(mesh_a, st0["origin"], st0["normal"]),
+        mesh_a, st0["origin"], st0["normal"])
+    check("T46_SECTION_IOU_PRE_EQUIVALENT",
+          same["iou"] == pre["iou"] and
+          same["area_union"] == pre["area_union"] and
+          same["area_inter"] == pre["area_inter"],
+          "the precomputed-outline path must be bit-identical: %r vs %r"
+          % ({k: same.get(k) for k in ("iou", "area_union", "area_inter")},
+             {k: pre.get(k) for k in ("iou", "area_union", "area_inter")}))
 
     say("TEST46_CASES=%d" % len(RESULTS))
     if failed:

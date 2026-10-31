@@ -1985,7 +1985,17 @@ def _span_inter(sa, sb):
 
 def section_iou(mesh_a, mesh_b, origin, normal, step=None, weld=1e-4):
     """两网格同一平面的截面 IoU（扫描线，行内精确）。"""
-    oa = section_outline(mesh_a, origin, normal, weld)
+    return section_iou_pre(section_outline(mesh_a, origin, normal, weld),
+                           mesh_b, origin, normal, step=step, weld=weld)
+
+
+def section_iou_pre(oa, mesh_b, origin, normal, step=None, weld=1e-4):
+    """同上，但基准侧轮廓由调用方预先算好。
+
+    整件穿透筛查拿同一份基准网格、同一批站重复几十条参数；`section_iou`
+    每条参数都把基准侧重切一遍，在 366 站 × 24k 三角面上是纯重复计算。
+    基准侧轮廓按站固定，算一次即可复用。
+    """
     ob = section_outline(mesh_b, origin, normal, weld)
     us, vs = [], []
     for out in (oa, ob):

@@ -579,6 +579,26 @@ def check_wiki():
                 print("  FAIL 行数过期 %s：wiki %s / 实际 %d"
                       % (mm.group(1), cells[-1], real))
 
+    # 1c) 散文里的"`xxx.py` 是最大的模块（NNNN 行）"这类行数也会漂：名册表
+    #     由 1b 拦，正文里写的行数没人管，实测漂了 16 行仍全绿。凡正文里
+    #     提到 nxlib 模块名后 40 字内出现"N 行"且 N>=50，都按实际行数核对。
+    prose_line_refs = 0
+    for n in pages:
+        s = read(os.path.join(WIKI, n))
+        for m in re.finditer(r"`([A-Za-z0-9_]+)(?:\.py)?`([^|]{0,40}?)(\d+)\s*行",
+                             s, re.S):
+            mod, claimed = m.group(1), int(m.group(3))
+            path = os.path.join(NXLIB, mod + ".py")
+            if claimed < 50 or not os.path.isfile(path):
+                continue
+            real = len(read(path).splitlines())
+            prose_line_refs += 1
+            if claimed != real:
+                problems.append("WIKI 正文行数过期 %s：wiki %d / 实际 %d"
+                                % (mod, claimed, real))
+                print("  FAIL 正文行数过期 %s：wiki %d / 实际 %d"
+                      % (mod, claimed, real))
+
     # 2) 计数：用例数/gate 数在 wiki 里必须唯一自洽——既要有当前值，
     #    也不得残留其它可能过期的数字（改一处漏一处就是旧的会留下来）。
     #    wiki 里还有子集计数（自包含用例、一次性探针），它们远小于总数，
@@ -635,8 +655,9 @@ def check_wiki():
                 problems.append("WIKI %s 引用 %s §%s，但该章节不存在" % (n, target, token))
                 print("  FAIL %s 章节失效 %s §%s" % (n, target, token))
 
-    print("  页面 %d 个；名册 %d 组（缺 %d）；行号锚点 %d；锚点 %d 处（失效 %d）"
-          % (len(pages), len(must), len(missing), line_refs, checked, bad_anchor))
+    print("  页面 %d 个；名册 %d 组（缺 %d）；行号锚点 %d；锚点 %d 处（失效 %d）；正文行数 %d 处"
+          % (len(pages), len(must), len(missing), line_refs, checked,
+             bad_anchor, prose_line_refs))
 
 
 def main():

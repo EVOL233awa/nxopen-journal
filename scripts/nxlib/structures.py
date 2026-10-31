@@ -306,12 +306,42 @@ def plate_2p5d(wp, frame, plan_uv, z0, z1, name="PLATE", draft_expr=None,
     return {"features": [_named(f, name)], "bodies": bodies_of(f)}
 
 
+def _expr_number(wp, v):
+    """数值或表达式名 → float。
+
+    轮廓点必须落成实际坐标，回转而特征参数可以吃名字（`Diameter.
+    RightHandSide = "D_HOLE"`）。因此轮廓里的设计量只能在建体时求值：
+    体建成后它仍由表达式驱动，改动会跟着重算，但 builder 当下需要数字。
+    未知名字直接报错，不猜成 0。
+    """
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            pass
+        for e in wp.Expressions:
+            try:
+                lhs = e.Equation.split("=")[0].strip()
+            except Exception:
+                continue
+            if lhs == v:
+                try:
+                    return float(e.RightHandSide)
+                except Exception:
+                    raise ValueError(
+                        "expression %r has a non-numeric right-hand side %r"
+                        % (v, e.RightHandSide))
+        raise ValueError("revolved_profile: unknown expression %r" % (v,))
+    return float(v)
+
+
 def revolved_profile(wp, profile_tr, axis_pt=(0.0, 0.0, 0.0),
                      axis_dir=(0.0, 0.0, 1.0), name="REVOLVE",
                      radials=None, unite=True):
     """(轴向 t, 半径 r) 轮廓 → 分段凸锥台 → 回转并合并成一个体。
 
-    profile_tr: [(t, r)]，t 沿 axis_dir、r 为到轴的垂直距离；
+    profile_tr: [(t, r)]，t 沿 axis_dir、r 为到轴的垂直距离；两项都可以是
+    数值或表达式名（表达式在建体时求值，之后仍由它驱动几何）；
     r == 0 的点在轴上（锥尖），相邻两点可都在轴上（该段跳过）。
 
     为什么按段回转：360° 回转只吃凸轮廓，带台阶/凹陷的整条轮廓报
@@ -329,8 +359,10 @@ def revolved_profile(wp, profile_tr, axis_pt=(0.0, 0.0, 0.0),
     r_dir = sk.normalize(radials) if radials is not None else sk.perpendicular(a)
     feats, segs = [], []
     for i in range(len(profile_tr) - 1):
-        t0, r0 = float(profile_tr[i][0]), float(profile_tr[i][1])
-        t1, r1 = float(profile_tr[i + 1][0]), float(profile_tr[i + 1][1])
+        t0, r0 = _expr_number(wp, profile_tr[i][0]), \
+            _expr_number(wp, profile_tr[i][1])
+        t1, r1 = _expr_number(wp, profile_tr[i + 1][0]), \
+            _expr_number(wp, profile_tr[i + 1][1])
         if abs(t1 - t0) < 1e-9 or (r0 <= 1e-9 and r1 <= 1e-9):
             continue
 

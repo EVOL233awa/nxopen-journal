@@ -380,6 +380,42 @@ def main():
           "evidence=%r obstacle=%r"
           % (plan_tight["evidence"], plan_tight.get("build_obstacle")))
 
+    # A stack fingerprint is "many offsets whose areas agree", not "many
+    # offsets".  A real part with a flange, a boss and a lofted arm has plenty
+    # of parallel planes, but each belongs to a different outline, so the
+    # areas differ hugely.  Refusing it as a z-band stack reported a correct
+    # multi-structure build as a per-slice tree (it silently dropped the arm
+    # row and set unresolved).
+    def band(areas):
+        offs, pairs = 0.0, []
+        prev = None
+        for i, a in enumerate(areas):
+            cur = {"offset": float(i), "faces": [100 + i], "area": a}
+            if prev is not None:
+                pairs.append({"lo": prev["offset"], "hi": cur["offset"],
+                              "thickness": 1.0,
+                              "faces": [prev["faces"][0], cur["faces"][0]],
+                              "area": a + prev["area"]})
+            prev = cur
+        return {"normal": [0.0, 0.0, 1.0],
+                "offsets": [float(i) for i in range(len(areas))],
+                "n_offsets": len(areas), "pairs": pairs}
+
+    stacked = band([5000.0] * 8)
+    mixed = band([5000.0, 4800.0, 300.0, 280.0, 260.0, 240.0])
+    say("stack vs mixed: stacked=%r mixed=%r"
+        % (si._explained_offsets(stacked), si._explained_offsets(mixed)))
+    check("T49_STACK_AREAS_DECIDE",
+          si._explained_offsets(stacked) is False and
+          si._explained_offsets(mixed) is True,
+          "a stack is many offsets with agreeing areas; differing areas mean "
+          "different structures: stacked=%r mixed=%r"
+          % (si._explained_offsets(stacked), si._explained_offsets(mixed)))
+    # a short stack is just a plate: two outer faces and nothing else
+    check("T49_SHORT_BAND_EXPLAINED",
+          si._explained_offsets(band([5000.0, 5000.0])) is True,
+          "fewer than the stack threshold must never be refused")
+
     failed = [n for n, ok in RESULTS if not ok]
     say("TEST49_CASES=%d" % len(RESULTS))
     if failed:

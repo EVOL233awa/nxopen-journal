@@ -160,6 +160,35 @@ def _planar_families(measure, tol_deg=NORMAL_TOL_DEG,
     return fams
 
 
+def _explained_offsets(band, share=0.5):
+    """同法向的多层平面是否有结构解释。True = 有解释（不判堆叠）。
+
+    z 带堆叠的指纹不是"同一法向有很多面"，而是**相邻层面积几乎相同**——
+    每一层都是同一个轮廓在另一个高度上的复制。真实多结构组合件也会有很多
+    同法向面（板顶、板底、臂根上下面、臂端上下面…），但它们分属不同轮廓，
+    相邻层面积差得远。
+
+    判据：按偏移排序后找最长的一条"相邻层面积比 ≥ 1-share"的连续链；
+    链长 ≥ `STACK_OFFSETS` 才判无结构解释（返回 False）。层面积从
+    `pairs` 取——`offsets` 只是偏移值列表，没有各自的面积。
+    """
+    pairs = sorted(band.get("pairs") or [], key=lambda p: p["lo"])
+    if len(pairs) + 1 < STACK_OFFSETS:
+        return True
+    run = 1
+    for i in range(1, len(pairs)):
+        a = max(float(pairs[i - 1].get("area") or 0.0), 1e-9)
+        b = max(float(pairs[i].get("area") or 0.0), 1e-9)
+        ratio = min(a, b) / max(a, b)
+        if ratio >= 1.0 - share:
+            run += 1
+            if run >= STACK_OFFSETS:
+                return False      # 面积一致的层链够长 → 无结构解释
+        else:
+            run = 1
+    return True                   # 至少有一处换轮廓 → 有结构解释
+
+
 def _bands(families):
     """平面族 → 厚度带：同法向 ≥2 偏置即一条带（相邻偏置配对）。
 
@@ -677,7 +706,7 @@ def _loft_structures(measure, part, bands):
     out = []
     used = set()
     for band in bands:
-        if band["n_offsets"] >= STACK_OFFSETS:
+        if band["n_offsets"] >= STACK_OFFSETS and not _explained_offsets(band):
             continue          # 平行面堆叠已经另有拒收，不再重复判
         d = _norm(band["normal"])
         offs = [o for o in band["offsets"]]
@@ -816,7 +845,7 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
             max_pair_area = max(max_pair_area, pair.get("area", 0.0))
     for band in bands:
         n_off = band["n_offsets"]
-        if n_off >= STACK_OFFSETS:
+        if n_off >= STACK_OFFSETS and not _explained_offsets(band):
             unresolved.append({
                 "reason": ("parallel plane stack (%d offsets on one normal): "
                            "no structural explanation -- a per-slice feature "

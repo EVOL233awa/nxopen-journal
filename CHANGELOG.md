@@ -7,8 +7,15 @@
 
 ### Added
 
+- `scripts/nxlib/structure_inference.py` 平面堆叠判据："同法向 ≥6 偏置"改判为"相邻层面积一致"（`_explained_offsets`）——多结构组合件有大量同法向面但分属不同轮廓，按面数拒收会把合法的板+阶梯回转+孔链+放样臂单实体判成 z 带堆叠（表现为少一行臂 + 一条 unresolved）；面积一致的层链够长才判堆叠，C01 坏例（16 层同轮廓）仍被拒。
+- `scripts/nxlib/structures.py` `revolved_profile` 的 `(t, r)` 轮廓接受表达式名（`_expr_number`：建体时求值，之后仍由表达式驱动）；未知名字报错，不猜 0。
+- `scripts/tests/49_structure_inference.py`：29 → 31 项（堆叠按面积判、少于阈值的薄带永不拒收）。
 - `scripts/nxlib/audit.py`：`locality` 返回 `coverage`（`designed_exprs`/`measured_exprs`/`partial`）与 `pass`——只测了一部分参数时 `partial=true` 且 `pass=false`，"测了 3 条全过"与"全表通过"不再长得一样；新增 `locality_screen(part, plan, structures)` 整件穿透筛查——逐条按固定小倍率改参数、记哪些站动过，一个站都没动即该参数 UNCOVERED（站表看不到它），只回答覆盖不回答归属，先于 `locality` 跑。
-- `scripts/tests/46_edit_envelope.py`：11 → 19 项（`partial` 声明、部分扫描不得报 pass、穿透筛查的未覆盖参数与 `pass` 联动）。
+- `scripts/tests/46_edit_envelope.py`：11 → 22 项（`partial` 声明、部分扫描不得报 pass、穿透筛查的未覆盖参数与 `pass` 联动；代表集未测项逐条进 `skipped`、预算耗尽记 `inconclusive` 且 `pass=false`、复用基线网格与新建网格同判、`section_iou_pre` 与 `section_iou` 逐位一致）。
+- `scripts/nxlib/audit.py` `locality_screen`：新增 `only=`（代表集，未列入项点名进 `skipped`）、`budget_s=`（超时记 `inconclusive`，`pass=false`）、`base_mesh=`（复用基线网格）、`precompute_outlines=`（基准侧截面按站只算一次；逐条单独调用会把这份预计算重做 N 次）；返回值补 `skipped`/`inconclusive`/`precompute_s`/`elapsed_s`。
+- `scripts/nxlib/measure.py` `section_iou_pre`：基准侧轮廓由调用方预给；`section_iou` 改为它的薄封装，等价性由构造保证（测试 46 断言逐位一致）。
+- `scripts/nxlib/audit.py` `budget`：`g9_structure` 已追加过的"空特征名/结构未映射"不再重复追加（`reasons` 曾出现同一条两次）。
+- `scripts/check_repo.py` WIKI 组：新增正文行数核对——wiki 正文里"`<模块>` 后 N 行"与文件实际行数不一致时判失败（名册表的行数列原本有校验，正文里写死的行数实测漂了 16 行仍全绿）。
 - `scripts/nxlib/structures.py` `sweep_trim` + `profile_uz_curves`：端壁按测量侧视轮廓沿 ±V 扫掠切，`profile_segs` 支持 `{"line":...}` / `{"arc":...}` 混合段——折线剖面会把一段弧切成几十个小平面（`added_types` 只剩 22），圆弧作为一条曲线进剖面才留下 type16 柱面。`checks` 记体数/去料体积/新增面型，布尔被拒时记原文。
 - `scripts/tests/47_structure_builders.py`：57 → 63 项（45° 斜切端壁只留一侧料且只多平面；带弧端壁新增一个柱面；去料体积与轮廓外体积对账）。
 - `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。"
