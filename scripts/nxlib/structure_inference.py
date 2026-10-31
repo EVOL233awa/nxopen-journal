@@ -191,31 +191,62 @@ def _bands(families):
 # ------------------------------------------------------------------- 回转体
 
 def _revolved_structures(measure, fillet_radii=None):
-    """同轴组 → 回转结构行：多半径台阶选 `revolved_profile`，单段选筒/孔。"""
+    """同轴组 → 回转结构行：同一根轴上多半径台阶 → `revolved_profile`。
+
+    `measure.group_coaxial` 按 (轴, 半径) 分桶，所以一根两阶轴会给出两个组、
+    每组只有一段——直接按组出行就永远选不到 `revolved_profile`，而台阶轴的
+    正解是分段回转（z 带堆叠会多出段间台阶面）。这里先按**轴线**把组并成
+    一根轴，再数这根轴上的不同半径：多半径即台阶轴，一段半径才是筒/孔。
+    """
     radii = set(_round(abs(float(r))) for r in (fillet_radii or []))
-    rows = []
+    groups = []
     for gi, g in enumerate(measure.get("cylinders", [])):
         r = _round(abs(float(g.get("radius", 0.0))))
-        if g.get("kind") == ms.CYLINDER and r in radii:
+        if r in radii:
             continue
-        segs = g.get("segments") or [{"extent": g.get("extent"),
-                                      "faces": g.get("faces", [])}]
-        steps = len(set(_round(abs(float(s.get("radius", r))))
-                        for s in segs)) if segs and "radius" in segs[0] else 1
-        concave = bool(g.get("concave"))
-        role = "bore" if concave else "hub"
+        row = {"radius": r, "source": "cylinders#%d" % gi,
+               "faces": sorted(int(t) for t in g.get("faces", [])),
+               "extent": [_round(v) for v in g.get("extent", [])],
+               "length": _round(g.get("length", 0.0)),
+               "concave": bool(g.get("concave")),
+               "axis": [_round(v) for v in g.get("axis", [])],
+               "point": [_round(v) for v in g.get("point", [])]}
+        for grp in groups:
+            # 只并**同一类**：凸台外圆与孔壁常常同轴（凸台围着孔），把它们
+            # 并成一根轴会让台阶数变成 3、把凸台算进孔链，随后孔链去重又把
+            # 凸台整个吞掉——凸台在报告里就消失了
+            if grp[0]["concave"] == row["concave"] and                     _same_axis(grp[0], row):
+                grp.append(row)
+                break
+        else:
+            groups.append([row])
+
+    rows = []
+    for grp in groups:
+        grp.sort(key=lambda s: (s["extent"][0] if s["extent"] else 0.0,
+                                -s["radius"]))
+        radii_in = sorted(set(s["radius"] for s in grp))
+        faces = sorted(set(t for s in grp for t in s["faces"]))
+        axis = grp[0]["axis"]
+        # 轴向区间取整根轴的并集：单看某一段会把台阶轴的行程报短
+        lo = min((s["extent"] or [0.0])[0] for s in grp)
+        hi = max((s["extent"] or [0.0])[-1] for s in grp)
+        steps = len(radii_in)
+        role = "bore" if all(s["concave"] for s in grp) else "hub"
         rows.append({
             "role": role,
             "template": "revolved_profile" if steps > 1 else "cylinder",
-            "axis": [_round(v) for v in g.get("axis", [])],
-            "point": [_round(v) for v in g.get("point", [])],
-            "radius": r,
-            "extent": [_round(v) for v in g.get("extent", [])],
-            "length": _round(g.get("length", 0.0)),
-            "evidence_faces": sorted(int(t) for t in g.get("faces", [])),
-            "segments": len(segs),
-            "source": "cylinders#%d" % gi,
-            "confidence": "high" if len(g.get("faces", [])) >= 1 else "low",
+            "axis": axis,
+            "point": grp[0]["point"],
+            "radius": max(radii_in),
+            "radii": radii_in,
+            "extent": [lo, hi],
+            "length": _round(hi - lo),
+            "evidence_faces": faces,
+            "segments": len(grp),
+            "sources": [s["source"] for s in grp],
+            "source": grp[0]["source"],
+            "confidence": "high" if faces else "low",
         })
     for gi, g in enumerate(measure.get("cones", [])):
         rows.append({
@@ -224,10 +255,13 @@ def _revolved_structures(measure, fillet_radii=None):
             "axis": [_round(v) for v in g.get("axis", [])],
             "point": [_round(v) for v in g.get("point", [])],
             "radius": _round(abs(float(g.get("radius", 0.0)))),
+            "radii": [_round(abs(float(g.get("radius", 0.0))))],
             "half_angle_deg": _round(g.get("half_angle_deg", 0.0)),
             "extent": [_round(v) for v in g.get("extent", [])],
             "length": _round(g.get("length", 0.0)),
             "evidence_faces": sorted(int(t) for t in g.get("faces", [])),
+            "segments": 1,
+            "sources": ["cones#%d" % gi],
             "source": "cones#%d" % gi,
             "confidence": "high",
         })
@@ -344,7 +378,13 @@ def _source_of(measure, seg):
 # --------------------------------------------------------------- 面采样类结构
 
 def _sampled_structures(measure, part, structures, fillet_radii):
-    """需要面采样的结构（眼/耳、斜臂）：给出 part 才判，否则进 unresolved。"""
+    """需要面采样的结构（眼/耳）：给出 part 才判，否则进 unresolved。
+
+    触发面不再要求"属于孔链"：眼端的孔可能没被孔审计收进分母（薄壁、盲
+    孔、切在斜面上），按孔链筛选会把眼整个跳过——而跳过在报告里与"没有眼"
+    长得一样。判据改成"这个圆柱面是不是一根孔轴"，用面自身的轴线取截面，
+    再看外轮廓是否呈双瓣。
+    """
     unresolved = []
     if part is None:
         unresolved.append({
@@ -356,57 +396,337 @@ def _sampled_structures(measure, part, structures, fillet_radii):
         })
         return [], unresolved
     faces = measure.get("faces", [])
-    hole_axes = []
-    for chain in structures.get("holes", []):
-        hole_axes.append(chain["axis"])
+    seen_axes = []
     for f in faces:
         if f.get("type") != ms.CYLINDER:
             continue
         r = abs(float(f.get("radius", 0.0) or 0.0))
+        if r <= 0.0:
+            continue
         if fillet_radii and any(abs(r - abs(float(x))) <= 1e-6
                                 for x in fillet_radii):
             continue
-        if not any(_angle_deg(axis, f.get("dir", [])) <= COAXIAL_TOL_DEG
-                   for axis in hole_axes):
+        axis = _norm(f.get("dir", [0.0, 0.0, 1.0]))
+        # one fit per axis: the two lobe cylinders and the hole share it
+        if any(_angle_deg(axis, a) <= COAXIAL_TOL_DEG for a in seen_axes):
             continue
-        fit = _arc_fit(part, f)
+        seen_axes.append(axis)
+        fit = _arc_fit(part, f, axis)
         if fit["lobes"] >= 2:
             structures.setdefault("eyes", []).append({
                 "role": "eye",
                 "template": "eye_2lobe",
-                "axis": [_round(v) for v in f.get("dir", [])],
+                "axis": [_round(v) for v in axis],
                 "lobes": fit["lobes"],
                 "residual_mm": _round(fit["residual"]),
+                "lobe_radii": [_round(v) for v in fit.get("radii") or []],
                 "evidence_faces": [int(f.get("tag", -1))],
                 "confidence": ("high" if fit["residual"] <= ARC_FIT_TOL_MM
                                else "low"),
             })
-        elif fit["residual"] > ARC_FIT_TOL_MM:
-            unresolved.append({
-                "reason": "boundary arc fit residual over tolerance",
-                "evidence_faces": [int(f.get("tag", -1))],
-                "next_probe": "re-sample the boundary with a finer count",
-            })
-    return [], unresolved
+    # 返回值就是结构行本身：早先这里恒返回 []，于是眼被判出来了却当成
+    # "没有结构"丢掉——判据全对、交付为空，比判错更难发现
+    return list(structures.get("eyes") or []), unresolved
 
 
-def _arc_fit(part, face):
-    """孔轴附近的外轮廓边界弧：按瓣心/瓣半径聚类（给出 part 时才可用）。"""
+RING_SAMPLES = 360          # 等弧长重采样点数（1 点 = 1 度）
+ARC_WINDOW_DEG = 20.0       # 局部圆拟合窗口的角跨度
+ARC_MIN_SPAN_DEG = 15.0     # 一段圆弧至少覆盖多少度才算结构特征
+
+
+def _resample_by_length(ring, n):
+    """闭合折线按等弧长重采样成 n 点（点距均匀，窗口跨度才可用角度表示）。"""
+    seg = []
+    total = 0.0
+    for i in range(len(ring)):
+        a0, b0 = ring[i]
+        a1, b1 = ring[(i + 1) % len(ring)]
+        d = math.hypot(a1 - a0, b1 - b0)
+        seg.append(((a0, b0), (a1, b1), d))
+        total += d
+    if total <= 0.0:
+        return list(ring)
+    out = []
+    step = total / float(n)
+    acc = 0.0
+    k = 0
+    for j in range(n):
+        target = step * j
+        while k < len(seg) - 1 and acc + seg[k][2] < target:
+            acc += seg[k][2]
+            k += 1
+        d = seg[k][2]
+        t = 0.0 if d <= 1e-12 else (target - acc) / d
+        t = max(0.0, min(1.0, t))
+        a0, b0 = seg[k][0]
+        a1, b1 = seg[k][1]
+        out.append((a0 + t * (a1 - a0), b0 + t * (b1 - b0)))
+    return out
+
+
+def _arc_fit(part, face, hole_axis, window=None):
+    """孔端外轮廓的瓣拟合：把轮廓拆成"等半径圆弧簇"，数有几瓣。
+
+    为什么不用绕轴射线扇：射线扇量的是"该角度上最远的边界"，而耳端背后就是
+    整条臂，同一根射线会先穿 lobe 再打到几十毫米外的臂侧壁，半径序列没有
+    平台（一测就是一串连续值）。结构事实是**轮廓由 N 段圆弧组成**：双瓣耳端
+    是两段等半径圆弧（瓣心对称于孔轴）加两段直壁。所以这里直接做圆弧提取：
+
+    1. 取过孔轴的截面，保留闭合外环的点（内环是孔，不参与）；
+    2. 每点用相邻 `window` 个点做最小二乘圆拟合，得到局部圆心/半径/残差；
+    3. 残差小的点按 (圆心, 半径) 聚簇，每簇还要有足够的角跨度才算一段圆弧
+       （短弧可能只是直线段的数值抖动）；
+    4. 半径相近的簇 → 同一个"瓣半径"；瓣心相对孔轴成对称两处 → 双瓣。
+
+    返回 lobes（等半径圆弧簇数）、radius（瓣半径）、centers（瓣心相对孔轴的
+    偏移）、span_deg（各簇角度覆盖）。判定用 lobes 与对称性，构建期再由
+    `eye_2lobe` 从截面取瓣心实际位置。
+    """
+    d = _norm(hole_axis if hole_axis else face.get("dir", [0.0, 0.0, 1.0]))
+    p = [float(x) for x in (face.get("point") or [0.0, 0.0, 0.0])]
+    r_hole = abs(float(face.get("radius", 0.0) or 0.0))
+    empty = {"lobes": 0, "residual": 0.0, "radius": 0.0, "radii": [],
+             "centers": [], "span_deg": []}
     try:
-        samples = ms.fillet_run_samples(part, [face], [abs(float(
-            face.get("radius", 0.0) or 0.0))], fillet_only=False)
+        sec = ms.exact_section(part, p, d)
     except Exception:
-        samples = []
-    if not samples:
-        return {"lobes": 0, "residual": 0.0}
-    pts = []
-    for run in samples:
-        pts.extend(run.get("uv_center", []) or [])
-    lobes = 0
-    residual = 0.0
-    if pts:
-        lobes = 1
-    return {"lobes": lobes, "residual": residual}
+        return empty
+    e1, e2 = ms._basis(d)
+    rings = []
+    for lp in sec.get("loops") or []:
+        pts = lp.get("pts") or []
+        if not lp.get("closed") or len(pts) < 24:
+            continue
+        uv = []
+        for q in pts:
+            w = [q[k] - p[k] for k in range(3)]
+            uv.append((sum(w[k] * e1[k] for k in range(3)),
+                       sum(w[k] * e2[k] for k in range(3))))
+        rings.append(uv)
+    if not rings:
+        return empty
+    # 截面里既有孔环也有外轮廓：取**点最多**的那一圈当外轮廓（孔环是整圆、
+    # 外轮廓带直壁，两者点数不一定谁多，所以之外还要比长度）。这里用绝对
+    # 弧长最长的环——外轮廓永远比孔长。
+    def ring_len(uv):
+        tot = 0.0
+        for i in range(len(uv)):
+            a0, b0 = uv[i]
+            a1, b1 = uv[(i + 1) % len(uv)]
+            tot += math.hypot(a1 - a0, b1 - b0)
+        return tot
+    rings.sort(key=lambda uv: -ring_len(uv))
+    outer = rings[0]
+    n = len(outer)
+    half = int(window if window else ARC_WINDOW_DEG) // 2
+
+    def fit_circle(idx):
+        xs = [outer[i % n] for i in idx]
+        m = float(len(xs))
+        sx = sum(q[0] for q in xs) / m
+        sy = sum(q[1] for q in xs) / m
+        suu = sum((q[0] - sx) ** 2 for q in xs)
+        svv = sum((q[1] - sy) ** 2 for q in xs)
+        suv = sum((q[0] - sx) * (q[1] - sy) for q in xs)
+        suuu = sum((q[0] - sx) ** 3 for q in xs)
+        svvv = sum((q[1] - sy) ** 3 for q in xs)
+        suvv = sum((q[0] - sx) * (q[1] - sy) ** 2 for q in xs)
+        svuu = sum((q[1] - sy) * (q[0] - sx) ** 2 for q in xs)
+        det = suu * svv - suv * suv
+        if abs(det) < 1e-12:
+            return None
+        a = 0.5 * (suuu + suvv)
+        b = 0.5 * (svvv + svuu)
+        uc = (a * svv - b * suv) / det
+        vc = (b * suu - a * suv) / det
+        r = math.sqrt(uc * uc + vc * vc + (suu + svv) / m)
+        if r <= 0.0:
+            return None
+        res = 0.0
+        for q in xs:
+            res = max(res, abs(math.hypot(q[0] - (sx + uc),
+                                          q[1] - (sy + vc)) - r))
+        return (sx + uc, sy + vc, r, res)
+
+    # 先按**弧长**重采样：截面曲线是 `SectionFromPlanes` 拟合出来的多段样条，
+    # 每段给 65 个采样点，所以点的疏密随曲率变化。按点数开窗口会在样条的
+    # 陡段只跨极短弧长——近直的三点拟合能给出半径任意的"圆"且残差极小，
+    # 于是每个窗口各自成簇。按等弧长重采样后窗口才有固定的角度含义。
+    ring = _resample_by_length(outer, RING_SAMPLES)
+    n = len(ring)
+    outer = ring
+
+    local = []
+    for i in range(n):
+        idx = [i + k - half
+               for k in range(int(window if window else ARC_WINDOW_DEG))]
+        f = fit_circle(idx)
+        if f is not None and f[3] <= max(0.05, 0.01 * f[2]):
+            local.append((i, f[0], f[1], f[2]))
+
+    if not local:
+        return empty
+    # 按 (圆心, 半径) 聚簇，容差是**相对值**：半径 2%、圆心 5% 环径。不能按
+    # 样本极差定容差——环上总有几处窗口跨在直壁上，拟合出半径几十的"大圆"，
+    # 极差被它撑开，于是任何两个样本都算同类，每个点各自成簇。
+    r_ring = max(math.hypot(a, b) for (a, b) in outer)
+    clusters = []
+    for rec in local:
+        placed = False
+        for cl in clusters:
+            cx = sum(r[1] for r in cl) / float(len(cl))
+            cy = sum(r[2] for r in cl) / float(len(cl))
+            cr = sum(r[3] for r in cl) / float(len(cl))
+            if (abs(cr - rec[3]) <= max(0.02 * cr, 0.05) and
+                    math.hypot(cx - rec[1], cy - rec[2])
+                    <= max(0.05 * r_ring, 0.5)):
+                cl.append(rec)
+                placed = True
+                break
+        if not placed:
+            clusters.append([rec])
+    arcs = []
+    for cl in clusters:
+        idx = sorted(set(r[0] for r in cl))
+        if len(idx) < 3:
+            continue
+        span = 360.0 * float(len(idx)) / float(n)
+        if span < ARC_MIN_SPAN_DEG:
+            continue
+        cx = sum(r[1] for r in cl) / float(len(cl))
+        cy = sum(r[2] for r in cl) / float(len(cl))
+        cr = sum(r[3] for r in cl) / float(len(cl))
+        arcs.append({"center": (round(cx, 4), round(cy, 4)),
+                     "radius": round(cr, 4), "span_deg": round(span, 2),
+                     "points": len(idx)})
+    if not arcs:
+        return empty
+    # 瓣 = 与最长弧同半径的弧（每个瓣就是一段这样的圆弧）
+    base = max(arcs, key=lambda a: a["span_deg"])
+    same = [a for a in arcs
+            if abs(a["radius"] - base["radius"]) <= max(
+                0.02 * base["radius"], 0.05)]
+    offsets = [math.hypot(a["center"][0], a["center"][1]) for a in same]
+    return {"lobes": len(same),
+            "residual": 0.0,
+            "radius": base["radius"],
+            "radii": sorted(set(a["radius"] for a in arcs)),
+            "centers": [a["center"] for a in same],
+            "center_offsets": [round(o, 4) for o in offsets],
+            "span_deg": [a["span_deg"] for a in same],
+            "arcs": arcs,
+            "hole_radius": r_hole}
+
+
+
+# --------------------------------------------------------------- 变截面臂
+
+SHAPE_SIMILARITY = 0.06        # 归一化轮廓的逐点半径相对差上限（相似判据）
+
+
+def _ring_radii_profile(pts3, n_out=24):
+    """三维闭环 → 归一化的"到形心距离"序列（只留形状，去掉位置与尺度）。"""
+    if not pts3:
+        return None
+    ring = _resample_by_length([(p[0], p[1]) for p in pts3], n_out)
+    cx = sum(p[0] for p in ring) / float(len(ring))
+    cy = sum(p[1] for p in ring) / float(len(ring))
+    rs = [math.hypot(p[0] - cx, p[1] - cy) for p in ring]
+    ref = sum(rs) / float(len(rs))
+    if ref <= 0.0:
+        return None
+    return [r / ref for r in rs]
+
+
+def _sections_similar(a, b, tol):
+    """两张截面是否"同一轮廓按比例缩放"（拔模/缩放）而不是形状变了。
+
+    做法：各自归一化到平均半径 1，逐点比半径序列。拔模体的两张截面是同一条
+    轮廓的相似形，归一化后逐点重合；变截面臂的端面长宽比不同，归一化后仍
+    有明显差异。相位的选择取最小残差的那个循环移位（两截面起点可能不同）。
+    """
+    ra = _ring_radii_profile(a)
+    rb = _ring_radii_profile(b)
+    if ra is None or rb is None:
+        return False
+    n = len(ra)
+    worst = None
+    for shift in range(n):
+        d = max(abs(ra[i] - rb[(i + shift) % n]) for i in range(n))
+        worst = d if worst is None else min(worst, d)
+    return worst is not None and worst <= tol
+
+
+
+def _loft_structures(measure, part, bands):
+    """沿"行程"方向截面面积变化的体 → 放样臂，不是等截面板。
+
+    为什么不能只看平面族：一块板的两侧宽平面面积相近、行程方向的截面不变；
+    变截面臂的端面会形成一条"厚度"带（那是行程不是壁厚），而它的侧壁可能
+    是直纹平面、B 曲面或样条，按面型判会漏。真正区分两者的是**截面面积随
+    行程的变化**：板在 1/6 与 5/6 处面积几乎相同，臂会差出一截。
+
+    行程方向取平面族里偏置数最多那一族（板/臂的端面与分界都在这个法向上），
+    两张截面各取在 1/6 与 5/6 处，避开根部过渡与端部圆角。面积比 > 1+2%
+    （`BAND_AREA_TOL`）即判变截面。
+
+    只做判定、不改几何：截面张数由构建阶段按实测分界补，builder 不猜。
+    """
+    if part is None or not bands:
+        return [], []
+    out = []
+    used = set()
+    for band in bands:
+        if band["n_offsets"] >= STACK_OFFSETS:
+            continue          # 平行面堆叠已经另有拒收，不再重复判
+        d = _norm(band["normal"])
+        offs = [o for o in band["offsets"]]
+        if len(offs) < 2:
+            continue
+        lo, hi = min(offs), max(offs)
+        if hi - lo <= 0.0:
+            continue
+        areas, shape = [], []
+        for frac in (1.0 / 6.0, 5.0 / 6.0):
+            t = lo + (hi - lo) * frac
+            o = [d[k] * t for k in range(3)]
+            try:
+                sec = ms.exact_section(part, o, d)
+            except Exception:
+                areas, shape = [], []
+                break
+            closed = [lp for lp in sec["loops"] if lp.get("closed")]
+            areas.append(sum(abs(lp.get("abs_area") or 0.0)
+                             for lp in closed))
+            if closed:
+                big = max(closed, key=lambda lp: abs(lp.get("abs_area") or 0.0))
+                shape.append(big.get("pts") or [])
+        if len(shape) != 2 or min(areas) <= 0.0:
+            continue
+        ratio = max(areas) / min(areas)
+        if ratio < 1.0 + BAND_AREA_TOL:
+            continue
+        # 拔模体也是"截面面积随行程变"：它的两张截面**形状相似**（同一条
+        # 轮廓按比例缩放），面积比只反映收缩率。真正的变截面臂两张截面的
+        # 形状本身不同（长宽比变）。区分靠相似度：把两张截面各自归一化到
+        # 同一面积后，若逐点重合就是拔模/缩放，否则才是变截面。
+        if _sections_similar(shape[0], shape[1], SHAPE_SIMILARITY):
+            continue
+        faces = [t for o in band["offsets"] for t in band["faces"]]
+        used.update(faces)
+        out.append({
+            "role": "arm",
+            "template": "section_loft",
+            "axis": [_round(v) for v in d],
+            "sections": 2,
+            "area_lo": _round(min(areas)),
+            "area_hi": _round(max(areas)),
+            "area_ratio": _round(ratio),
+            "evidence_faces": sorted(set(faces)),
+            "boundary_faces": [],
+            "confidence": "high" if ratio > 1.05 else "low",
+        })
+    return out, []
 
 
 # ------------------------------------------------------------------- 顶层入口
@@ -450,6 +770,13 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
             "frame": frame,
             "evidence_faces": g["evidence_faces"],
             "boundary_faces": [],
+            "radius": g.get("radius"),
+            "radii": list(g.get("radii") or []),
+            "half_angle_deg": g.get("half_angle_deg"),
+            "axis": g.get("axis"),
+            "extent": g.get("extent"),
+            "length": g.get("length"),
+            "segments": g.get("segments"),
             "design_params": ["%s_R" % prefix, "%s_L" % prefix],
             "data_refs": ["%s_AXIS" % prefix.rstrip("0123456789"),
                           "%s_POS" % prefix.rstrip("0123456789")],
@@ -527,9 +854,52 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
                 "normal": band["normal"],
             })
 
+    # 变截面臂：沿板带行程方向取两张截面，面积随行程变 → 放样。
+    # 放在板之后：臂的两端端面本来就形成一条"厚度"带，那是臂的行程而不是
+    # 壁厚，所以要用截面面积随行程的变化来决定它是板还是臂。
+    lofted, loft_unresolved = _loft_structures(measure, part, bands)
+    unresolved.extend(loft_unresolved)
+    loft_faces = set(t for r in lofted for t in r["evidence_faces"])
+    if lofted:
+        rows = [r for r in rows
+                if not (set(r["evidence_faces"]) & loft_faces)]
+    for r in lofted:
+        rows.append({
+            "id": nid("ARM"),
+            "role": r["role"],
+            "template": r["template"],
+            "frame": frame,
+            "evidence_faces": r["evidence_faces"],
+            "boundary_faces": [],
+            "axis": r["axis"],
+            "sections": r["sections"],
+            "area_lo": r["area_lo"],
+            "area_hi": r["area_hi"],
+            "area_ratio": r["area_ratio"],
+            "design_params": ["ARM_L"],
+            "data_refs": ["ARM_SECTIONS"],
+            "depends_on": [],
+            "build_order": 0,
+            "expected_face_types": [],
+            "validation_stations": [],
+            "confidence": r["confidence"],
+            "status": "planned",
+        })
+
     sampled, sampled_unresolved = _sampled_structures(
         measure, part, {"holes": chains}, fillet_radii)
     for row in sampled:
+        row.setdefault("frame", frame)
+        row["id"] = nid("EYE")
+        row.setdefault("boundary_faces", [])
+        row.setdefault("design_params", ["%s_R" % row["id"],
+                                         "%s_T" % row["id"]])
+        row.setdefault("data_refs", ["EYE_LOBES", "EYE_PLAN"])
+        row.setdefault("depends_on", [])
+        row["build_order"] = 0
+        row.setdefault("expected_face_types", [ms.CYLINDER])
+        row.setdefault("validation_stations", [])
+        row.setdefault("status", "planned")
         rows.append(row)
     unresolved.extend(sampled_unresolved)
     if not rows:
@@ -540,7 +910,7 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
         })
 
     order = {"plate": 0, "hub": 1, "bore": 2, "cone": 3, "hole_chain": 4,
-             "eye": 5}
+             "arm": 5, "eye": 6}
     rows.sort(key=lambda r: (order.get(r["role"], 9), r["evidence_faces"],
                              r["id"]))
     for i, row in enumerate(rows):

@@ -7,6 +7,8 @@
 
 ### Added
 
+- `scripts/nxlib/structure_inference.py`：结构判定补三条——① 同一轴上的多个半径并成一条 `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成多行 `cylinder`，而多行同轴 cylinder 正是 z 带堆叠的入场券），同轴凹面组不并入凸面行；② `_arc_fit` 用**等弧长重采样的局部圆拟合**提取边界圆弧并聚簇，给出瓣数/瓣半径/瓣心偏移（射线扇会把背后的整条臂算进半径，半径序列没有平台；局部圆拟合要按弧长重采样，否则样条陡段的近直三点拟合会给出半径任意的"圆"），参考点先判是否在料内、非星形截面另报；③ `_loft_structures` 沿板带行程取两张截面，面积比 >2% **且** 两截面形状不相似（`_sections_similar`：归一化到平均半径 1 后逐点比，拔模体是相似形、变截面臂不是）才判 `section_loft`。修 `_sampled_structures` 恒返回 `[]` 的交付漏洞（判据对、行被丢），行补齐 `id/build_order/frame`。
+- `scripts/tests/49_structure_inference.py`：20 → 24 项（同轴多半径并成一条 revolved 行、凹面不并入凸面、拔模相似形不判放样、变截面判放样）。
 - `scripts/nxlib/structures.py` 结构级 builder（第三批）：`section_loft`（结构分界截面 → 一张放样实体；截面基向量从首张取、逐张投影正交化，索引才连续；先查同点数是提交前条件；提交后查实体性与体积，因为对应关系扭曲时 `ThroughCurves` 会给出 `IsSolidBody=True`、体积 0 的自交实体）、`_resample_ring`（绕参考点等角 N 点；参考点在料外与环非星形分别报错，不静默填凹口）、`window_cut`（一平面轮廓 + 可选拔模拉伸的切除体，成功/被拒都逐刀记新增面型与去料体积，布尔被拒时用 undo mark 把刀具体一起回滚）；`plate_2p5d` 的拔模路径抽成 `_extrude_z` 供两者共用。
 - `scripts/tests/47_structure_builders.py`：38 → 57 项，新增变截面放样（17083.2680 对圆台 17132.1519、1 特征 50 面、段数不一致提交前拒绝）、等角重采样（方环落点、两次逐位一致、料外参考点/非星形两种报错分开、凸环保留）、拔模窗口（直壁 4000.0000 只新增平面；拔模 1531.2116 且四面墙偏离 uv 面 4.0000°——直边轮廓拔模出直纹面而非锥面，判据是法向倾角）、窗口落空（布尔原文进 checks、体数不变）。
 - `scripts/nxlib/structure_inference.py`（新层）：测量 → 结构表。`face_graph` 给每面角色（功能面/圆角面，按类型与 `fillet_radii`），`_planar_families`/`_bands` 按法向聚族并**按族法向**取有符号偏置（反向平行的两面属同族，板厚不丢），`_hole_chains` 把**同一轴线的凹面段**归成一条链（阶梯孔逐段保留半径/长度，凸台外圆不入链），`infer_structures` 出结构行（id/模板/证据面/design 与 data 分层/建件顺序/置信度）与 `unresolved`（附证据面与下一步探针），`plan_validation_stations` 把站按结构 id 归组并回写 `validation_stations`，`inference_report` 写确定性 JSON（两次逐字节相同）。缺口照实拒绝：同法向 ≥6 个偏置的平行面堆叠（层号表特征树的指纹）不出板行；需要面采样的眼/耳与纵剖面结构在没给 `part` 时进 `unresolved`，不猜模板。

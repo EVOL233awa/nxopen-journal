@@ -247,6 +247,57 @@ def main():
           empty["missing"] == ["GHOST"] and empty["complete"] is False,
           "a structure with no station must be reported: %r" % (empty,))
 
+    # stepped-shaft grouping: group_coaxial buckets by (axis, radius), so a
+    # two-radius shaft arrives as two single-segment groups.  Merging by axis
+    # is what makes a stepped shaft a revolved_profile row instead of two
+    # cylinder rows -- and a z-band stack is exactly what several cylinder
+    # rows on one axis looks like to the construction stage.
+    shaft = plate_boss_hole()
+    shaft["cylinders"] = [
+        {"kind": CYL, "axis": [0.0, 0.0, 1.0], "point": [0.0, 0.0, 0.0],
+         "radius": 18.0, "faces": [20], "extent": [0.0, 12.0], "length": 12.0,
+         "concave": False, "segments": [{"faces": [20]}]},
+        {"kind": CYL, "axis": [0.0, 0.0, 1.0], "point": [0.0, 0.0, 12.0],
+         "radius": 11.0, "faces": [21], "extent": [12.0, 30.0], "length": 18.0,
+         "concave": False, "segments": [{"faces": [21]}]},
+        # a coaxial bore must NOT merge with the convex steps: on this axis the
+        # convex/concave split is what keeps the bore out of the shaft row
+        {"kind": CYL, "axis": [0.0, 0.0, 1.0], "point": [0.0, 0.0, 0.0],
+         "radius": 6.0, "faces": [22], "extent": [0.0, 30.0], "length": 30.0,
+         "concave": True, "segments": [{"faces": [22]}]},
+    ]
+    shaft["cones"] = []
+    got = si._revolved_structures(shaft)
+    say("shaft rows=%r" % ([(r["role"], r["template"], r.get("radii"))
+                            for r in got],))
+    hubs = [r for r in got if r["role"] == "hub"]
+    bores = [r for r in got if r["role"] == "bore"]
+    check("T49_SHAFT_MERGED_BY_AXIS",
+          len(hubs) == 1 and hubs[0]["template"] == "revolved_profile" and
+          hubs[0]["radii"] == [11.0, 18.0],
+          "two radii on one axis must be ONE revolved row carrying both: %r"
+          % ([(r["template"], r.get("radii")) for r in hubs],))
+    check("T49_SHAFT_CONCAVE_SPLIT",
+          len(bores) == 1 and bores[0]["radii"] == [6.0],
+          "a coaxial bore must not join the shaft's convex row: %r"
+          % ([(r["role"], r.get("radii")) for r in got],))
+
+    # draft vs loft: a drafted solid's two sections are the same outline
+    # scaled, a variable-section arm's are not
+    square = [(10.0, 10.0, 0.0), (-10.0, 10.0, 0.0), (-10.0, -10.0, 0.0),
+              (10.0, -10.0, 0.0)]
+    scaled = [(p[0] * 0.6, p[1] * 0.6, 0.0) for p in square]
+    flat = [(16.0, 4.0, 0.0), (-16.0, 4.0, 0.0), (-16.0, -4.0, 0.0),
+            (16.0, -4.0, 0.0)]
+    sim_scaled = si._sections_similar(square, scaled, si.SHAPE_SIMILARITY)
+    sim_flat = si._sections_similar(square, flat, si.SHAPE_SIMILARITY)
+    say("similarity scaled=%r reshaped=%r" % (sim_scaled, sim_flat))
+    check("T49_DRAFT_NOT_LOFT", sim_scaled is True,
+          "a drafted solid's sections are one outline scaled -- that is not a "
+          "loft")
+    check("T49_LOFT_DETECTED", sim_flat is False,
+          "a variable-section arm's sections differ in aspect ratio")
+
     failed = [n for n, ok in RESULTS if not ok]
     say("TEST49_CASES=%d" % len(RESULTS))
     if failed:
