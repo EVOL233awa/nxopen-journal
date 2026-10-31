@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：48 个用例（45 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：49 个用例（46 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -20,7 +20,7 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 成功标志：出现该用例的判决 token，且输出中没有任何 `_FAIL`（实现见 `:gate` 子过程）。退出码不可作判据：未捕获异常才返回非零，journal 按 SKILL.md §3 每步 try/except 后继续，失败被吞时退出码仍为 0；26 号原生崩溃反而把退出码变成 1。
 
-⚠ 22-30、38-48 二十个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
+⚠ 22-30、38-49 二十一个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
 
 NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
 
@@ -83,7 +83,8 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 45 | `45_audit_g1full.py` | `TEST45_DONE` | 8 项审计层：`g1full` 自比对全过（空测试，比对本身不能自造失败）；板宽 +6 mm 后仅 5 个 primary 站失败、分区原样（分母不动，加宽不是加站）；失败方向恒为 `area_b ≥ area_a`（材料只增）；5 站全部由面积增长解释（300/300/300/84/84，逐站对得上）；`locality` 逐结构报被触站且无 outside；站表取自测量编译而非手选 |
 | 46 | `46_edit_envelope.py` | `TEST46_DONE` | 11 项声明对账与编辑包络：声明 4 组、建出 3 条 → `alive_ratio` 仍 1.0 而 `missing` 逐条列出（`GHOST_W`/`GHOST_H`，分母只算建出来的量；这正是某次真实交付拿 1.0 却漏建 10 条设计参数的口径）；公式里被消费的参数仍算 live；`edit_envelope` 对有余量的 `PLATE_T` 扫到上界 ×2.00 不崩，对`BOSS_D-2*RECESS_R` 这类会变负的公式在 ×1.50 停住并带原文`Update undo happened.`；`edit_envelope_summary` 折成 bounded/narrow/stuck 三档（narrow 才叫结构脆弱，不能与超出物理范围混成一个 broken 计数）；全部 trial 还原后体积逐位一致 |
 | 47 | `47_structure_builders.py` | `TEST47_DONE` | 20 项结构级 builder：`plate_2p5d` 直壁板 32000.0000 且恰 6 个面（一条轮廓一个特征，不是 z 带堆叠）；带拔模板 29282.0083 = h/3(A₀+A₁+√A₀A₁) 且显著小于直壁（只设角度不设 `DraftOption` 会提交成功、无告警、体积与直壁逐位相同，只有体积能揭穿）；`revolved_profile` 阶梯轴 21614.1575 = 分段锥台解析和、台阶段各自不跳过、合并后单体；同一轴用 64 边形 z 带堆叠 得 131 面、回转得 5 面（26.2×）而两者体积一致——面数爆炸是构造选择不是网格化偶然；`drafted_bore` 斜轴锥切除 7023.9729 = 块内那一段锥台；`hole_set` 两位两特征 4712.3890 = 两圆柱且特征名带结构 id；`pocket_intersect` 侧视∩俯视腔 16000.0000 = 20×40×20；`fillet_run` 逐边一行账本，成功行带半径、失败行带原文 `Unable to terminate the blend faces... reduce the radius.`（超半径与"边已被上一条圆角吃掉"必须分开：后者报 `Referenced edge does not exist.`，会把半径是否为因藏起来） |
-| 48 | `48_audit_gates.py` | `TEST48_DONE` | 28 项审计门“失败要关门”负例（纯逻辑，合成网格/假部件，不依赖真件）：两侧截面皆空记 `N/A` 且不判 pass（旧口径报 IoU 1.0 直接过门），并按 `na_reason` 分开 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线，进 `instrument_errors`）与 `no_material`（该站确实没材料，是站表缺口）；STL 报告的 `pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性看 `plan_measured_complete`/`unmeasured`，判定口径 `station_report_hybrid` 不许放过没量到的站；`g1full` 空 primary 分母 `gate_pass=False`、`plan_complete=False`，没量到的主站进 `primary.unmeasured` 且不算通过；STL 回退路径的平面站带 `coplanar/offset_mm/offset_dir`；结构表里没有任何结构解释的面是 error 而非 warning（可显式 `allow_unassigned` 豁免）；空特征名与“结构 id 无对应特征”都是 error；G9 对全套 NX 默认名（`Extrude(n)`）与空名判 FAIL 且结构数来源必须是结构表；`station_plan_full` 用面归属判覆盖、`missing` 非空即 `complete=False`、每站带 `primary_fillet_class`；`budget` 绑定结构表与特征名映射；`validate_schema` 拦重复 id/未定模板/缺 `build_order`/同名既 design 又 data；`param_table` 不把 data/derived 行当独立参数 |
+| 48 | `48_audit_gates.py` | `TEST48_DONE` | 30 项审计门“失败要关门”负例（纯逻辑，合成网格/假部件，不依赖真件）：两侧截面皆空记 `N/A` 且不判 pass（旧口径报 IoU 1.0 直接过门），并按 `na_reason` 分开 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线 → `instrument_errors`，判定口径不通过）与 `no_material`（原件在该站确实没材料 → `plan_noise`，从“该量到的站”里剔除并单列，否则任何自建件都过不去）；STL 报告的 `pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性看 `plan_measured_complete`/`unmeasured`，判定口径 `station_report_hybrid` 对仪器误差判失败、对站位空档剔除并报告；`g1full` 空 primary 分母 `gate_pass=False`、`plan_complete=False`，主站分母剔除 `plan_noise`、`instrument_errors` 让门不通过、`ratio` 用“有材料的站”作分母而 `ratio_all_stations` 保留全站表口径；STL 回退路径的平面站带 `coplanar/offset_mm/offset_dir`；结构表里没有任何结构解释的面是 error 而非 warning（可显式 `allow_unassigned` 豁免）；空特征名与“结构 id 无对应特征”都是 error；G9 对全套 NX 默认名（`Extrude(n)`）与空名判 FAIL 且结构数来源必须是结构表；`station_plan_full` 用面归属判覆盖、`missing` 非空即 `complete=False`、每站带 `primary_fillet_class`；`budget` 绑定结构表与特征名映射；`validate_schema` 拦重复 id/未定模板/缺 `build_order`/同名既 design 又 data；`param_table` 不把 data/derived 行当独立参数 |
+| 49 | `49_structure_inference.py` | `TEST49_DONE` | 20 项结构推断（纯逻辑，合成面表，不依赖真件）：面图覆盖每张面、环面按类型判圆角；平面族按法向聚合（反向平行同族）、偏置按族法向取有符号距离，z 族保留 3 个偏置、相邻偏置配对给出 12 mm 板厚；板 80×50×12 + 凸台 + 两级同轴孔 + 锥口 → 板行（厚度方向取宽面，另两个“带”是外轮廓范围、不出板行）、凸台成筒行、孔链按**同轴线**归组（两级孔壁 + 锥口 = 1 条链 3 段，凸台外圆（凸面）绝不入链，每段保留自己的半径与轴向长度——R24 的失败模式就是把它并成一段直孔）；需要面采样的结构（眼/耳瓣、纵剖面孔）在没有 `part` 时进 `unresolved` 并给 `next_probe`，绝不猜模板；负例：9 个同法向平行面的“层号表指纹”被拒（不出板行、给证据面与下一步）；同一测量两次写报告字节一致；站表按结构 id 归组、缺站的结构进 `missing` 且 `complete=False` |
 
 ## 反向验证记录
 

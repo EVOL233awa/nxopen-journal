@@ -552,9 +552,22 @@ template.derived(wp, "ROOT_FILL_U", "U_BACK - ROOT_FILL_R", "Length")
 
 ## 12. 测量编译 + 骨架驱动 + 结构库（大件/整件默认路线）
 
-§2–§9 的过程式路线在组件上够用；整件（多结构、上百特征）要换组织方式：先把测量**编译成表**并冻结分母，再让骨架/草图驱动构造，最后用审计层出结论。五张表在 `nxlib.reverse`，骨架在 `nxlib.skeleton`，构造机制在 `nxlib.structures`，审计在 `nxlib.audit`。
+§2–§9 的过程式路线在组件上够用；整件（多结构、上百特征）要换组织方式：先把测量**编译成表**并冻结分母，再让骨架/草图驱动构造，最后用审计层出结论。结构推断在 `nxlib.structure_inference`，五张表在 `nxlib.reverse`，骨架在 `nxlib.skeleton`，构造机制在 `nxlib.structures`，审计在 `nxlib.audit`。
 
 ### 12.1 五张表（先冻结，再建件）
+
+表的生成分两步：**先推断结构**（`structure_inference.infer_structures`），再编译表。
+推断层只吃测量，输出结构行（`id/role/template/evidence_faces/design_params/data_refs/
+build_order/confidence/status`）与 `unresolved`（每条带证据面与下一步探针）：
+
+- 平面族按法向聚（反向平行的两面属同族），偏置按**族法向**取有符号距离；相邻偏置配对成厚度带，
+  **板厚方向取宽面那一对**（另两个"带"是同一块板的外轮廓范围）；同法向偏置 ≥6 且无结构解释 →
+  判"平行面堆叠"（层号表特征树的测量指纹）并拒绝，不出板行。
+- 同轴柱/锥/环面组 → 回转行（多半径台阶选 `revolved_profile`，单段选筒/孔）；**孔链按同轴线归组**，
+  阶梯孔的每一段保留自己的半径与轴向长度（凸台外圆是凸面，永不入链）。
+- 需要面采样的结构（眼/耳瓣心、沿特征轴的纵剖面）在没给 `part` 时进 `unresolved` 并给出探针，
+  不许猜模板。
+- 输出必须逐字节可复现（`inference_report`）：同一测量两次写文件 sha 相同，否则表在漂移。
 
 | 表 | 生成函数 | 不变式 |
 |---|---|---|
@@ -602,5 +615,6 @@ template.derived(wp, "ROOT_FILL_U", "U_BACK - ROOT_FILL_R", "Length")
 - `edit_envelope(part, names)` / `edit_envelope_summary`：逐参数测可用倍率，折成 bounded/narrow/stuck 三档。narrow（扫描上界以下就崩）是结构脆弱，必须逐条报倍率与失败原文；stuck（连 ×1.10 都不过）直接算不通过。
 - `budget(part, structures)`：4N+12，**硬门**（传结构表本身，同时校验每个结构 id 有对应特征名；只传数字时结构数是调用方自证）。超了就说明用了测站式布尔而非结构构造。**特征数正常而面数异常**（如 74 特征却 10 773 面）说明每个结构仍在用"原语拼装"：结构级 builder 是一个结构一次调用，原语拼装才有段间台阶面。
 - `g1full(orig, built, plan, measure, fillet_faces)`：全站表逐站 IoU，硬门只算 primary；fillet 站进 G7 跑道账本；**primary 为空即判失败**（空分母不是通过），primary 站里**没量到的站（两侧截面都空）同样不让 `gate_pass` 通过**（进 `primary.unmeasured`），`plan_complete=False` 也不通过。平面站走 B-rep 名义截面，退回 STL 时逐站记 `coplanar/offset_mm/offset_dir`。
-- **空截面分两种，别混**：`station_report` 把两侧都空的站记 `status="N/A"` 并给 `na_reason`——`coplanar_section`（切平面与原件平面面共面，STL 求交看不到共线交，是仪器限制）或 `no_material`（该站确实没材料，是站表缺口）。STL 报告的 `pass` 只回答"有读数的站有没有 FAIL"；覆盖完整性看 `plan_measured_complete`/`unmeasured`，判定链（`station_report_hybrid`、`verify_parts` 的 G1、`g1full`）要求未测站为空。自比对出现 N/A 只能说明站位选得不对或用了 STL 量平面站，不能当"这站过了"。
+- **空截面分三种，别混**：`station_report` 给每站四态并给空站 `na_reason`——`coplanar_section`（切平面与原件平面面共面，STL 求交看不到共线交，是仪器限制；判定要换 B-rep 名义截面）、`no_material`（该站附近没有材料，站位落在同轴组面间空档里，是站表噪声）。**仪器误差让门不通过**（原件有材料我们却没量到，例如 B-rep 也没补上）；**站表噪声从分母里剔除并单列 `plan_noise`**——那种站位对任何自建件都没有读数，算成必须通过就把门变成永远过不去。`station_report` 的 `pass` 只回答"有读数的站有没有 FAIL"，`plan_measured_complete` 回答"原件有材料的站是否都量到了"。
+- `g1full` 报告口径：`ratio` 用"有材料的站"作分母，同时给 `ratio_all_stations`（全站表口径）与绝对失败数；跨件比较用**绝对失败站数 + 同一站表**，不要拿两个分母不同的比例对比。
 - 报告口径：**G0–G9 全为硬门，没有报告项**（见 §4.1）。整件体积按 ≤0.1%（`verify_parts` 默认档）判定；超限的那部分必须归到具体结构，不能写"铸造公差"。Python 侧 BLOCKED 只在 §4.1 G4/G7 举证成立时使用。

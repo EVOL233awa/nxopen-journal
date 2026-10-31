@@ -42,11 +42,13 @@ from . import reverse
 from . import skeleton
 from . import structures
 from . import audit
+from . import structure_inference
 
 NXLIB_VERSION = "0.1.0"
 
 __all__ = [
     "testing", "session", "modeling", "assembly", "drafting", "measure",
     "rolling", "template", "reverse", "skeleton", "structures", "audit",
+    "structure_inference",
     "NXLIB_VERSION",
 ]

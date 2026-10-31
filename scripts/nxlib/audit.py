@@ -454,10 +454,12 @@ def g1full(orig_part, built_part, plan, measure, fillet_faces,
     (13.7 µm) 偏移并逐站记 `coplanar/offset_mm/offset_dir`。
     轴站本来就取在中段/端内缩处，沿用 13.7 µm 偏移避免共面三角。
 
-    `primary` 为空的分母判**失败**（不是通过）；两侧空、没有读数的站进
-    `primary.unmeasured`，一样不让 `gate_pass` 通过（没量到不等于量到了）；
-    `plan_complete` 汇总站表截断、结构覆盖缺口与主站未测；`denominator_version`
-    记录站表来源。
+    `primary` 为空的分母判**失败**（不是通过）；没量到的站分两类：
+    `primary.instrument_errors`（原件有材料却没量到）不让 `gate_pass` 通过，
+    `primary.plan_noise`（原件在该站没有材料，如同轴组面间空段）从分母里剔除
+    并单列——这类站位对任何自建件都没有读数，若算作必须通过就把门变成永远
+    过不去。`ratio` 用"有材料的站"作分母，`ratio_all_stations` 保留全站表
+    口径；`plan_complete` 汇总站表截断、结构覆盖缺口与主站仪器误差。
     """
     if meshes is None:
         mo = _mesh(orig_part)
@@ -487,33 +489,53 @@ def g1full(orig_part, built_part, plan, measure, fillet_faces,
     prim = [r["i"] for r in part_rows if r["class"] == "primary"]
     fil = [r["i"] for r in part_rows if r["class"] == "fillet"]
     failed = set(rep["failed"])
-    # 两侧都空的站没有读数（仪器限制或站表缺口）。它不算 FAIL，但也不能被
-    # 当成"这个站过了"：分母里没量到的站单独入账，gate_pass 要求它为空。
+    # 两侧都空的站没有读数，分两类：`instrument_errors`（原件有材料却没量到，
+    # 判定口径没补上）与 `plan_noise`（原件在该站确实没有材料，如同轴组各面
+    # 之间的空段）。两者都不算 FAIL；仪器误差让门不通过，"站位空档"从分母里
+    # 剔除（否则这类站位对任何自建件都不可达，门变成永远过不去）。
     unmeasured = set(rep.get("unmeasured", []))
+    instrument = set(rep.get("instrument_errors", []))
+    noise = set(rep.get("plan_noise", [])) or (unmeasured - instrument)
     prim_fail = [i for i in prim if i in failed]
     fil_fail = [i for i in fil if i in failed]
     prim_unmeasured = [i for i in prim if i in unmeasured]
+    prim_instrument = [i for i in prim if i in instrument]
+    prim_noise = [i for i in prim if i in noise]
     fil_unmeasured = [i for i in fil if i in unmeasured]
+    fil_instrument = [i for i in fil if i in instrument]
+    fil_noise = [i for i in fil if i in noise]
+    prim_denom = len(prim) - len(prim_noise)
+    fil_denom = len(fil) - len(fil_noise)
+    prim_pass = len(prim) - len(prim_fail) - len(prim_unmeasured)
+    fil_pass = len(fil) - len(fil_fail) - len(fil_unmeasured)
     coverage_missing = list(plan.get("missing") or []) \
         if isinstance(plan, dict) else []
     plan_complete = bool(rep.get("plan_complete", False)) and \
-        not coverage_missing and not prim_unmeasured and bool(prim)
+        not coverage_missing and not prim_instrument and bool(prim)
     return {
         "report": rep,
         "partition": part_rows,
-        "primary": {"count": len(prim), "failed": prim_fail,
+        "primary": {"count": len(prim), "denominator": prim_denom,
+                    "failed": prim_fail,
                     "unmeasured": prim_unmeasured,
-                    "pass": len(prim) - len(prim_fail) - len(prim_unmeasured),
-                    "ratio": ((len(prim) - len(prim_fail) - len(prim_unmeasured))
-                              / float(len(prim)) if prim else 0.0),
+                    "instrument_errors": prim_instrument,
+                    "plan_noise": prim_noise,
+                    "pass": prim_pass,
+                    "ratio": (prim_pass / float(prim_denom)
+                              if prim_denom else 0.0),
+                    "ratio_all_stations": (prim_pass / float(len(prim))
+                                           if prim else 0.0),
                     "empty_denominator": not prim,
                     "gate_pass": bool(prim) and not prim_fail
-                    and not prim_unmeasured},
-        "fillet": {"count": len(fil), "failed": fil_fail,
+                    and not prim_instrument},
+        "fillet": {"count": len(fil), "denominator": fil_denom,
+                   "failed": fil_fail,
                    "unmeasured": fil_unmeasured,
-                   "pass": len(fil) - len(fil_fail) - len(fil_unmeasured),
-                   "ratio": ((len(fil) - len(fil_fail) - len(fil_unmeasured))
-                             / float(len(fil)) if fil else 0.0),
+                   "instrument_errors": fil_instrument,
+                   "plan_noise": fil_noise,
+                   "pass": fil_pass,
+                   "ratio": (fil_pass / float(fil_denom)
+                             if fil_denom else 0.0),
                    "empty_denominator": not fil},
         "iou_min": iou_min,
         "area_err_max_pct": area_err_max_pct,
@@ -525,7 +547,8 @@ def g1full(orig_part, built_part, plan, measure, fillet_faces,
         or "station_plan_full",
         "coverage_missing": coverage_missing,
         "unmeasured": sorted(unmeasured),
-        "instrument_errors": list(rep.get("instrument_errors", [])),
+        "instrument_errors": sorted(instrument),
+        "plan_noise": sorted(noise),
         "plan_measured_complete": rep.get("plan_measured_complete"),
         "plan_complete": plan_complete,
         "brep_plane_count": rep.get("brep_plane_count"),

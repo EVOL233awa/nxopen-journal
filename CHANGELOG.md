@@ -7,7 +7,10 @@
 
 ### Added
 
-- `scripts/nxlib/measure.py`：新增 G8 门（声明对账 + 命名表达式活性）并入 `verify_parts` 默认门表；`station_report` 给空站分类（`na_reason`：`coplanar_section`/`no_material`）并新返回 `unmeasured`/`instrument_errors`/`measured_count`/`plan_measured_complete`；`station_report_hybrid` 把没量到的站判失败并把 B-rep 取代的站清掉 `na_reason`；G9 增加特征名映射（空名/默认名/未映射结构即 FAIL，结构数只能来自结构表）。
+- `scripts/nxlib/structure_inference.py`（新层）：测量 → 结构表。`face_graph` 给每面角色（功能面/圆角面，按类型与 `fillet_radii`），`_planar_families`/`_bands` 按法向聚族并**按族法向**取有符号偏置（反向平行的两面属同族，板厚不丢），`_hole_chains` 把**同一轴线的凹面段**归成一条链（阶梯孔逐段保留半径/长度，凸台外圆不入链），`infer_structures` 出结构行（id/模板/证据面/design 与 data 分层/建件顺序/置信度）与 `unresolved`（附证据面与下一步探针），`plan_validation_stations` 把站按结构 id 归组并回写 `validation_stations`，`inference_report` 写确定性 JSON（两次逐字节相同）。缺口照实拒绝：同法向 ≥6 个偏置的平行面堆叠（层号表特征树的指纹）不出板行；需要面采样的眼/耳与纵剖面结构在没给 `part` 时进 `unresolved`，不猜模板。
+- `scripts/tests/49_structure_inference.py`（20 项）：上列判据的合成面表回归（含板厚方向取宽面、孔链按轴线归组、坏例拒绝、报告字节一致、缺站结构进 `missing`）；`RUN_TESTS.bat` 登记第 49 门，`check_repo.py` 计数 48/45 → 49/46。
+- `scripts/nxlib/__init__.py`：注册 `structure_inference`。
+- `scripts/nxlib/measure.py`：新增 G8 门（声明对账 + 命名表达式活性）并入 `verify_parts` 默认门表；`station_report` 给空站分类（`na_reason`：`coplanar_section`/`no_material`）并新返回 `unmeasured`/`instrument_errors`/`plan_noise`/`measured_count`/`plan_measured_complete`；`station_report_hybrid` 把仪器误差判失败、把站表噪声剔除并报告，B-rep 取代的站清掉 `na_reason`；G9 增加特征名映射（空名/默认名/未映射结构即 FAIL，结构数只能来自结构表）。
 - `scripts/nxlib/audit.py`：`g1full` 返回 `unmeasured`/`primary.unmeasured`/`plan_measured_complete`，没量到的主站不算通过、也不让 `plan_complete` 通过；新增 `plane_station_mode`/`brep_plane_count`/`stl_axis_count` 记录平面站口径。
 - `scripts/tests/48_audit_gates.py`（28 项）：把上列口径与审计层其余“失败要关门”负例钉成回归（空截面/空 primary 分母/未分配面/空特征名/默认名/站表缺覆盖/预算未映射/同名既 design 又 data）；`RUN_TESTS.bat` 登记第 48 门，`check_repo.py` 计数 47/44 → 48/45。
 - `references/reverse-engineering.md` §12.4：结构级 builder 的能力边界与缺口照实写（`hole_set` 只吃同向同直径同深度孔位表；眼/叉耳、同轴孔链、多分界截面放样、拔模窗口与斜切端壁目前只能用原语拼，并列出拼装四条自检）。
@@ -86,7 +89,7 @@
 - `scripts/nxlib/measure.py`：`compare_parts` 改按几何键匹配参考组，不以有序 face-tag 元组判 N/A；缺组进 `unmatched_a` 而非静默通过。
 - `scripts/nxlib/measure.py`：`group_coaxial` 改并查集，`hole_params`/`cone_params` 给逐段轴向区间；`structure_directory` 默认 `2R+2` 聚类。
 - `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败（空站另有分类，见下）；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。
-- `scripts/nxlib/measure.py` `section_iou`：两侧截面皆空返回 `iou=None` 并带 `empty_a/empty_b/both_empty`（旧口径报 1.0，空截面直接过门）；`station_report` 的空站按 `na_reason` 分 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线）与 `no_material`（站表缺口），`pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性走 `plan_measured_complete`/`unmeasured`，判定链（`station_report_hybrid`、`verify_parts` 的 G1）要求未测站为空。
+- `scripts/nxlib/measure.py` `section_iou`：两侧截面皆空返回 `iou=None` 并带 `empty_a/empty_b/both_empty`（旧口径报 1.0，空截面直接过门）；`station_report` 的空站按 `na_reason` 分 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线 → 仪器误差，判定口径不通过）与 `no_material`（原件在该站没有材料 → 站表噪声，从分母剔除并单列 `plan_noise`，否则任何自建件都过不去），`pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性看 `plan_measured_complete`/`instrument_errors`；`station_report_hybrid` 与 `audit.g1full` 同口径（`ratio` 用有材料的站作分母，另给 `ratio_all_stations`）。
 - `scripts/nxlib/measure.py` `g7_reachability`：`ceiling`（跑道数/参考圆角面数）改诊断值并在 `ceiling_basis` 标明，判 BLOCKED 需逐跑道拓扑证据（`evidence` 非空），不再凭比例把门记 BLOCKED。
 - `scripts/nxlib/audit.py`：`liveness` 的 `pass` 合并 `missing`/dead/broken/skipped（声明未建出不再显示 `alive_ratio=1.0` 判定通过）；`edit_envelope` 记首次失败倍率 `failed_at` 与最后一次成功 `max_ok_factor`，还原按体积/体数/面数/告警逐位校验并在漂移时抛错；`locality` 默认 ×1.10 起自适应、剔除开口与近切站、区域取截面质心、返回 `inconclusive`；`envelope` 阈值统一走 `tol`（默认 0.05/0.05）。
 - `scripts/nxlib/reverse.py`：`station_plan_full` 按面归属判覆盖（每结构 ≥1 站、`missing` 非空即 `complete=False`、跨平面族另记 `families_ok`、每站带 `station_kind`/`primary_fillet_class`）；`param_candidates` 去重并加 `derived_from`；`validate_structure_table` 未分配面改 error（`allow_unassigned` 显式豁免）、新增 `validate_feature_mapping`。

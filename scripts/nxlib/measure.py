@@ -2484,12 +2484,19 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     漏建与过建。
 
     每站四态：两侧截面都空 → `status="N/A"`（该站没有读数，既不判 PASS
-    也不判 FAIL），并给出 `na_reason`：`coplanar_section`（切平面与原件
-    某个平面面共面，STL 求交看不到交线，是仪器限制）或 `no_material`
-    （该站确实没有材料，是站表覆盖缺口）。`pass` 只回答"有读数的站里
-    有没有 FAIL"；空站的覆盖完整性看 `plan_measured_complete`/`unmeasured`
-    ——判定链（`station_report_hybrid`、`verify_parts` 的 G1）对平面站改用
-    B-rep 精确截面，并把仍未测到的站判失败，所以空站不会静默通过。
+    也不判 FAIL），并给出 `na_reason`：
+
+    - `coplanar_section`：切平面与原件某个平面面共面，原件在那里**有材料**
+      但 STL 求交看不到交线 —— 这是仪器限制，站表不能拿它当"没材料"，判定
+      口径必须换 B-rep 精确截面（`station_report_hybrid`）或判失败；
+    - `no_material`：剖面附近没有任何共面三角面，原件在该站确实没有材料 ——
+      站位落在材料空档里，是站表噪声（如同轴组各面之间的空段），不进分母。
+
+    `pass` 只回答"有读数的站里有没有 FAIL"；`plan_measured_complete` 回答
+    "原件有材料的站是否都量到了"（即无 `instrument_errors` 且未截断）；
+    `plan_noise` 单列站位空档。判定链（`station_report_hybrid`、
+    `verify_parts` 的 G1、`audit.g1full`）按这两条分别处理，空站不会静默
+    变成 PASS，也不会把不可达的站位算成必须通过。
     """
     stations = plan["stations"] if isinstance(plan, dict) else plan
     dropped = plan.get("dropped", 0) if isinstance(plan, dict) else 0
@@ -2537,6 +2544,8 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             na.append(i)
     coplanar = [r["index"] for r in rows
                 if r["na_reason"] == "coplanar_section"]
+    plan_noise = [r["index"] for r in rows
+                  if r["na_reason"] == "no_material"]
     reasons = []
     if not rows:
         reasons.append("no stations")
@@ -2547,7 +2556,7 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     if na:
         reasons.append("%d stations unmeasured (%d coplanar plane stations, "
                        "%d no material at the station)"
-                       % (len(na), len(coplanar), len(na) - len(coplanar)))
+                       % (len(na), len(coplanar), len(plan_noise)))
     return {
         "stations": rows,
         "count": len(rows),
@@ -2555,11 +2564,13 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
         "na": na,
         "unmeasured": list(na),
         "instrument_errors": coplanar,
+        "plan_noise": plan_noise,
         "measured_count": len(rows) - len(na),
         "dropped": dropped,
         "budget_skipped": dropped,
         "plan_complete": (bool(rows) and dropped == 0),
-        "plan_measured_complete": (bool(rows) and dropped == 0 and not na),
+        "plan_measured_complete": (bool(rows) and dropped == 0
+                                   and not coplanar),
         "iou_min": iou_min,
         "area_err_max_pct": area_err_max_pct,
         "reasons": reasons,
@@ -2666,9 +2677,10 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
     使用同一组阈值。
 
     `station_report` 把空站记成 N/A 并放过（它只回答"有读数的站有没有
-    FAIL"）；这里把平面站换成 B-rep 读数，剩下的空站就是判定口径上的
-    覆盖缺口——`pass` 要求既无 FAIL 也无 N/A，`no_material` 与
-    `coplanar_section` 都进 `reasons`。
+    FAIL"）；这里把平面站换成 B-rep 读数，剩下的空站按两类处理：
+    **仪器误差**（`coplanar_section`：原件有材料却没量到，B-rep 也没补上）
+    → 判失败；**站表噪声**（`no_material`：原件在该站确实没有材料）
+    → 从"该量到的站"里剔除、单列 `plan_noise`，不让它把门卡成不可达。
     """
     base = station_report(mesh_a, mesh_b, plan, iou_min, area_err_max_pct)
     rows = base["stations"]
@@ -2689,22 +2701,32 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
         row["na_reason"] = None
         row["status"] = "PASS" if row["pass"] else "FAIL"
         brep_count += 1
-    failed = [r["index"] for r in rows if not r["pass"]]
+    # N/A 行（没有读数）不进 `failed`：它由 instrument_errors/plan_noise 分开
+    # 记账，混进失败列表会让"站位空档"看起来像形状不对。
+    failed = [r["index"] for r in rows
+              if not r["pass"] and r.get("status") != "N/A"]
     na = [r["index"] for r in rows if r.get("status") == "N/A"]
     coplanar = [r["index"] for r in rows
                 if r.get("status") == "N/A"
                 and r.get("na_reason") == "coplanar_section"]
+    plan_noise = [r["index"] for r in rows
+                  if r.get("status") == "N/A"
+                  and r.get("na_reason") == "no_material"]
     base["stations"] = rows
     base["failed"] = failed
     base["na"] = na
     base["unmeasured"] = list(na)
     base["instrument_errors"] = coplanar
+    base["plan_noise"] = plan_noise
     base["measured_count"] = len(rows) - len(na)
-    base["plan_measured_complete"] = bool(rows) and not na
+    base["plan_measured_complete"] = bool(rows) and not coplanar
     # B-rep rows supersede the STL rows on plane stations, so the verdict is
     # recomputed from the final rows.  ANDing with the STL verdict let a
     # coplanar STL artefact veto a station the B-rep cut judged correct.
-    base["pass"] = bool(rows) and not failed and not na
+    # No-material stations carry no information about the built part's missing
+    # material (the reference has nothing there to miss), so they are excluded
+    # instead of blocking -- but they are always reported.
+    base["pass"] = bool(rows) and not failed and not coplanar
     base["brep_plane_count"] = brep_count
     base["stl_axis_count"] = len(rows) - brep_count
     reasons = [r for r in base["reasons"]
@@ -2714,7 +2736,10 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
     if na:
         reasons.append("%d stations unmeasured (%d coplanar plane stations, "
                        "%d no material at the station)"
-                       % (len(na), len(coplanar), len(na) - len(coplanar)))
+                       % (len(na), len(coplanar), len(plan_noise)))
+    if plan_noise:
+        reasons.append("%d stations are plan noise (no reference material)"
+                       % len(plan_noise))
     base["reasons"] = reasons
     return base
 
@@ -2793,8 +2818,9 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
         sec["pass"] = False
         sec["status"] = "FAIL"
         sec["reasons"] = list(sec.get("reasons", [])) + [
-            "station plan incomplete (%d dropped, %d na): uncovered is not "
-            "covered" % (sec.get("dropped", 0), len(sec.get("na", [])))]
+            "station plan incomplete (%d dropped, %d instrument errors): "
+            "uncovered is not covered"
+            % (sec.get("dropped", 0), len(sec.get("instrument_errors", [])))]
     sec.setdefault("status", "PASS" if sec.get("pass") else "FAIL")
     audit_o = hole_audit(mo, part_o)
     audit_b = hole_audit(mb, part_b)

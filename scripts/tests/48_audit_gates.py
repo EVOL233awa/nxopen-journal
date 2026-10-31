@@ -96,21 +96,23 @@ def case_empty_section():
           outside["iou"] is None,
           "a cut missing both bodies must not report IoU: %r" % outside)
 
-    # 空站必须分类：z=100 没有材料（站表覆盖缺口），z=10 与立方体顶面共面
-    # （原件在那里有材料，只是 STL 求交看不到共面交线）。二者都不是 PASS，
-    # 也不能改写有读数站的形状判定。
+    # 空站必须分类：z=100 没有材料（站位落在材料空档 = 站表噪声），z=10 与
+    # 立方体顶面共面（原件在那里有材料，只是 STL 求交看不到共面交线）。
+    # 二者都不是 PASS，也不能改写有读数站的形状判定。
     rep = ms.station_report(cube, cube,
                             {"stations": [station(5.0), station(100.0),
                                           station(10.0, ("plane#1",))],
                              "dropped": 0})
     reasons = [r["na_reason"] for r in rep["stations"]]
-    say("station_report na=%r na_reasons=%r measured=%d complete=%s pass=%s"
-        % (rep["na"], reasons, rep["measured_count"],
-           rep["plan_measured_complete"], rep["pass"]))
+    say("station_report na=%r na_reasons=%r noise=%r instrument=%r "
+        "measured=%d complete=%s pass=%s"
+        % (rep["na"], reasons, rep["plan_noise"], rep["instrument_errors"],
+           rep["measured_count"], rep["plan_measured_complete"], rep["pass"]))
     check("T48_STATION_NA",
           rep["na"] == [1, 2] and
           reasons == [None, "no_material", "coplanar_section"] and
           rep["unmeasured"] == [1, 2] and
+          rep["plan_noise"] == [1] and
           rep["instrument_errors"] == [2] and
           rep["measured_count"] == 1 and
           rep["plan_measured_complete"] is False and rep["pass"] is True,
@@ -120,19 +122,38 @@ def case_empty_section():
                             {"stations": [], "dropped": 0})["pass"] is False,
           "an empty station plan must not pass")
 
-    # 判定口径（hybrid）不许放过没量到的站：STL 报告的 pass 只回答"有读数
-    # 的站有没有 FAIL"，覆盖完整性由 hybrid/G1 负责。
+    # 判定口径（hybrid）的两条分别处理：
+    #  - 原件在站位处没有材料（`no_material`，这里的 z=100）→ 站表噪声，
+    #    从"该量到的站"里剔除并单列；它不是任何自建件能通过的站；
+    #  - 原件有材料却没量到（`coplanar_section`，z=10 与顶面共面）→ 仪器
+    #    误差，门不通过。
     gate = ms.station_report_hybrid(
         cube, cube, None, None,
         {"stations": [station(5.0, ("axis#0",), "axis"),
                       station(100.0, ("axis#1",), "axis")],
          "dropped": 0})
-    say("hybrid gate unmeasured=%r pass=%s reasons=%r"
-        % (gate["unmeasured"], gate["pass"], gate["reasons"]))
-    check("T48_HYBRID_BLOCKS_UNMEASURED",
-          gate["unmeasured"] == [1] and gate["pass"] is False and
-          gate["plan_measured_complete"] is False,
-          "the judging caliber must fail on an unmeasured station: %r" % gate)
+    say("hybrid noise unmeasured=%r noise=%r pass=%s complete=%s reasons=%r"
+        % (gate["unmeasured"], gate["plan_noise"], gate["pass"],
+           gate["plan_measured_complete"], gate["reasons"]))
+    check("T48_HYBRID_EXCLUDES_PLAN_NOISE",
+          gate["unmeasured"] == [1] and gate["plan_noise"] == [1] and
+          gate["pass"] is True and
+          gate["plan_measured_complete"] is True,
+          "a station with no reference material is plan noise, not a blocker: "
+          "%r" % (gate,))
+    gate2 = ms.station_report_hybrid(
+        cube, cube, None, None,
+        {"stations": [station(5.0, ("axis#0",), "axis"),
+                      station(10.0, ("axis#1",), "axis")],
+         "dropped": 0})
+    say("hybrid instrument unmeasured=%r instrument=%r pass=%s reasons=%r"
+        % (gate2["unmeasured"], gate2["instrument_errors"], gate2["pass"],
+           gate2["reasons"]))
+    check("T48_HYBRID_BLOCKS_INSTRUMENT",
+          gate2["instrument_errors"] == [1] and gate2["pass"] is False and
+          gate2["plan_measured_complete"] is False,
+          "a station whose reference material could not be measured must not "
+          "pass: %r" % (gate2,))
 
 
 def case_g1full_empty_denominator():
@@ -162,6 +183,38 @@ def case_g1full_empty_denominator():
           g1["plan_complete"] is False,
           "empty primary must leave plan_complete false: %r"
           % g1["plan_complete"])
+
+
+def case_g1full_plan_noise():
+    """A station with no reference material is plan noise, not a blocker."""
+    cube = cube_mesh()
+    # two primary axis stations from one cylinder group: z=5 cuts material on
+    # both sides, z=100 sits in air (a coaxial group's inter-face gap does this
+    # in real plans).  Both are primary because no fillet faces are declared.
+    measure = {"faces": [], "cylinders": [{"faces": [1, 2, 3],
+                                           "axis": [0.0, 0.0, 1.0],
+                                           "point": [0.0, 0.0, 0.0],
+                                           "radius": 3.0,
+                                           "extent": [0.0, 10.0],
+                                           "kind": ms.CYLINDER,
+                                           "length": 10.0}],
+               "cones": []}
+    plan = {"stations": [station(5.0, ("axis#0",), "axis"),
+                         station(100.0, ("axis#1",), "axis")],
+            "dropped": 0, "missing": []}
+    g1 = ad.g1full(None, None, plan, measure, [],
+                   meshes=(cube, cube), hybrid=True)
+    prim = g1["primary"]
+    say("g1full noise: %r" % prim)
+    check("T48_G1FULL_PLAN_NOISE_EXCLUDED",
+          prim["plan_noise"] == [1] and prim["failed"] == [] and
+          prim["instrument_errors"] == [] and
+          prim["denominator"] == 1 and prim["pass"] == 1 and
+          abs(prim["ratio"] - 1.0) < 1e-9 and
+          abs(prim["ratio_all_stations"] - 0.5) < 1e-9 and
+          prim["gate_pass"] is True,
+          "plan noise must be excluded from the denominator and reported: %r"
+          % (prim,))
 
 
 def case_cut_plan_coplanar():
@@ -333,6 +386,7 @@ def case_param_table_layering():
 def main():
     case_empty_section()
     case_g1full_empty_denominator()
+    case_g1full_plan_noise()
     case_cut_plan_coplanar()
     case_structure_table_unassigned()
     case_feature_mapping()
