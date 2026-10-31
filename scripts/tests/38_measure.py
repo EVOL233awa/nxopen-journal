@@ -59,7 +59,7 @@ from nxlib.measure import (CYLINDER, CONE, TORUS, PLANE, compare_parts,
                            read_stl, mesh_deviation, sample_surface,
                            section_area, section_iou, station_plan,
                            station_report, station_report_hybrid,
-                           verify_parts, view_iou)
+                           SECTION_CUT_DEPTH, verify_parts, view_iou)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "parts")
 NULL = NXOpen.NXObject.Null
@@ -423,15 +423,36 @@ def main():
                        g8=False, g9=False)
     check("REG_VERIFY_SELF",
           ver["pass"] and ver["gates"]["G1"]["pass"] and
-          ver["gates"]["G1"].get("brep_plane_count", 0) >= 1 and
+          ver["gates"]["G1"].get("caliber") == "stl_offset" and
+          ver["gates"]["G1"].get("cut_depth_mm") == SECTION_CUT_DEPTH and
           ver["gates"]["G2"]["pass"] and
           ver["gates"]["G2"].get("applicable") is True and
           ver["gates"]["G6"]["pass"],
-          "verify_parts self: gates=%s stations=%d brep_planes=%d" %
+          "verify_parts self: gates=%s stations=%d caliber=%s" %
           (dict((k, ver["gates"][k]["pass"]) for k in
                 ("G0", "G1", "G2", "G3", "G4", "G5", "G6")),
-           ver["stations"]["count"],
-           ver["gates"]["G1"].get("brep_plane_count", 0)))
+           ver["stations"]["count"], ver["gates"]["G1"].get("caliber")))
+
+    # B-rep 平面站口径是可选项：在本测试的自身件上必须每站都量到
+    vbrep = verify_parts(part_path, part_path, samples=800, max_stations=48,
+                         g8=False, g9=False, section_mode="brep")
+    check("REG_VERIFY_BREP_CALIBER",
+          vbrep["gates"]["G1"]["pass"] and
+          vbrep["gates"]["G1"].get("caliber") == "brep_plane" and
+          vbrep["gates"]["G1"].get("brep_plane_count", 0) >= 1 and
+          vbrep["gates"]["G1"].get("plan_measured_complete") is True,
+          "brep caliber self: pass=%s brep_planes=%s measured_complete=%s" %
+          (vbrep["gates"]["G1"]["pass"],
+           vbrep["gates"]["G1"].get("brep_plane_count"),
+           vbrep["gates"]["G1"].get("plan_measured_complete")))
+    try:
+        verify_parts(part_path, part_path, samples=100, max_stations=4,
+                     g8=False, g9=False, section_mode="guess")
+        bad_mode = False
+    except ValueError:
+        bad_mode = True
+    check("REG_VERIFY_BAD_CALIBER", bad_mode,
+          "an unknown section caliber must raise rather than fall back")
 
     # the default call must carry G8 and G9 and must not pass without a
     # structure table / a live parameter set

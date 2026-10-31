@@ -12,10 +12,9 @@ G7 跑道账本。
 import nxlib.measure as ms
 import nxlib.modeling as mdl
 import nxlib.reverse as rv
-import nxlib.skeleton as sk
 
-PLANE_DEPTH = 0.0137
-AXIS_DEPTH = 0.0137
+PLANE_DEPTH = ms.SECTION_CUT_DEPTH
+AXIS_DEPTH = ms.SECTION_CUT_DEPTH
 IOU_MIN = 0.95
 AREA_ERR_MAX = 5.0
 
@@ -409,50 +408,17 @@ def envelope(part, ref_box, tol=0.05, source="brep_body_box"):
 
 # ------------------------------------------------------------------ G1full
 
-def _cut_plan(orig_mesh, plan, depth):
-    """STL 回退路径的切站：平面站与轴站都沿法向偏移 `depth`。
-
-    每个平面站记 `coplanar=True` 与 `offset_mm/offset_dir`：偏移本身是测量
-    手段，不是几何事实，报告必须能看出这一站不是名义截面。材料侧由原件
-    截面面积决定（只看原件），偏移方向取面积更大的一侧。
-    """
-    cut = []
-    for st in plan["stations"]:
-        origin = [float(x) for x in st["origin"]]
-        normal = sk.normalize(st["normal"])
-        sign = 1.0
-        coplanar = st.get("kind") == "plane"
-        if coplanar:
-            plus = [o + depth * n for o, n in zip(origin, normal)]
-            minus = [o - depth * n for o, n in zip(origin, normal)]
-            a1 = ms.section_area(orig_mesh, plus, normal)
-            a2 = ms.section_area(orig_mesh, minus, normal)
-            sign = 1.0 if a1 >= a2 else -1.0
-        cut.append({
-            "origin": [o + sign * depth * n for o, n in zip(origin, normal)],
-            "normal": list(normal),
-            "sources": list(st.get("sources", [])),
-            "kind": st.get("kind"),
-            "sign": sign,
-            "depth": depth,
-            "coplanar": coplanar,
-            "offset_mm": depth,
-            "offset_dir": sign,
-        })
-    return cut
-
-
 def g1full(orig_part, built_part, plan, measure, fillet_faces,
            degenerate_offset=AXIS_DEPTH, iou_min=IOU_MIN,
-           area_err_max_pct=AREA_ERR_MAX, meshes=None, hybrid=True):
+           area_err_max_pct=AREA_ERR_MAX, meshes=None, hybrid=False,
+           progress=None):
     """全集站表截面比对：原件 vs 自建件，按 primary/fillet 分账。
 
-    平面站默认走 **B-rep 精确截面**（`measure.station_report_hybrid`，站位取
-    名义位置），与 `verify_parts` 的 G1 共用同一实现——旧版在这里用 STL 从面内
-    0.5 mm 切，与文档 §4.1 的 B-rep 名义站口径不一致，同一件在两条 G1 下读数
-    不同。只有部件读不到面表/非 solid 时才退回 STL，此时按 `degenerate_offset`
-    (13.7 µm) 偏移并逐站记 `coplanar/offset_mm/offset_dir`。
-    轴站本来就取在中段/端内缩处，沿用 13.7 µm 偏移避免共面三角。
+    判定口径默认 **STL 切面 + `measure.cut_plan` 偏移**（平面站与轴站都沿
+    法向偏 `degenerate_offset`，平面站的偏移方向取原件材料侧），站表沿用
+    冻结站表的预算/覆盖字段。`hybrid=True` 时才把面表平面站换成 B-rep 精确
+    截面（`measure.station_report_hybrid`）：那一路在导入体上会因剖面段串不
+    成环而逐站 FAIL（见该函数说明），只有在自比对证明可闭合的件上才可用。
 
     `primary` 为空的分母判**失败**（不是通过）；没量到的站分两类：
     `primary.instrument_errors`（原件有材料却没量到）不让 `gate_pass` 通过，
@@ -466,24 +432,24 @@ def g1full(orig_part, built_part, plan, measure, fillet_faces,
         mb = _mesh(built_part)
     else:
         mo, mb = meshes
-    mode = "brep_plane"
+    mode = "stl_offset"
+    faces = measure.get("faces") if isinstance(measure, dict) else None
     if hybrid:
         try:
             rep = ms.station_report_hybrid(mo, mb, orig_part, built_part, plan,
-                                           iou_min, area_err_max_pct)
+                                           iou_min, area_err_max_pct,
+                                           progress=progress)
+            mode = "brep_plane"
         except Exception:
-            mode = "stl_offset"
-            rep = ms.station_report(
-                mo, mb,
-                {"stations": _cut_plan(mo, plan, degenerate_offset),
-                 "dropped": 0},
-                iou_min, area_err_max_pct)
+            rep = ms.station_report(mo, mb,
+                                    ms.cut_plan(mo, plan, degenerate_offset,
+                                                faces),
+                                    iou_min, area_err_max_pct,
+                                    progress=progress)
     else:
-        mode = "stl_offset"
-        rep = ms.station_report(
-            mo, mb,
-            {"stations": _cut_plan(mo, plan, degenerate_offset), "dropped": 0},
-            iou_min, area_err_max_pct)
+        rep = ms.station_report(mo, mb,
+                                ms.cut_plan(mo, plan, degenerate_offset, faces),
+                                iou_min, area_err_max_pct, progress=progress)
     stations = plan["stations"] if isinstance(plan, dict) else plan
     part_rows = rv.station_partition(measure, plan, fillet_faces)
     prim = [r["i"] for r in part_rows if r["class"] == "primary"]

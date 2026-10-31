@@ -102,7 +102,7 @@ def parallel_stack(n=9):
     faces = []
     tag = 100
     for i in range(n):
-        faces.append(plane(tag, [0.0, 0.0, float(i)], [0.0, 0.0, 1.0]))
+        faces.append(plane_face(tag, [0.0, 0.0, float(i)], [0.0, 0.0, 1.0]))
         tag += 1
     return {"faces": faces, "cylinders": [], "cones": [], "bodies": 1}
 

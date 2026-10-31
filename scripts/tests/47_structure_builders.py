@@ -260,6 +260,215 @@ def case_fillet_ledger(wp):
     return body
 
 
+def case_hole_chain(wp):
+    """Stepped coaxial bore: per-segment cut, built-vs-declared reconciliation."""
+    blk = mdl.block(wp, NXOpen.Point3d(-30.0, -30.0, 0.0), "60", "60", "40")
+    body = list(blk.GetBodies())[0]
+    tpl.create_expressions(wp, {"D_BORE_A": 10.0, "D_BORE_B": 14.0},
+                           {"D_BORE_A": "mm", "D_BORE_B": "mm"})
+    v0 = mdl.volume(wp, body)
+    res = st.hole_chain(wp, body, [
+        {"kind": "cylinder", "p0": (-30.0, 0.0, 20.0), "p1": (0.0, 0.0, 20.0),
+         "dia": "D_BORE_A", "dia_mm": 10.0},
+        {"kind": "cylinder", "p0": (0.0, 0.0, 20.0), "p1": (30.0, 0.0, 20.0),
+         "dia": "D_BORE_B", "dia_mm": 14.0},
+    ], name="BORE", back=1.5)
+    v1 = mdl.volume(wp, body)
+    # union of the two extended tools inside the block: D10 over 28.5 mm,
+    # D14 over the 3 mm the small tool overran, D14 over 28.5 mm
+    v_expect = math.pi * (28.5 * 25.0 + 3.0 * 49.0 + 28.5 * 49.0)
+    say("hole_chain removed=%.4f expect=%.4f checks=%r"
+        % (v0 - v1, v_expect, res["checks"]))
+    check("T47_CHAIN_VOLUME", abs((v0 - v1) - v_expect) < 1e-2 * v_expect,
+          "removed %.4f vs two-segment union %.4f" % (v0 - v1, v_expect))
+    check("T47_CHAIN_PASS", res["pass"] is True and res["count"] == 2,
+          "each segment must come back with its own evidence: %r"
+          % (res["checks"],))
+    check("T47_CHAIN_TWO_RADII",
+          all(any(a["type"] == 16 for a in c["added"]) for c in res["checks"]) and
+          all("radius" in c["reason"] for c in res["checks"]),
+          "both segments must add a cylindrical face whose radius was "
+          "compared with its declared value: %r" % (res["checks"],))
+    one = math.pi / 4.0 * 10.0 ** 2 * 30.0
+    say("chain vs single straight bore: chain=%.4f single=%.4f"
+        % (v0 - v1, one))
+    check("T47_CHAIN_NOT_ONE_BORE", abs((v0 - v1) - one) > 0.2 * one,
+          "a stepped bore must not measure like one straight bore (chain "
+          "%.4f, single %.4f)" % (v0 - v1, one))
+    return body
+
+
+def case_cone_mouth(wp):
+    """Cone mouth segment: half angle is read back from the built face."""
+    blk = mdl.block(wp, NXOpen.Point3d(-30.0, -30.0, 0.0), "60", "60", "40")
+    body = list(blk.GetBodies())[0]
+    tpl.create_expressions(wp, {"D_HOLE": 14.0, "D_MOUTH": 20.0},
+                           {"D_HOLE": "mm", "D_MOUTH": "mm"})
+    v0 = mdl.volume(wp, body)
+    res = st.hole_chain(wp, body, [
+        {"kind": "cylinder", "p0": (-30.0, 0.0, 20.0), "p1": (30.0, 0.0, 20.0),
+         "dia": "D_HOLE", "dia_mm": 14.0},
+        {"kind": "cone", "p0": (-30.0, 0.0, 20.0), "p1": (-26.0, 0.0, 20.0),
+         "dia_a": "D_MOUTH", "dia_a_mm": 20.0,
+         "dia_b": "D_HOLE", "dia_b_mm": 14.0},
+    ], name="MOUTH", back=1.5)
+    v1 = mdl.volume(wp, body)
+    hole = math.pi * 49.0 * 60.0
+    # annular extra of the mouth over x -30..-26: r linear 10 -> 7
+    ring = math.pi * (4.0 * (100.0 + 70.0 + 49.0) / 3.0 - 49.0 * 4.0)
+    say("cone mouth removed=%.4f expect=%.4f checks=%r"
+        % (v0 - v1, hole + ring, res["checks"]))
+    check("T47_MOUTH_VOLUME", abs((v0 - v1) - (hole + ring)) < 1e-2 * hole,
+          "removed %.4f vs hole+ring %.4f" % (v0 - v1, hole + ring))
+    cone_row = res["checks"][1]
+    check("T47_MOUTH_HALF_ANGLE",
+          cone_row["ok"] is True and
+          any(a["type"] == 17 for a in cone_row["added"]) and
+          "half angle" in cone_row["reason"],
+          "the cone segment must add a conical face and match the declared "
+          "half angle: %r" % (cone_row,))
+    return body
+
+
+def case_chain_declared_mismatch(wp):
+    """The per-segment check must compare the built face with the declared value."""
+    blk = mdl.block(wp, NXOpen.Point3d(0.0, 0.0, 0.0), "40", "40", "20")
+    body = list(blk.GetBodies())[0]
+    tpl.create_expressions(wp, {"D_LIE": 10.0}, {"D_LIE": "mm"})
+    res = st.hole_chain(wp, body, [
+        {"kind": "cylinder", "p0": (0.0, 20.0, 10.0), "p1": (40.0, 20.0, 10.0),
+         "dia": "D_LIE", "dia_mm": 12.0},
+    ], name="LIAR")
+    say("declared-mismatch checks=%r pass=%r" % (res["checks"], res["pass"]))
+    check("T47_CHAIN_DECLARED_MISMATCH",
+          res["pass"] is False and res["checks"][0]["ok"] is False and
+          "declared 6.0000" in res["checks"][0]["reason"],
+          "a segment whose built radius does not match its declared value "
+          "must fail its own check: %r" % (res["checks"],))
+    return body
+
+
+def case_eye_and_clevis(wp):
+    """Two-lobe eye (tangent lobes) and a clevis slot, both analytic."""
+    frame = sk.Frame()
+    tpl.create_expressions(wp, {"EYE_T": 10.0, "EYE_R": 3.0},
+                           {"EYE_T": "mm", "EYE_R": "mm"})
+    plan = [(-20.0, -9.0), (0.0, -9.0), (0.0, 9.0), (-20.0, 9.0)]
+    res = st.eye_2lobe(wp, frame, [(0.0, 6.0), (0.0, -6.0)], "EYE_R", 3.0,
+                       plan, "EYE_T", name="EYE")
+    body = res["bodies"][0]
+    v = mdl.volume(wp, body)
+    v_expect = (20.0 * 18.0 + 2.0 * math.pi * 9.0 / 2.0) * 10.0
+    say("eye volume=%.4f expect=%.4f checks=%r"
+        % (v, v_expect, res["checks"]))
+    check("T47_EYE_VOLUME", abs(v - v_expect) < 1e-3 * v_expect,
+          "platform + two half lobes %.4f vs %.4f" % (v, v_expect))
+    check("T47_EYE_TANGENT", res["tangent_ok"] is True and
+          res["checks"]["single_body_build"] is True and
+          len(res["checks"]["lobe_faces"]) == 2,
+          "W_HALF must equal h + R and both lobes must exist: %r"
+          % (res["checks"],))
+
+    cl = st.clevis(wp, frame, [(-30.0, -15.0), (0.0, -15.0), (0.0, 15.0),
+                               (-30.0, 15.0)], "EYE_T", 10.0,
+                   {"u0": -12.0, "u1": 5.0, "w_mm": 8.0}, name="CLV")
+    cbody = cl["bodies"][0]
+    vc = mdl.volume(wp, cbody)
+    # the tool reaches 5 mm past the end face, but only the 12 mm inside the
+    # plate remove material
+    vc_expect = 30.0 * 30.0 * 10.0 - 12.0 * 8.0 * 10.0
+    say("clevis volume=%.4f expect=%.4f checks=%r"
+        % (vc, vc_expect, cl["checks"]))
+    check("T47_CLEVIS_VOLUME", abs(vc - vc_expect) < 1e-3 * vc_expect,
+          "plate minus 17x8 slot %.4f vs %.4f" % (vc, vc_expect))
+    check("T47_CLEVIS_SLOT", cl["checks"]["wall_spacing_ok"] is True and
+          cl["checks"]["single_body_build"] is True and
+          cl["checks"]["bottom_u"] == [-12.0, 0.0],
+          "the slot walls must sit at the declared width and the floor at u0 "
+          "(u=0 is the split end face): %r" % (cl["checks"],))
+    return body
+
+
+def case_eye_tangency_gap(wp):
+    """A non-tangent lobe must be reported, not silently built as a step."""
+    frame = sk.Frame()
+    tpl.create_expressions(wp, {"EYE_T": 10.0, "EYE_R4": 4.0},
+                           {"EYE_T": "mm", "EYE_R4": "mm"})
+    plan = [(-20.0, -9.0), (0.0, -9.0), (0.0, 9.0), (-20.0, 9.0)]
+    res = st.eye_2lobe(wp, frame, [(0.0, 6.0), (0.0, -6.0)], "EYE_R4", 4.0,
+                       plan, "EYE_T", name="EYE_GAP")
+    say("eye gap checks=%r" % (res["checks"],))
+    check("T47_EYE_GAP_REPORTED",
+          res["tangent_ok"] is False and
+          abs(res["checks"]["tangency_gap_mm"] - 1.0) < 1e-9,
+          "W_HALF - (h + R) must be reported instead of hidden: %r"
+          % (res["checks"],))
+    return res["bodies"][0]
+
+
+def case_trim_planes(wp):
+    """Trimming by measured planes: volume, single body, direction sanity."""
+    blk = mdl.block(wp, NXOpen.Point3d(-20.0, -20.0, -20.0), "40", "40", "40")
+    body = list(blk.GetBodies())[0]
+    res = st.trim_planes(wp, body, [
+        {"point": (0.0, 0.0, 0.0), "normal": (1.0, 0.0, 0.0), "keep": "below"},
+        {"point": (0.0, 0.0, 10.0), "normal": (0.0, 0.0, 1.0), "keep": "below"},
+    ], name="TR")
+    v = mdl.volume(wp, body)
+    # block -20..20 on every axis; keep x<0 then z<10 -> 20 x 40 x 30
+    say("trim volume=%.4f expect=%.4f checks=%r" % (v, 24000.0, res["checks"]))
+    check("T47_TRIM_VOLUME", abs(v - 24000.0) < 1e-3 * 24000.0,
+          "two half-space cuts must leave 20x40x30: %.4f" % v)
+    check("T47_TRIM_CHECKS", res["pass"] is True and
+          all(c["bodies"] == 1 for c in res["checks"]),
+          "every trim must keep one body and remove material: %r"
+          % (res["checks"],))
+    # a trim plane beyond the body with the wrong side keeps nothing: the
+    # volume check is what catches a reversed direction
+    blk2 = mdl.block(wp, NXOpen.Point3d(60.0, 0.0, 0.0), "20", "20", "20")
+    b2 = list(blk2.GetBodies())[0]
+    bad = st.trim_planes(wp, b2, [
+        {"point": (0.0, 0.0, 0.0), "normal": (1.0, 0.0, 0.0), "keep": "below"},
+    ], name="TRBAD")
+    say("trim beyond body checks=%r" % (bad["checks"],))
+    check("T47_TRIM_SIDE_REVERSED",
+          bad["pass"] is False and bad["checks"][0]["ok"] is False and
+          "completely inside" in bad["checks"][0]["reason"],
+          "a keep side that puts the whole body inside the tool must be "
+          "flagged with NX's own reason: %r" % (bad["checks"],))
+    return body
+
+
+def case_fillet_precheck(wp):
+    """fillet_feasible separates 'radius too large' from NX's own text."""
+    frame = sk.Frame()
+    blk = mdl.block(wp, NXOpen.Point3d(0.0, 0.0, 0.0), "40", "30", "20")
+    body = list(blk.GetBodies())[0]
+    edges = st.edges_by(body, frame, lambda pts: all(
+        abs(p[2] - 20.0) < 0.2 and abs(p[1] - 30.0) < 0.2 for p in pts))
+    pre_big = st.fillet_feasible(edges[0], 60.0)
+    pre_ok = st.fillet_feasible(edges[0], 3.0)
+    say("fillet precheck big=%r ok=%r" % (pre_big, pre_ok))
+    check("T47_FILLET_PRECHECK_BIG",
+          pre_big["ok"] is False and "support width" in pre_big["reason"],
+          "a radius that cannot fit its supports must be attributed before "
+          "the attempt: %r" % (pre_big,))
+    check("T47_FILLET_PRECHECK_OK", pre_ok["ok"] is True and
+          abs(pre_ok["dihedral_deg"] - 90.0) < 1.0,
+          "a 90 deg box edge must pass the precheck with its dihedral: %r"
+          % (pre_ok,))
+    res = st.fillet_run(wp, edges, "60.0", name="FRP", radius_mm=60.0,
+                        edges_id=["r1"])
+    say("fillet ledger with precheck=%r" % (res["ledger"],))
+    check("T47_FILLET_REASON_ATTRIBUTED",
+          res["pass"] is False and
+          res["ledger"][0]["reason"].startswith("R") and
+          "(precheck:" in res["ledger"][0]["reason"],
+          "the ledger must name the radius/support cause, not only NX text: %r"
+          % (res["ledger"],))
+    return body
+
+
 def main():
     out = os.getcwd()
 
@@ -291,6 +500,33 @@ def main():
     path = os.path.join(out, "t47_fillet.prt")
     wp = new_part("t47f", path)
     case_fillet_ledger(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_chain.prt")
+    wp = new_part("t47g", path)
+    case_hole_chain(wp)
+    case_cone_mouth(wp)
+    case_chain_declared_mismatch(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_eye.prt")
+    wp = new_part("t47h", path)
+    case_eye_and_clevis(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_eye_gap.prt")
+    wp = new_part("t47i", path)
+    case_eye_tangency_gap(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_trim.prt")
+    wp = new_part("t47j", path)
+    case_trim_planes(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_precheck.prt")
+    wp = new_part("t47k", path)
+    case_fillet_precheck(wp)
     save_checked(path)
 
     failed = [n for n, good in RESULTS if not good]

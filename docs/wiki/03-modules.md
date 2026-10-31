@@ -1,6 +1,6 @@
 # 模块
 
-## nxlib 标准层（13 模块，203 个公开 API）
+## nxlib 标准层（13 模块，212 个公开 API）
 
 用例不得复制配方，只能 `import nxlib`。注册与引导代码在 `scripts/nxlib/__init__.py` 的 `from . import` 区块，引导片段（`__file__` 缺失时回退 `sys.argv[0]`）写在文件头 docstring 里（`scripts/nxlib/__init__.py` 的 docstring 引导段）。
 
@@ -12,18 +12,18 @@
 | `modeling` | 建模配方：块、表达式、草图、拉伸、孔、倒圆、阵列、布尔、面查找、包盒、滚边刀 | `block` / `extrude` / `make_sketch_dims` | 1014 |
 | `assembly` | 装配：加组件、单位阵、原型面查找、`Touch` 约束网络 | `add_component` / `touch_pair` | 98 |
 | `drafting` | 制图：视图查询、UF 表格、PDF 导出、剖视配方 | `export_pdf` / `new_section_view` | 201 |
-| `measure` | 只读测量：面表、同轴分组、孔锥参数、STL 截面面积与 IoU、G0–G9 验收、件间比对 | `verify_parts` / `compare_parts` | 3004 |
+| `measure` | 只读测量：面表、同轴分组、孔锥参数、STL 截面面积与 IoU（`cut_plan` 偏移口径）、G0–G9 验收、件间比对 | `verify_parts` / `compare_parts` | 3208 |
 | `rolling` | 滚球角网：边几何、±R 偏置坍缩判类、解析环带、直边刀 | `apply_roll_general` / `classify_corner` | 998 |
 | `template` | 参数化模板：schema/参数表 → 命名表达式 → 局部编辑矩阵 | `param_table` / `edit_check` | 357 |
 | `reverse` | 逆向测量编译：候选结构目录、全集站表、接口表、圆角跑道、结构表校验 | `candidate_directory` / `station_plan_full` | 683 |
 | `structure_inference` | 结构推断：面图与角色、平面族/厚度带、同轴孔链、模板选择、未解析清单 | `infer_structures` / `face_graph` / `plan_validation_stations` | 610 |
 | `skeleton` | 骨架层：局部坐标系 `Frame`、二维轮廓曲线、基准轴与面 | `Frame` / `loop_uv` | 172 |
-| `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder + 六个结构级 builder | `revolved_profile` / `plate_2p5d` / `fillet_run` | 471 |
-| `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差、编辑包络 | `liveness` / `locality` / `g1full` / `edit_envelope` | 641 |
+| `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder + 结构级 builder（孔链 / 双瓣耳 / 叉耳 / 平面修边 / 逐边圆角账本） | `revolved_profile` / `plate_2p5d` / `hole_chain` | 877 |
+| `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差、编辑包络 | `liveness` / `locality` / `g1full` / `edit_envelope` | 643 |
 
 三层关系（逆向域专用）：`reverse` 产出表 → `skeleton`/`structures` 按表建几何 → `audit` 复核"几何是否真的跟着参数动"。分层口径写在各自 docstring：`structures` 只吃 `(frame, design 表达式名, data 字面量)`，`data` 永不建表达式（`scripts/nxlib/structures.py` 的 docstring（"每个 builder 只吃"）、`scripts/nxlib/skeleton.py` 的 docstring（"data 永不建表达式"））。
 
-`measure` 是最大的模块（3004 行），因为它同时承载四条测量链：面表、STL 截面、双向偏差、G 系列验收。解析面类型约定写在 docstring 里：圆柱 16、圆锥 17、圆环 19、平面 22（`scripts/nxlib/measure.py` 的 docstring（面类型约定））。
+`measure` 是最大的模块（3208 行），因为它同时承载四条测量链：面表、STL 截面、双向偏差、G 系列验收。解析面类型约定写在 docstring 里：圆柱 16、圆锥 17、圆环 19、平面 22（`scripts/nxlib/measure.py` 的 docstring（面类型约定））。
 
 ## 工具脚本
 

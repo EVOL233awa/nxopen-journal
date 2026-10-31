@@ -218,17 +218,52 @@ def case_g1full_plan_noise():
 
 
 def case_cut_plan_coplanar():
-    """STL fallback records that a plane station was offset."""
+    """STL 判定口径的平面站：偏移证据必须齐，偏移方向要有独立依据。"""
     cube = cube_mesh()
     plan = {"stations": [station(5.0, sources=("plane#0",))]}
-    cuts = ad._cut_plan(cube, plan, 0.0137)
+    cuts = ms.cut_stations(cube, plan, 0.0137)
     c = cuts[0]
-    say("cut coplanar=%s offset_mm=%s dir=%s" %
-        (c["coplanar"], c["offset_mm"], c["offset_dir"]))
+    say("cut coplanar=%s offset_mm=%s dir=%s basis=%s" %
+        (c["coplanar"], c["offset_mm"], c["offset_dir"], c["offset_basis"]))
     check("T48_CUT_COPLANAR_FLAG",
           c["coplanar"] is True and c["offset_mm"] == 0.0137 and
-          c["offset_dir"] in (1.0, -1.0),
+          c["offset_dir"] in (1.0, -1.0) and
+          c["offset_basis"] == "section_area",
           "plane station must carry coplanar/offset evidence: %r" % c)
+    # 有面表时偏移方向取几何事实：共面平面面的外法向反向
+    faces = [{"type": ms.PLANE, "point": [0.0, 0.0, 5.0],
+              "dir": [0.0, 0.0, 1.0], "area": 100.0}]
+    cf = ms.cut_stations(cube, plan, 0.0137, faces)[0]
+    say("cut with faces dir=%s basis=%s origin_z=%.6f" %
+        (cf["offset_dir"], cf["offset_basis"], cf["origin"][2]))
+    check("T48_CUT_FACE_NORMAL_SIDE",
+          cf["offset_basis"] == "face_normal" and cf["offset_dir"] == -1.0 and
+          cf["origin"][2] < 5.0,
+          "a coplanar face normal decides the material side: %r" % cf)
+    # 源面方向冲突（薄壁两侧）时退回截面积判据，不猜
+    two = faces + [{"type": ms.PLANE, "point": [0.0, 0.0, 5.0],
+                    "dir": [0.0, 0.0, -1.0], "area": 100.0}]
+    c2 = ms.cut_stations(cube, {"stations": [station(5.0, ("plane#0",
+                                                           "plane#1"))]},
+                         0.0137, two)[0]
+    check("T48_CUT_CONFLICT_FALLS_BACK",
+          c2["offset_basis"] == "section_area",
+          "contradicting source normals must fall back to the area rule: %r"
+          % c2)
+    # 轴站也带 13.7 µm 偏移（沿站位法向），避免擦到端面共面三角
+    ca = ms.cut_stations(cube, {"stations": [station(5.0, ("axis#0",),
+                                                    "axis")]})[0]
+    check("T48_CUT_AXIS_OFFSET_NOT_COPLANAR",
+          ca["coplanar"] is False and ca["offset_dir"] == 1.0 and
+          ca["offset_basis"] is None and
+          abs(ca["origin"][2] - (5.0 + 0.0137)) < 1e-9,
+          "axis stations keep the nominal cut depth without a coplanar flag: %r"
+          % ca)
+    kept = ms.cut_plan(cube, {"stations": plan["stations"], "dropped": 7})
+    check("T48_CUT_PLAN_KEEPS_BUDGET",
+          kept["dropped"] == 7 and len(kept["stations"]) == 1,
+          "cut_plan must keep the budget fields of the source plan: %r"
+          % (kept["dropped"],))
 
 
 def case_structure_table_unassigned():

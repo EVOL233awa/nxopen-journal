@@ -127,7 +127,9 @@ if errorlevel 1 exit /b 1
 call :gate 47_structure_builders.py TEST47_DONE
 if errorlevel 1 exit /b 1
 call :gate 48_audit_gates.py TEST48_DONE
+if errorlevel 1 exit /b 1
 call :gate 49_structure_inference.py TEST49_DONE
+if errorlevel 1 exit /b 1
 call :gate 09_fea_static.py BENCH_PASS
 if errorlevel 1 exit /b 1
 

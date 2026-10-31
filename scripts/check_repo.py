@@ -188,6 +188,22 @@ def check_coverage():
     if len(PROBES) != EXPECTED_PROBES:
         problems.append("COVERAGE 探针 %d 个，期望 %d 个"
                         % (len(PROBES), EXPECTED_PROBES))
+    # :gate 的返回值必须紧跟 `if errorlevel 1 exit /b 1`：漏了它，该用例的
+    # FAIL 只被打出来、套件照样打印 ALL TESTS PASSED 并返回 0（09 之前的
+    # 两条就是这么被吞掉的）。
+    blines = batch.splitlines()
+    unchecked = []
+    for i, line in enumerate(blines):
+        m = re.match(r"^[ \t]*call[ \t]+:gate[ \t]+(\d\d_[a-z_0-9]+\.py)", line)
+        if not m:
+            continue
+        nxt = blines[i + 1] if i + 1 < len(blines) else ""
+        if re.match(r"^[ \t]*if[ \t]+errorlevel[ \t]+1[ \t]+exit[ \t]+/[bB][ \t]+1",
+                    nxt) is None:
+            unchecked.append(m.group(1))
+    for n in unchecked:
+        problems.append("COVERAGE %s 的 :gate 返回值未被检查（漏 if errorlevel）" % n)
+        print("  FAIL %s 的 :gate 返回值未被检查（漏 if errorlevel）" % n)
     print("  用例文件 %d 个（应并入校验 %d 个，实际 gate %d 个），批次文件提到 %d 个"
           % (len(files), len(expected), len(gated), len(mentioned)))
 
@@ -531,6 +547,37 @@ def check_wiki():
     for m in missing:
         problems.append("WIKI 名册缺 %s（新增/改名后需同步 docs/wiki 的 roster 表）" % m)
         print("  FAIL 名册缺 %s" % m)
+
+    # 1b) nxlib 名册的行数列必须等于文件实际行数：行数随维护漂移，写死了就
+    #     会静默说谎（旧条目只靠人工回顾，漂了几个月没人发现）。
+    for n in pages:
+        cur = None
+        for line in read(os.path.join(WIKI, n)).splitlines():
+            s = line.strip()
+            m = re.match(r"<!--\s*roster:\s*([A-Za-z0-9_]+)\s*-->", s)
+            if m:
+                cur = m.group(1)
+                continue
+            if cur is None:
+                continue
+            if not s or not s.startswith("|"):
+                cur = None
+                continue
+            if cur != "nxlib":
+                continue
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            mm = re.match(r"`([A-Za-z0-9_]+)`", cells[0]) if cells else None
+            if not mm or not cells[-1].isdigit():
+                continue
+            path = os.path.join(NXLIB, mm.group(1) + ".py")
+            if not os.path.isfile(path):
+                continue
+            real = len(read(path).splitlines())
+            if int(cells[-1]) != real:
+                problems.append("WIKI 行数过期 %s：wiki %s / 实际 %d"
+                                % (mm.group(1), cells[-1], real))
+                print("  FAIL 行数过期 %s：wiki %s / 实际 %d"
+                      % (mm.group(1), cells[-1], real))
 
     # 2) 计数：用例数/gate 数在 wiki 里必须唯一自洽——既要有当前值，
     #    也不得残留其它可能过期的数字（改一处漏一处就是旧的会留下来）。

@@ -12,6 +12,8 @@
 - `scripts/nxlib/__init__.py`：注册 `structure_inference`。
 - `scripts/nxlib/measure.py`：新增 G8 门（声明对账 + 命名表达式活性）并入 `verify_parts` 默认门表；`station_report` 给空站分类（`na_reason`：`coplanar_section`/`no_material`）并新返回 `unmeasured`/`instrument_errors`/`plan_noise`/`measured_count`/`plan_measured_complete`；`station_report_hybrid` 把仪器误差判失败、把站表噪声剔除并报告，B-rep 取代的站清掉 `na_reason`；G9 增加特征名映射（空名/默认名/未映射结构即 FAIL，结构数只能来自结构表）。
 - `scripts/nxlib/audit.py`：`g1full` 返回 `unmeasured`/`primary.unmeasured`/`plan_measured_complete`，没量到的主站不算通过、也不让 `plan_complete` 通过；新增 `plane_station_mode`/`brep_plane_count`/`stl_axis_count` 记录平面站口径。
+- `scripts/nxlib/measure.py`：判定口径切站 `cut_stations`/`cut_plan` + 常量 `SECTION_CUT_DEPTH`（13.7 µm）——平面站与轴站沿法向偏移，平面站的偏移方向优先取共面平面面的**外法向反向**（`offset_basis="face_normal"`；几何事实，旧实现只按截面积猜），面表缺失或源面方向冲突时退回原件截面积较大侧（`offset_basis="section_area"`）；每站带 `coplanar/offset_mm/offset_dir/offset_basis`，重造站表保留源站表的 `dropped`/`missing`；`station_report` 行增 `kind`/`section_mode`/`coplanar`/`offset_*` 证据字段。
+- `scripts/nxlib/structures.py` 结构级 builder（第二批）：`hole_chain`（同轴/异轴孔段逐段切除，圆柱两端外伸、圆锥只在出口按同一半角外伸，每刀回读新增面并按声明半径/半角对账）、`eye_2lobe`（平台轮廓 + 两个圆瓣圆柱合并，报 `tangency_gap_mm = |W_HALF − (h + R_EYE)|`，不静默建出台阶）、`clevis`（平台 + 开口槽，按声明槽宽复算两侧壁间距）、`trim_planes`（按实测平面裁料，逐刀记体数/体积，保留侧选反时把 NX 原文 `Target body completely inside tool body.` 记进 checks）、`fillet_feasible` + `fillet_run(radius_mm=...)`（边长/支撑面宽度/支撑半径/二面角前置判定，失败行把"半径或支撑不足"与"边已被消费"分开）、`face_signature`/`added_faces`（逐刀断言新增面，不读全量面表）。
 - `scripts/tests/48_audit_gates.py`（28 项）：把上列口径与审计层其余“失败要关门”负例钉成回归（空截面/空 primary 分母/未分配面/空特征名/默认名/站表缺覆盖/预算未映射/同名既 design 又 data）；`RUN_TESTS.bat` 登记第 48 门，`check_repo.py` 计数 47/44 → 48/45。
 - `references/reverse-engineering.md` §12.4：结构级 builder 的能力边界与缺口照实写（`hole_set` 只吃同向同直径同深度孔位表；眼/叉耳、同轴孔链、多分界截面放样、拔模窗口与斜切端壁目前只能用原语拼，并列出拼装四条自检）。
 - `scripts/nxlib/structures.py` 结构级 builder：`plate_2p5d`（轮廓+厚度+可选拔模）、`revolved_profile`（(t,r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（同向同直径同深度孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边失败原文账本）——一个结构一次调用，取代“一个结构一堆原语”。
@@ -68,6 +70,13 @@
 
 ### Changed
 
+- `scripts/tests/47_structure_builders.py`：20 → 38 项，覆盖第二批 builder（孔链逐段体积与逐刀对账、锥口半角、故意错报声明值必须失败、双瓣耳相切与不共切上报、叉耳槽宽、平面修边体积与保留侧选反、倒圆前置判定）。
+- `scripts/check_repo.py`：第 2 组新增"每条 `call :gate` 的返回值必须紧跟 `if errorlevel 1 exit /b 1`"（`RUN_TESTS.bat` 里 48/49 两门漏了它，失败也被后面的 `ALL TESTS PASSED` 吞掉）；第 8 组新增"wiki 名录的行数列必须等于文件实际行数"。
+- `scripts/tests/RUN_TESTS.bat`：48/49 两门补上返回值检查。
+- `scripts/tests/49_structure_inference.py`：`parallel_stack` 调的是改名前的 `plane()`（NameError 让整门用例在第 20 项后崩掉），改 `plane_face`。
+- `scripts/nxlib/audit.py` `g1full` 与 `scripts/nxlib/measure.py` `verify_parts`：G1 判定口径默认改为 STL 切面 + `cut_plan` 偏移（`g1full(hybrid=False)`、`verify_parts(section_mode="stl")`），B-rep 平面站口径（`station_report_hybrid`）降为显式可选项并在 docstring 记明限制——`UF SectionFromPlanes` 把剖面按面边界切成开口段，导入体上端点本应重合却串不成环时逐站假失败；要用它必须先自比对证明该件可闭合。
+- `references/reverse-engineering.md` §4.1/§10.1/§12.5、`docs/wiki/04-data-flow.md`：G1 口径改述为“默认 STL 偏移（13.7 µm、材料侧取共面面外法向反向）+ 可选 B-rep 名义站”，并写清 B-rep 口径的闭合前提。
+- `references/reverse-engineering.md` §9.8/§10（测量截面重建）：补端点串环的前提——`JoinType=0` 的剖面段在切点/尖点处四点共点，必须按**切线连续性**选续接段（最大转向点积），贪心按键取段会把环串成开口或自回零面积环。
 - `references/reverse-engineering.md` §9.8/§9.5/§10/§10.1/§12.5/§4.2、`references/assembly.md` §A.1、`SKILL.md` 导入段：测量截面重建过渡长条、G7 建成侧计数先过支撑面分类、局部性仪器协议与三条排除、切割仪器自检与面内偏置读数、局部试件对齐后 IoU、装配加载方式与未加载判据、导入批处理四坑沉淀为通用判据。
 - `scripts/nxlib/measure.py`：G0 要求两侧均单实体且面表零失败；G1 空站表/开环截面判失败，`max_stations` 预算截断只报 `budget_skipped`/`plan_complete`（不判失败）；G2 分母改用 `hole_audit`（功能孔+锥孔+耳孔+锥口）并报 `missing_groups`，同半径面段按轴向覆盖合并后比（不比分段数）；G4/G7 增加 `BLOCKED` 证据；G4 的 R 默认取参考件主环面圆角半径并记 `corner_radius_basis`；`verify_parts` 每门带 `status` 与 `delivery_pass`。
 - `scripts/nxlib/measure.py`：`fillet_coverage` 半径容差 0.025、P95 按半径池；新增 `g7_reachability`（上限 = 参考圆角跑道数 / 参考圆角面数，半径组取环面 `rad_data` 或显式 `g7_radii`，纯圆柱半径组只进 `unjudged_radii`，建成体可滚边数只作诊断）、`g4_blocked_reason`（三面短边）、`g9_structure`（特征数/占比/深度/站栈；`verify_parts(g9=True)` 缺 `structure_count` 判 FAIL，不拿 `structure_directory` 逐面组数当分母）。

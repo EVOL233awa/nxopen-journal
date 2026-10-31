@@ -33,6 +33,9 @@ TORUS = 19
 PLANE = 22
 
 STL_CHORDAL_TOL = 0.01
+# 判定口径的切站偏移：切平面与模型平面共面时三角面求交会漏/重算，平面站
+# 必须离开面一个亚毫米量级；轴站也带同一偏移，避免擦到端面共面三角。
+SECTION_CUT_DEPTH = 0.0137
 _MESH_SEQ = [0]
 
 
@@ -2475,8 +2478,99 @@ def _coplanar_faces(mesh, origin, normal, tol=1e-6):
     return cnt
 
 
+def _material_side(faces, sources, normal):
+    """平面站的材料侧：共面平面面的**外法向反向**就是材料侧。
+
+    面表给的外法向背离材料，所以沿站位法向的偏移方向 = -外法向；站表源是
+    `plane#k`（k 为面表里第 k 个平面面）。多个源面共面而方向不一致（薄壁两
+    侧）、源面缺失或与站位法向不平行时返回 None，交回截面积判据。
+    """
+    if not faces:
+        return None
+    dirs = [f.get("dir") for f in faces if f.get("type") == PLANE]
+    sign = None
+    for s in sources:
+        t = str(s)
+        if not t.startswith("plane#"):
+            continue
+        try:
+            k = int(t.split("#", 1)[1])
+        except ValueError:
+            return None
+        if k < 0 or k >= len(dirs) or dirs[k] is None:
+            return None
+        d = _dot(dirs[k], normal)
+        if abs(d) < 1e-6:
+            return None
+        cand = -1.0 if d > 0.0 else 1.0
+        if sign is None:
+            sign = cand
+        elif sign != cand:
+            return None
+    return sign
+
+
+def cut_stations(orig_mesh, plan, depth=SECTION_CUT_DEPTH, faces=None):
+    """判定口径的切站：平面站与轴站都沿法向偏移 `depth`（默认 13.7 µm）。
+
+    平面站与模型平面共面时 STL 求交会漏算/重算三角面，所以平面站必须离开
+    面一个亚毫米量级；偏移是测量手段、不是几何事实，因此每站记
+    `coplanar/offset_mm/offset_dir/offset_basis`，报告里能看出这一站不是
+    名义截面、以及偏移方向凭什么定。
+
+    偏移方向优先取几何事实：共面平面面的外法向反向（`offset_basis=
+    "face_normal"`，需要 `faces` 面表）；面表缺失或源面方向冲突时退回原件
+    截面积更大的那一侧（`offset_basis="section_area"`，只看原件）。
+    """
+    stations = plan["stations"] if isinstance(plan, dict) else plan
+    cut = []
+    for st in stations:
+        origin = [float(x) for x in st["origin"]]
+        normal = _unit(st["normal"])
+        coplanar = st.get("kind") == "plane"
+        sign = 1.0
+        basis = None
+        if coplanar:
+            side = _material_side(faces, st.get("sources", []), normal)
+            if side is not None:
+                sign = side
+                basis = "face_normal"
+            else:
+                plus = [o + depth * n for o, n in zip(origin, normal)]
+                minus = [o - depth * n for o, n in zip(origin, normal)]
+                a1 = section_area(orig_mesh, plus, normal)
+                a2 = section_area(orig_mesh, minus, normal)
+                sign = 1.0 if a1 >= a2 else -1.0
+                basis = "section_area"
+        cut.append({
+            "origin": [o + sign * depth * n for o, n in zip(origin, normal)],
+            "normal": list(normal),
+            "sources": list(st.get("sources", [])),
+            "kind": st.get("kind"),
+            "sign": sign,
+            "depth": depth,
+            "coplanar": coplanar,
+            "offset_mm": depth,
+            "offset_dir": sign,
+            "offset_basis": basis,
+        })
+    return cut
+
+
+def cut_plan(orig_mesh, plan, depth=SECTION_CUT_DEPTH, faces=None):
+    """切站后的站表，保留原站表的预算/覆盖字段（`dropped`/`missing`）。
+
+    `station_report` 读 `dropped` 判 `plan_complete`；重造站表时丢掉这个
+    字段会把预算截断洗成"覆盖完整"。
+    """
+    base = dict(plan) if isinstance(plan, dict) else {"stations": plan}
+    base["stations"] = cut_stations(orig_mesh, plan, depth, faces)
+    base.setdefault("dropped", 0)
+    return base
+
+
 def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
-                   area_err_max_pct=5.0):
+                   area_err_max_pct=5.0, progress=None):
     """逐站截面 IoU / 面积差 / 缺料与多料面积；plan 取 station_plan 的返回值。
 
     `only_a` 是原件有、自建件缺的面积，`only_b` 是自建件多出的面积
@@ -2487,16 +2581,19 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     也不判 FAIL），并给出 `na_reason`：
 
     - `coplanar_section`：切平面与原件某个平面面共面，原件在那里**有材料**
-      但 STL 求交看不到交线 —— 这是仪器限制，站表不能拿它当"没材料"，判定
-      口径必须换 B-rep 精确截面（`station_report_hybrid`）或判失败；
+      但 STL 求交看不到交线 —— 这是仪器限制，站表不能拿它当"没材料"；
     - `no_material`：剖面附近没有任何共面三角面，原件在该站确实没有材料 ——
       站位落在材料空档里，是站表噪声（如同轴组各面之间的空段），不进分母。
 
+    判定口径的站表用 `cut_plan`（平面站与轴站都沿法向偏 13.7 µm、方向取
+    材料侧）生成；直接拿名义站位切，平面站会落进 `coplanar_section`。
+    `progress(i, n, mode)` 可选：逐站回调（长跑时打进度，避免看起来像卡死）。
+
     `pass` 只回答"有读数的站里有没有 FAIL"；`plan_measured_complete` 回答
     "原件有材料的站是否都量到了"（即无 `instrument_errors` 且未截断）；
-    `plan_noise` 单列站位空档。判定链（`station_report_hybrid`、
-    `verify_parts` 的 G1、`audit.g1full`）按这两条分别处理，空站不会静默
-    变成 PASS，也不会把不可达的站位算成必须通过。
+    `plan_noise` 单列站位空档。判定链（`verify_parts` 的 G1、
+    `audit.g1full`）按这两条分别处理，空站不会静默变成 PASS，也不会把
+    不可达的站位算成必须通过。
     """
     stations = plan["stations"] if isinstance(plan, dict) else plan
     dropped = plan.get("dropped", 0) if isinstance(plan, dict) else 0
@@ -2504,6 +2601,8 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
     failed = []
     na = []
     for i, st in enumerate(stations):
+        if progress is not None:
+            progress(i, len(stations), "stl")
         res = section_iou(mesh_a, mesh_b, st["origin"], st["normal"])
         aa, ab = res["area_a"], res["area_b"]
         if abs(aa) > 1e-9:
@@ -2526,6 +2625,12 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             "origin": list(st["origin"]),
             "normal": list(st["normal"]),
             "sources": list(st.get("sources", [])),
+            "kind": st.get("kind"),
+            "section_mode": "stl",
+            "coplanar": st.get("coplanar"),
+            "offset_mm": st.get("offset_mm"),
+            "offset_dir": st.get("offset_dir"),
+            "offset_basis": st.get("offset_basis"),
             "iou": res["iou"],
             "area_a": aa,
             "area_b": ab,
@@ -2669,20 +2774,25 @@ def brep_section_iou(part_a, part_b, origin, normal,
 
 
 def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
-                          iou_min=0.95, area_err_max_pct=5.0):
+                          iou_min=0.95, area_err_max_pct=5.0,
+                          progress=None):
     """逐站截面：面表平面站用 B-rep 精确截面，其余站用 STL 截面。
 
-    STL 切面在切平面与模型平面共面时会漏/重算三角面，不能把该站读数
-    当形状判据；B-rep 原样站位（不偏移）才是平面站的判定口径。两者
-    使用同一组阈值。
+    这是**可选口径**，不是默认判定口径：`UF SectionFromPlanes` 把剖面按面
+    边界切成开口段，闭合环要靠端点串接重建；在导入体（无特征史、面片拼接
+    密集）上会返回端点本应重合却串不成环的段，`brep_section_iou` 按开口
+    判失败，于是每一站平面站都 FAIL —— 这是仪器限制，不是形状不对。要用
+    这个口径必须先证明它在该件上可闭合（同一件自比对全 PASS、面积与 STL
+    口径一致）；判定默认走 `cut_plan` + `station_report`（STL 偏移）。
 
-    `station_report` 把空站记成 N/A 并放过（它只回答"有读数的站有没有
-    FAIL"）；这里把平面站换成 B-rep 读数，剩下的空站按两类处理：
-    **仪器误差**（`coplanar_section`：原件有材料却没量到，B-rep 也没补上）
-    → 判失败；**站表噪声**（`no_material`：原件在该站确实没有材料）
-    → 从"该量到的站"里剔除、单列 `plan_noise`，不让它把门卡成不可达。
+    这里把平面站换成 B-rep 读数，剩下的空站按两类处理：**仪器误差**
+    （`coplanar_section`：原件有材料却没量到，B-rep 也没补上）→ 判失败；
+    **站表噪声**（`no_material`：原件在该站确实没有材料）→ 从"该量到的站"
+    里剔除、单列 `plan_noise`，不让它把门卡成不可达。
+    `progress(i, n, mode)` 逐站回调（B-rep 站比 STL 站便宜一两个量级）。
     """
-    base = station_report(mesh_a, mesh_b, plan, iou_min, area_err_max_pct)
+    base = station_report(mesh_a, mesh_b, plan, iou_min, area_err_max_pct,
+                          progress=progress)
     rows = base["stations"]
     stations = plan["stations"] if isinstance(plan, dict) else plan
     brep_count = 0
@@ -2692,6 +2802,8 @@ def station_report_hybrid(mesh_a, mesh_b, part_a, part_b, plan,
                    for s in st.get("sources", [])):
             row["section_mode"] = "stl"
             continue
+        if progress is not None:
+            progress(row["index"], len(rows), "brep")
         row.update(brep_section_iou(part_a, part_b, st["origin"],
                                     st["normal"], iou_min,
                                     area_err_max_pct))
@@ -2771,6 +2883,7 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  volume_pct=0.1, bbox_pos_mm=0.05, bbox_size_mm=0.05,
                  view_iou_min=0.99, rms_max=0.8, p95_max=1.8,
                  section_iou_min=0.95, section_area_pct=5.0,
+                 section_mode="stl",
                  ref_a=None, ref_b=None, g7="auto", g7_radii=None,
                  g7_ceiling=None, g9=True, structure_count=None,
                  g8=True, design=None, derived=None, factor=1.1,
@@ -2779,10 +2892,12 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  g4_corner_radius=None):
     """原件/自建件几何门 G0–G9 一次汇总（G2–G9 长度换算到毫米）。
 
-    G0 要求两件都是单实体且面表可读；G1 的面表平面站用 B-rep 精确截面，
-    其余站用 STL 截面，空站表/未闭合环/两侧皆空的站判失败或 N/A，
+    G0 要求两件都是单实体且面表可读；G1 默认走 STL 截面口径（平面站与轴站
+    都按 `cut_plan` 偏 13.7 µm），空站表/两侧皆空的站判失败或 N/A，
     `max_stations` 预算截断只报 `budget_skipped`/`plan_complete`，但
-    `plan_complete=false` 时 G1 **不通过**（未覆盖不等于覆盖）；G2 用
+    `plan_complete=false` 时 G1 **不通过**（未覆盖不等于覆盖）；`section_mode`
+    可选 `"brep"` 走面表平面站的 B-rep 精确截面（见 `station_report_hybrid`
+    的闭合限制，仅在自己件上证明可闭合时使用）；G2 用
     `hole_audit` 的分母（功能孔 + 独立锥孔），按几何键匹配；G3–G6 按毫米
     换算；G7 默认 `auto`（参考件有环面才计算，纯圆柱半径组只进
     `unjudged_radii`，需要判圆柱圆角时显式传 `g7_radii`），状态先看可达性
@@ -2804,6 +2919,18 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     mesh_b_mm = scale_mesh(mesh_b, sb)
 
     plan = station_plan(mo, max_stations=max_stations)
+    if section_mode == "brep":
+        sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
+                                    section_iou_min, section_area_pct)
+    elif section_mode == "stl":
+        sec = station_report(mesh_o, mesh_b,
+                             cut_plan(mesh_o, plan, faces=mo["faces"]),
+                             section_iou_min, section_area_pct)
+    else:
+        raise ValueError("unknown section_mode: %r" % (section_mode,))
+    sec["caliber"] = ("brep_plane" if section_mode == "brep" else "stl_offset")
+    sec["cut_depth_mm"] = (None if section_mode == "brep"
+                           else SECTION_CUT_DEPTH)
     if abs(so - sb) > 1e-12:
         sec = station_report(mesh_o, mesh_b, plan, section_iou_min,
                              section_area_pct)
@@ -2811,9 +2938,6 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
         sec["pass"] = False
         sec["reasons"].append("unit mismatch %s vs %s" %
                               (mo["units"], mb["units"]))
-    else:
-        sec = station_report_hybrid(mesh_o, mesh_b, part_o, part_b, plan,
-                                    section_iou_min, section_area_pct)
     if not sec.get("plan_complete", True):
         sec["pass"] = False
         sec["status"] = "FAIL"
