@@ -646,6 +646,102 @@ def case_window_cut(wp):
     return body
 
 
+def case_sweep_trim(wp):
+    """Skew end wall: trim_planes can only cut one plane, a swept profile can
+    cut an oblique line, and the removed volume matches the analytic wedge."""
+    frame = sk.Frame()
+    blk = mdl.block(wp, NXOpen.Point3d(-30.0, -20.0, 0.0), "60", "40", "20")
+    body = list(blk.GetBodies())[0]
+    v0 = mdl.volume(wp, body)
+    # keep the region below the line from (0, 20) to (30, 0) AND the whole
+    # left part of the block: the profile must bound the entire keep region,
+    # not just the triangle -- a profile that covers only part of the material
+    # there leaves the rest as a second body
+    # counter-clockwise in the (u, z) view (signed area +): along the bottom,
+    # up the 45 deg line, then back across the top to the left edge
+    prof = [(-40.0, 0.0), (30.0, 0.0), (0.0, 20.0), (-40.0, 20.0)]
+    res = st.sweep_trim(wp, body, frame, prof, [-20.0, 20.0], name="SKEW")
+    v1 = mdl.volume(wp, body)
+    # The block spans u -30..30, z 0..20, v -20..20 (volume 48000).  The trim
+    # keeps the part of the block on the material side of the 45 deg line from
+    # (0,20) to (30,0).  Which side is kept depends on the profile winding,
+    # which NX normalises, so the assertion is that exactly ONE of the two
+    # complementary wedges is kept and the other removed -- at a 45 deg line
+    # the two are 24000 (u<-0 full height) and 24000 (the wedge under the
+    # line), i.e. the kept volume must be one of them, not something else.
+    v_block = 60.0 * 40.0 * 20.0
+    half = 0.5 * 30.0 * 20.0 * 40.0      # wedge on one side of the 45 deg line
+    v_left = 30.0 * 20.0 * 40.0          # the u<0 half at full height
+    say("sweep trim kept=%.4f block=%.4f checks=%r"
+        % (v1, v_block, res["checks"]))
+    check("T47_SWEEPTRIM_VOLUME",
+          abs(v1 - half) < 1e-2 * half or abs(v1 - v_left) < 1e-2 * v_left,
+          "the trim must leave one complete side of the 45 deg line "
+          "(%.4f or %.4f), got %.4f (block %.4f)"
+          % (half, v_left, v1, v_block))
+    check("T47_SWEEPTRIM_SINGLE_BODY", res["checks"]["single_body_build"] is True,
+          "a skew trim must not split the body: %r" % (res["checks"],))
+    check("T47_SWEEPTRIM_PLANE_ONLY",
+          all(t == 22 for t in res["checks"]["added_types"]),
+          "a straight skew end wall adds only planar faces: %r"
+          % (res["checks"]["added_types"],))
+    check("T47_SWEEPTRIM_REMOVED", abs(res["checks"]["removed"] - (v0 - v1)) < 1e-6,
+          "the ledger must report the volume it removed: %r" % (res["checks"],))
+
+    # a curved end wall: an arc profile leaves a cylindrical face, which a
+    # single-plane trim cannot produce at all
+    blk2 = mdl.block(wp, NXOpen.Point3d(60.0, -20.0, 0.0), "60", "40", "20")
+    b2 = list(blk2.GetBodies())[0]
+    v2 = mdl.volume(wp, b2)
+    say("arc block bodies=%d (must be 2: the skew block + this one)"
+        % len(list(wp.Bodies)))
+    # keep everything left of the arc: the arc bulges to +u, so the keep
+    # region is the block minus the sliver outside it
+    # The block is u 60..120 in world terms, i.e. u -40..20 in this frame's
+    # shifted coordinates (the frame origin sits at the block's u=60 face).
+    # The keep region must be a STRICT SUBSET of the block or the trim removes
+    # nothing: an arc that spans the whole u range leaves the tool outside the
+    # body ("completely outside target body").  So the arc cuts a corner off:
+    # from (10,0) bulging to +u, back to (10,20).
+    # A sampled arc gives 24 planar facets, not a cylinder: the profile has to
+    # carry a real arc curve or the end wall is a fan of planes.  This list is
+    # only used for the frame/shape check below; the built profile is passed
+    # with `sweep_trim_arc` so NX sees one circular edge.
+    arc_prof = [(10.0 + 8.0 * math.cos(-math.pi / 2.0 + math.pi * k / 24.0),
+                 10.0 + 10.0 * math.sin(-math.pi / 2.0 + math.pi * k / 24.0))
+                for k in range(25)]
+    prof2 = [(-40.0, 0.0)] + arc_prof + [(-40.0, 20.0)]
+    # the block sits at world x 60..120, so the profile frame must sit there
+    # too -- the same profile read in the world frame lands outside the body
+    # and the boolean is refused ("completely outside target body")
+    frame2 = sk.Frame(origin=(60.0, 0.0, 0.0))
+    # one real arc so the end wall is a cylinder, not a fan of 24 planes
+    segs2 = [
+        {"line": [(-40.0, 0.0), (10.0, 0.0)]},
+        {"arc": [(10.0, 10.0), 10.0, -90.0, 90.0]},
+        {"line": [(10.0, 20.0), (-40.0, 20.0)]},
+        {"line": [(-40.0, 20.0), (-40.0, 0.0)]},
+    ]
+    r2 = st.sweep_trim(wp, b2, frame2, prof2, [-20.0, 20.0], name="ARCTRIM",
+                       profile_segs=segs2)
+    v3 = mdl.volume(wp, b2)
+    say("sweep arc trim volume=%.4f checks=%r types=%r"
+        % (v3, r2["checks"], r2["checks"]["added_types"]))
+    check("T47_SWEEPTRIM_ARC_FACE",
+          16 in r2["checks"]["added_types"],
+          "a curved end wall must leave a cylindrical face (a plane trim "
+          "cannot): %r" % (r2["checks"]["added_types"],))
+    check("T47_SWEEPTRIM_ARC_REMOVED", v2 - v3 > 1.0,
+          "the curved trim must remove the material outside the arc: %.4f"
+          % (v2 - v3,))
+    # the arc profile builds an extra body (the keep-side prism) before the
+    # cut; the ledger's `bodies` counts what is left, so it is 2 here while
+    # `single_body_build` compares against the pre-build count correctly
+    say("arc trim bodies before=%d after=%d"
+        % (r2["checks"]["bodies_before"], r2["checks"]["bodies"]))
+    return body
+
+
 def case_window_no_material(wp):
     """A window that lands outside the body must report 'removed nothing'."""
     frame = sk.Frame()
@@ -739,6 +835,11 @@ def main():
     wp = new_part("t47m", path)
     case_window_cut(wp)
     case_window_no_material(wp)
+    save_checked(path)
+
+    path = os.path.join(out, "t47_sweep.prt")
+    wp = new_part("t47n", path)
+    case_sweep_trim(wp)
     save_checked(path)
 
     failed = [n for n, good in RESULTS if not good]

@@ -886,6 +886,135 @@ def trim_planes(wp, target, trims, name="TRIM", span=1000.0):
             "pass": all(c["ok"] for c in checks) if checks else False}
 
 
+# ------------------------------------------------------------ 斜切/曲面端壁
+
+def profile_uz_curves(wp, frame, segs):
+    """(u,z) 混合段剖面 → 曲线列表：直线段是 {"line": [p0, p1]}，圆弧段是
+    {"arc": [center, radius, a0_deg, a1_deg]}（角度在 (u,z) 平面内，逆时针）。
+
+    为什么需要：按采样点连折线时，一段 R8 的端壁会变成 24 个小平面，"曲端壁"
+    最后全是平面，面型对不上、圆角也挂不上去。这里让圆弧以**一条圆弧曲线**
+    进剖面，拉伸出来才是圆柱面。
+    """
+    out = []
+    for seg in segs:
+        if "line" in seg:
+            p0, p1 = seg["line"]
+            out.append(wp.Curves.CreateLine(
+                frame.pt(float(p0[0]), 0.0, float(p0[1])),
+                frame.pt(float(p1[0]), 0.0, float(p1[1]))))
+        elif "arc" in seg:
+            c, r, a0, a1 = seg["arc"]
+            u_dir = frame.vec(1.0, 0.0, 0.0)
+            z_dir = frame.vec(0.0, 0.0, 1.0)
+            out.append(wp.Curves.CreateArc(
+                frame.pt(float(c[0]), 0.0, float(c[1])),
+                NXOpen.Vector3d(u_dir[0], u_dir[1], u_dir[2]),
+                NXOpen.Vector3d(z_dir[0], z_dir[1], z_dir[2]),
+                float(r), math.radians(float(a0)), math.radians(float(a1))))
+        else:
+            raise ValueError("profile segment needs 'line' or 'arc': %r" % (seg,))
+    return out
+
+
+def sweep_trim(wp, target, frame, profile_uz, v_span, name="SWEEPTRIM",
+               keep="above", extra_mm=0.0, profile_segs=None):
+    """按测量侧视轮廓扫掠切端壁：端壁不必是平面（斜切、带弧、台阶端面）。
+
+    `trim_planes` 只能按单个平面裁；端面一旦是斜切带圆角、或沿臂长方向带
+    台阶，就得用轮廓。做法：侧视轮廓 (u, z) 在 v=0 平面上闭合成环，沿 ±V
+    拉成棱柱，再从 target 上求差。
+
+    profile_uz 是**要保留的一侧**的边界轮廓（(u,z)，逆时针），
+    `keep="above"` 表示轮廓围住的区域保留、棱柱体是刀；`keep="below"` 反过来
+    用一个大矩形减去轮廓得到刀具。v_span 给 [v0, v1]，两端各外伸 extra_mm，
+    保证切透；外伸量不要太大——刀具越长，NX 在窄壁处的求交越容易报
+    intersection gaps。
+
+    端壁带弧时用 `profile_segs`（`{"line":...}` / `{"arc":...}` 混合段）：
+    折线剖面会把一段弧切成几十个小平面，端壁面型就不是柱面了。
+
+    为什么不复用 `pocket_intersect`：那是"侧视 ∩ 俯视"的腔体；端壁是
+    "侧视沿 V 全宽切穿"，用求交会把端壁削成腔。
+
+    `checks` 记：体数（不该变）、去料体积、新增面类型（斜平面端壁只多平面，
+    带弧端壁会多柱面）。
+    """
+    n0 = len(list(wp.Bodies))
+    v0 = mdl.volume(wp, target)
+    before = face_signature(target)
+    v_lo = float(v_span[0]) - float(extra_mm)
+    v_hi = float(v_span[1]) + float(extra_mm)
+    direction = sk.normalize(frame.V)
+    if str(keep).lower() == "above":
+        if profile_segs is not None:
+            # 混合段剖面：圆弧段保持解析，端壁才是曲面
+            cs = profile_uz_curves(wp, frame, profile_segs)
+        else:
+            cs = sk.loop_uz(wp, frame, profile_uz, 0.0)
+        hp = frame.pt(sum(p[0] for p in profile_uz) / float(len(profile_uz)),
+                      0.0,
+                      sum(p[1] for p in profile_uz) / float(len(profile_uz)))
+        tool = prism(wp, cs, direction, "%.6f" % v_lo, "%.6f" % v_hi,
+                     help_pt=hp)
+    else:
+        # keep="below"：刀具 = 侧视大矩形 − 轮廓。先建矩形棱柱，再用轮廓
+        # 棱柱从它身上切掉——这样刀具本身就是 target 外的区域
+        us = [float(p[0]) for p in profile_uz]
+        zs = [float(p[1]) for p in profile_uz]
+        pad = max(max(us) - min(us), max(zs) - min(zs)) * 2.0 + 10.0
+        big = [(min(us) - pad, min(zs) - pad), (max(us) + pad, min(zs) - pad),
+               (max(us) + pad, max(zs) + pad), (min(us) - pad, max(zs) + pad)]
+        tool = prism(wp, sk.loop_uz(wp, frame, big, 0.0), direction,
+                     "%.6f" % v_lo, "%.6f" % v_hi,
+                     help_pt=frame.pt(min(us) - pad + 1.0, 0.0,
+                                      min(zs) - pad + 1.0))
+        inner = prism(wp, sk.loop_uz(wp, frame, profile_uz, 0.0), direction,
+                      "%.6f" % (v_lo - 1.0), "%.6f" % (v_hi + 1.0),
+                      help_pt=frame.pt(
+                          sum(p[0] for p in profile_uz)
+                          / float(len(profile_uz)), 0.0,
+                          sum(p[1] for p in profile_uz)
+                          / float(len(profile_uz))))
+        _named(inner["features"][0], name + "_HOLE")
+        cut(wp, tool["bodies"][0], inner["features"][0])
+        _named(tool["features"][0], name + "_TOOL")
+    _named(tool["features"][0], name)
+    try:
+        cut(wp, target, tool["features"][0])
+    except Exception as exc:
+        # 刀具整个在目标体外 = 轮廓没盖住料：这是"端壁位置选错"的指纹，
+        # 原文照记，不吞不重试
+        first = (str(exc).splitlines() or [""])[0][:200]
+        return {"features": list(tool["features"]), "bodies": [],
+                "checks": {"removed": 0.0, "bodies": len(list(wp.Bodies)),
+                           "ok": False, "added_types": [],
+                           "reason": "boolean rejected: %s" % first},
+                "pass": False}
+    v1 = mdl.volume(wp, target)
+    n1 = len(list(wp.Bodies))
+    added = added_faces(before, face_signature(target))
+    types = sorted(set(a["type"] for a in added))
+    removed = v0 - v1
+    # `n0` counts bodies before the tool was built.  A successful cut swallows
+    # the tool, so n1 must return to n0; a leftover tool body means the cut
+    # did not consume it and is a defect, not a pass.
+    checks = {
+        "added_types": types,
+        "added_count": len(added),
+        "removed": removed,
+        "bodies": n1,
+        "bodies_before": n0,
+        "single_body_build": n1 == n0,
+        "ok": (n1 == n0) and removed > 1e-9,
+    }
+    if not checks["ok"]:
+        checks["reason"] = ("body count %d -> %d" % (n0, n1)
+                            if n1 != n0 else "removed nothing")
+    return {"features": list(tool["features"]), "bodies": [target],
+            "checks": checks, "pass": checks["ok"]}
+
+
 # ------------------------------------------------------------------ 变截面臂
 
 def _point_in_ring(p, ring):

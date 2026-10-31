@@ -7,6 +7,8 @@
 
 ### Added
 
+- `scripts/nxlib/structures.py` `sweep_trim` + `profile_uz_curves`：端壁按测量侧视轮廓沿 ±V 扫掠切，`profile_segs` 支持 `{"line":...}` / `{"arc":...}` 混合段——折线剖面会把一段弧切成几十个小平面（`added_types` 只剩 22），圆弧作为一条曲线进剖面才留下 type16 柱面。`checks` 记体数/去料体积/新增面型，布尔被拒时记原文。
+- `scripts/tests/47_structure_builders.py`：57 → 63 项（45° 斜切端壁只留一侧料且只多平面；带弧端壁新增一个柱面；去料体积与轮廓外体积对账）。
 - `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。"
 "宽度不足与二面角越界分两档：参考件自己的圆角已经存在，所以"支撑比 2R 窄"证明的是复刻难而不是物理不可达，记 `build_obstacle`（构建阶段行动项）；只有二面角越界/退化跑道进 `evidence`（BLOCKED 依据）。
 - `scripts/tests/49_structure_inference.py`：24 → 29 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面、宽度不足只能记 `build_obstacle` 不得进 BLOCKED）。

@@ -18,7 +18,7 @@
 | `reverse` | 逆向测量编译：候选结构目录、全集站表、接口表、圆角跑道、结构表校验 | `candidate_directory` / `station_plan_full` | 683 |
 | `structure_inference` | 结构推断：面图与角色、平面族/厚度带、同轴孔链、模板选择、未解析清单 | `infer_structures` / `face_graph` / `plan_validation_stations` | 980 |
 | `skeleton` | 骨架层：局部坐标系 `Frame`、二维轮廓曲线、基准轴与面 | `Frame` / `loop_uv` | 172 |
-| `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder + 结构级 builder（孔链 / 双瓣耳 / 叉耳 / 平面修边 / 逐边圆角账本 / 变截面放样 / 拔模窗口） | `revolved_profile` / `plate_2p5d` / `hole_chain` | 1104 |
+| `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder + 结构级 builder（孔链 / 双瓣耳 / 叉耳 / 平面修边 / 逐边圆角账本 / 变截面放样 / 拔模窗口） | `revolved_profile` / `plate_2p5d` / `hole_chain` | 1233 |
 | `transitions` | 过渡规划：参考圆角跑道 → 机制决策（面圆角/滚边/滚球/测量截面）+ 逐跑道可达性与拓扑证据（支撑面宽度、二面角）；G7 的 BLOCKED 只认这里的 `evidence` | `plan_runway` / `transitions_plan` | 265 |
 | `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差、编辑包络 | `liveness` / `locality` / `g1full` / `edit_envelope` | 643 |
 
