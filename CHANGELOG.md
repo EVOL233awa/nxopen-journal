@@ -7,6 +7,9 @@
 
 ### Added
 
+- `scripts/nxlib/structures.py` 结构级 builder：`plate_2p5d`（轮廓+厚度+可选拔模）、`revolved_profile`（(t,r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（任意孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边失败原文账本）——一个结构一次调用，取代“一个结构一堆原语”。
+- `scripts/tests/47_structure_builders.py`（20 项）：六种 builder 全对解析体积（板 32000.0000/6 面、拔模 29282.0083、阶梯轴 21614.1575/2 段、锥孔 7023.9729、孔组 4712.3890、腔 16000.0000）；同一阶梯轴 z 带堆叠 131 面 vs 回转 5 面（26.2×）而体积一致；超半径倒圆留原文；`RUN_TESTS.bat` 登记第 47 门，`check_repo.py` 计数 46/43 → 47/44。
+- `references/reverse-engineering.md` §12.4：结构级 builder 清单与四条硬边界——分段回转替代 z 带堆叠、拔模必须有 `DraftOption` 且只能按锥台体积验、360° 回转只吃凸轮廓、圆角账本逐边一条且失败原文须来自半径本身。
 - `scripts/nxlib/audit.py` `edit_envelope`/`edit_envelope_summary`：逐参数按倍率递增测可用包络，折成 bounded/narrow/stuck 三档，把“超出物理范围”与“结构脆弱”分开。
 - `scripts/tests/46_edit_envelope.py`（11 项）：声明未建出→`missing` 而非 ratio 下降；公式内消费的参数仍 live；窄参数停在上界内并带 `Update undo happened.` 原文；还原逐位一致；`RUN_TESTS.bat` 登记第 46 门，`check_repo.py` 计数 45/42 → 46/43。
 - `references/reverse-engineering.md` §11.3：声明对账（`alive_ratio` 只含建出的量，`missing` 非空即不过）与可编辑性三层证据（对账 / +10% 普查 / 逐参数包络）；§12.5 补 `edit_envelope` 的读法。

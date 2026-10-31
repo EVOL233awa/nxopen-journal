@@ -579,7 +579,12 @@ template.derived(wp, "ROOT_FILL_U", "U_BACK - ROOT_FILL_R", "Length")
 
 ### 12.4 结构库（`nxlib.structures`）
 
-- 机制：`prism/revolve/cylinder/cone` 吃表达式字符串；`boolean/cut/unite/intersect`；`blend_edges/blend_try`（带回退）；`hole_cut/hole_ring`；`trim_box`；`face_loop_edges/edges_by` 选边。
+- 原语：`prism/revolve/cylinder/cone` 吃表达式字符串；`boolean/cut/unite/intersect`；`blend_edges/blend_try`（带回退）；`hole_cut/hole_ring`；`trim_box`；`face_loop_edges/edges_by` 选边。
+- 结构级 builder：`plate_2p5d`（一条平面轮廓 + 拉伸厚度 + 可选拔模）、`revolved_profile`（(t, r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（任意孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边账本）。**一个结构一次调用**，不是"一个结构一堆原语"。
+- **厚度沿 z 分段变化的铸造体必须走 `revolved_profile`**：写成 z 带棱柱逐段 unite 时，每段带出 4 个侧面 + 段间台阶面，面数按段数线性膨胀，而形状精度仍受段高限制（9 段级模型 74 特征 / 10 773 面，原件 998 面，误差全落在平面站切片上）。解析轮廓把台阶放进轮廓里，台阶面只在半径变化处出现。判据：同一形状，回转解的面数应比 z 带堆叠低一个量级，且两者体积一致——面数不能靠体积换。
+- **拔模只在设了 `DraftOption` 之后才生效**：`ExtrudeBuilder.Draft` 先设 `DraftOption`（`SimpleFromStart`/`SimpleFromProfile`）再 `SetDraftAngle`；只设角度时提交成功、无告警、体积与直壁逐位相同。验收只能按体积对锥台解析值（`h/3·(A₀+A₁+√A₀A₁)`），体数/面数/告警都看不出来。
+- **360° 回转只吃凸轮廓**：带台阶/凹陷的整条轮廓报 "Cannot create Swept geometry"。分段回转后合并，段界落在台阶上——不要为了"一条轮廓"去平滑台阶。
+- **圆角账本要逐边一条**：`blend_try` 失败只给 `None`，拿不到原因就无法回答"这条跑道为什么不可达"；要记原文就用 `fillet_run`。失败原文必须来自半径本身：一条边被上一条圆角消费后重新试，报的是 `Referenced edge does not exist.`，会把"半径太大"伪装成"边不见了"——超半径试件要用未动过的边。
 - 组织：一个结构一个函数，**函数体内不出现零件常数**——常数只在参数表/数据表里；特征名前缀 = 结构 id，便于逐个结构审计（活性、局部性、偏差归因）。
 - 顺序：主结构 → 同半径跑道 → 角网 → 过渡面（§9）。测量编译出的结构目录直接决定建件顺序与切除边界（§8），不要边建边改顺序。
 
@@ -590,6 +595,6 @@ template.derived(wp, "ROOT_FILL_U", "U_BACK - ROOT_FILL_R", "Length")
 - **局部性读数的三条排除**：开口截面（`section_outline(...)["open"]` 非零）剔除，合成裁剪面处带符号面积会翻号；与柱面近切的站有内在抖动（同一模型改远处特征也会让该站面积大幅变化），不作证据；逐站噪声底只覆盖同类改动的重网格化，不覆盖这两类。
 - **区域标注按截面质心**，不按站 `origin`（轴站 origin 不一定在采样面上）；分区界落在两结构之间时，二区与三区标注会给出不同结果，报告写明分区规则。裁剪件/组件的局部性只作穿透筛查（“没有站动到别半区”），结构间局部性的强形式在整件上测（改一臂参数不动别臂站）。
 - `edit_envelope(part, names)` / `edit_envelope_summary`：逐参数测可用倍率，折成 bounded/narrow/stuck 三档。narrow（扫描上界以下就崩）是结构脆弱，必须逐条报倍率与失败原文；stuck（连 ×1.10 都不过）直接算不通过。
-- `budget(part, n_structures)`：4N+12，报告项不是硬门；超了就说明用了测站式布尔而非结构构造。
+- `budget(part, n_structures)`：4N+12，报告项不是硬门；超了就说明用了测站式布尔而非结构构造。**特征数正常而面数异常**（如 74 特征却 10 773 面）说明每个结构仍在用"原语拼装"：结构级 builder 是一个结构一次调用，原语拼装才有段间台阶面。
 - `g1full(orig, built, plan, measure, fillet_faces)`：全站表逐站 IoU，硬门只算 primary；fillet 站进 G7 跑道账本。
 - 报告口径：G5/G6/G7/G9 与逐结构双向偏差都是报告项；`primary IoU` 是硬门。整件体积按 ≤1%（0.1% 严口径报数）时，超 0.1% 的那部分必须归到具体结构，不能写"铸造公差"。

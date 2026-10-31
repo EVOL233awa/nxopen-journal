@@ -113,6 +113,27 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 - **基准轴/面**：`skeleton.axis/plane` 建的是 SmartObject，位置与方向按 data 字面值；需要随参数移动的量交给草图尺寸或拉伸起止承担。datum 能否由表达式点驱动未验证，不要当可驱动件用（同 §1.12 轴心陷阱）。
 - **预算先算再建**：`audit.budget` 按结构数报 4N+12 特征上限（N=4 → 28），不是按特征数反算；建前过一遍，超了就减结构而不是加补丁特征。
 
+### 1.14 拉伸拔模与分段回转（结构级 builder 的两条承重配方）
+
+**拔模**：`ExtrudeBuilder.Draft` 是 `MultiDraft`。先设类型再设角度，两步缺一不可——只设角度提交成功、无告警、体积与直壁逐位相同：
+
+```python
+b.Draft.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart
+b.Draft.SetDraftAngle("DRAFT_A")     # Angle 单位的命名表达式
+```
+
+拔模后起剖面在拉伸起点、按半角收缩；量得轮廓在这两者之间。验收只能对锥台解析值：矩形截面 `V = h/3·(A₀ + A₁ + √(A₀A₁))`，回转截面 `V = πh/3·(r₀² + r₀r₁ + r₁²)`。体数、面数、告警都区分不出"拔模没生效"。
+
+**分段回转**：`revolve` 走 UF `Modl.CreateRevolved`，360° 只吃凸轮廓；带台阶/凹陷的整条轮廓报 `Cannot create Swept geometry`。按 (t, r) 轮廓切段、逐段回转再 unite，台阶落在段界上，不被平滑掉：
+
+```python
+res = structures.revolved_profile(wp, [(0.0, 20.0), (10.0, 20.0),
+                                       (10.0, 12.0), (30.0, 12.0)],
+                                 name="SHAFT")   # r=0 的点在轴上，零长度段自动跳过
+```
+
+同一阶梯轴，64 边形 z 带堆叠 131 面、分段回转 5 面（26.2×），体积一致——**面数爆炸是构造选择，不是网格化偶然**（`tests/47`）。（同 §2.2 的"共面堆叠要用表达式定起点"；那里是层的起点，这里是层的构造方式。）
+
 ### 1.11 会话/部件设置入口（`NXOpen.Preferences`）
 
 `NXOpen.Preferences` 是子模块，`import NXOpen` 后模块根上没有该属性（`hasattr(NXOpen, "Preferences") == False`），照 .NET 写法直接访问会抛 `AttributeError: module 'NXOpen' has no attribute 'Preferences'`。设置建模体类型（实体/片体）的正确入口是会话对象：

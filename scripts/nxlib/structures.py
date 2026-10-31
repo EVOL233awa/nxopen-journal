@@ -14,6 +14,7 @@ import math
 
 import NXOpen
 import NXOpen.Features
+import NXOpen.GeometricUtilities
 import NXOpen.UF
 
 import nxlib.modeling as mdl
@@ -225,3 +226,246 @@ def trim_box(wp, target, frame, lo, hi, z0, z1):
     tool = prism(wp, cs, sk.normalize(frame.Z), z0, z1)
     intersect(wp, target, tool["bodies"][0])
     return tool
+
+
+# ================================================================== 结构级
+#
+# 上面是原语（一个棱柱、一个圆柱、一次布尔），下面是**结构**：一个结构一个
+# builder，返回体/特征/账本三件东西，调用方只持目标体。
+#
+# 为什么要这一层：只有原语时，一个"厚度随 z 分段变化"的铸造体只能写成
+# N 条 z 带棱柱逐段 unite——每段带出 4 个侧面 + 段间台阶面，面数按段数线
+# 性膨胀，而形状精度仍受段高限制（实测某件 9 段带出 74 特征/10 773 面，
+# 原件 998 面）。结构级 builder 把它写成**一条解析轮廓的一条特征**：
+# 台阶在轮廓里，台阶面自然只在半径变化处出现。
+#
+# 参数口径不变：expr 参数一律命名表达式名，data 参数一律实测字面量。
+
+def _named(feature, name):
+    """特征可见名 = 结构 id（逐个结构审计/归因的锚点）。"""
+    if name and feature is not None:
+        try:
+            feature.SetName(str(name))
+        except Exception:
+            pass
+    return feature
+
+
+def _centroid_pt(wp, frame, pts_uv, z=0.0):
+    n = float(len(pts_uv))
+    u = sum(p[0] for p in pts_uv) / n
+    v = sum(p[1] for p in pts_uv) / n
+    return frame.pt(u, v, z)
+
+
+def plate_2p5d(wp, frame, plan_uv, z0, z1, name="PLATE", draft_expr=None,
+               help_pt=None):
+    """2.5D 板：一条平面轮廓 + 拉伸厚度（+ 可选拔模角），一个特征。
+
+    plan_uv: [(u,v)] 实测轮廓（data 层）；
+    z0/z1:  起止（可传表达式名，T_PLATE 这类设计参数就是这里进来的）；
+    draft_expr: 拔模角表达式名（Angle），正值向拉伸端收缩。
+
+    拔模必须走 `Draft.DraftOption` + `SetDraftAngle`：只设角度不设类型时
+    提交成功、无告警、体积与直壁逐位相同。
+    """
+    cs = sk.loop_uv(wp, frame, plan_uv)
+    direction = sk.normalize(frame.Z)
+    hp = help_pt if help_pt is not None else _centroid_pt(wp, frame, plan_uv)
+    if draft_expr is None:
+        f = mdl._extrude_along(wp, cs, direction, z1, z0, hp)
+        return {"features": [_named(f, name)], "bodies": bodies_of(f)}
+    section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
+    rule = wp.ScRuleFactory.CreateRuleCurveDumb(cs)
+    section.AddToSection([rule], NXOpen.NXObject.Null, NXOpen.NXObject.Null,
+                         NXOpen.NXObject.Null, hp, NXOpen.Section.Mode.Create,
+                         False)
+    b = wp.Features.CreateExtrudeBuilder(NULL)
+    b.Section = section
+    b.Direction = wp.Directions.CreateDirection(
+        NXOpen.Point3d(0.0, 0.0, 0.0),
+        NXOpen.Vector3d(direction[0], direction[1], direction[2]),
+        NXOpen.SmartObject.UpdateOption.WithinModeling)
+    b.Limits.StartExtend.Value.RightHandSide = str(z0)
+    b.Limits.EndExtend.Value.RightHandSide = str(z1)
+    b.Draft.DraftOption = \
+        NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart
+    b.Draft.SetDraftAngle(str(draft_expr))
+    f = b.CommitFeature()
+    b.Destroy()
+    section.Destroy()
+    return {"features": [_named(f, name)], "bodies": bodies_of(f)}
+
+
+def revolved_profile(wp, profile_tr, axis_pt=(0.0, 0.0, 0.0),
+                     axis_dir=(0.0, 0.0, 1.0), name="REVOLVE",
+                     radials=None, unite=True):
+    """(轴向 t, 半径 r) 轮廓 → 分段凸锥台 → 回转并合并成一个体。
+
+    profile_tr: [(t, r)]，t 沿 axis_dir、r 为到轴的垂直距离；
+    r == 0 的点在轴上（锥尖），相邻两点可都在轴上（该段跳过）。
+
+    为什么按段回转：360° 回转只吃凸轮廓，带台阶/凹陷的整条轮廓报
+    "Cannot create Swept geometry"；把轮廓切成单调段后逐段回转再合并，
+    台阶位置不被平滑掉，也不产生 z 带棱柱的段间台阶面。
+    每段一条特征，特征名 `<name>_S<i>`。
+
+    radials: 每段用的径向（与 axis_dir 垂直），默认取同一稳定径向；相邻
+    段的径向平面不同不影响 360° 回转的结果。
+
+    返回 {"features", "bodies", "segments": [{"t0","r0","t1","r1"}]}。
+    """
+    a = sk.normalize(axis_dir)
+    o = (float(axis_pt[0]), float(axis_pt[1]), float(axis_pt[2]))
+    r_dir = sk.normalize(radials) if radials is not None else sk.perpendicular(a)
+    feats, segs = [], []
+    for i in range(len(profile_tr) - 1):
+        t0, r0 = float(profile_tr[i][0]), float(profile_tr[i][1])
+        t1, r1 = float(profile_tr[i + 1][0]), float(profile_tr[i + 1][1])
+        if abs(t1 - t0) < 1e-9 or (r0 <= 1e-9 and r1 <= 1e-9):
+            continue
+
+        def at(t, r):
+            return NXOpen.Point3d(o[0] + t * a[0] + r * r_dir[0],
+                                  o[1] + t * a[1] + r * r_dir[1],
+                                  o[2] + t * a[2] + r * r_dir[2])
+
+        ring = [at(t0, 0.0), at(t0, r0), at(t1, r1), at(t1, 0.0)]
+        dedup = [ring[0]]
+        for p in ring[1:]:
+            q = dedup[-1]
+            if abs(p.X - q.X) + abs(p.Y - q.Y) + abs(p.Z - q.Z) > 1e-9:
+                dedup.append(p)
+        if len(dedup) > 1:
+            first, last = dedup[0], dedup[-1]
+            if (abs(first.X - last.X) + abs(first.Y - last.Y)
+                    + abs(first.Z - last.Z)) < 1e-9:
+                dedup.pop()
+        if len(dedup) < 3:
+            continue
+        cs = [wp.Curves.CreateLine(dedup[k], dedup[(k + 1) % len(dedup)])
+              for k in range(len(dedup))]
+        res = revolve(wp, cs, o, a, "0.0", "360.0")
+        _named(res["features"][0], "%s_S%d" % (name, len(segs)))
+        feats.extend(res["features"])
+        segs.append({"t0": t0, "r0": r0, "t1": t1, "r1": r1})
+    if not feats:
+        raise RuntimeError("revolved_profile: no segment had positive extent")
+    bs = []
+    for f in feats:
+        bs.extend(bodies_of(f))
+    if unite and len(bs) > 1:
+        target = bs[0]
+        for b in bs[1:]:
+            boolean(wp, target, b,
+                    NXOpen.Features.Feature.BooleanType.Unite)
+        bs = [target]
+    return {"features": feats, "bodies": bs, "segments": segs}
+
+
+def drafted_bore(wp, target, p, direction, dia_a_expr, dia_b_expr,
+                 length_expr, name="BORE"):
+    """锥孔：从 p 沿 direction 走 length，入口 dia_a、末端 dia_b（都是直径表达式）。
+
+    半角由这三条量决定，报告里按 atan((ra-rb)/L) 复算——不把它写成第四条
+    表达式，因为它不是设计意图，是前三条的后果。
+
+    返回的 `bodies` 是工具体，求差后被 target 吞并，再读它的体积得 0；
+    要记工具体积就在调用本函数前读。
+    """
+    d = sk.normalize(direction)
+    p0 = (float(p.X) if hasattr(p, "X") else float(p[0]),
+          float(p.Y) if hasattr(p, "Y") else float(p[1]),
+          float(p.Z) if hasattr(p, "Z") else float(p[2]))
+    tool = cone(wp, p0, d, dia_a_expr, dia_b_expr, length_expr)
+    _named(tool["features"][0], name)
+    cut(wp, target, tool["features"][0])
+    return tool
+
+
+def hole_set(wp, target, positions, direction, dia_expr, depth_expr,
+             name="HOLES", back=2.0):
+    """一组同径孔：孔位是实测 data，孔径/深度是设计表达式。
+
+    与 `hole_ring` 的差别是孔位不由极坐标生成——通孔、斜孔、非整圆布孔
+    都能用，孔位表原样进报告。
+    """
+    feats = []
+    for i, p in enumerate(positions):
+        res = hole_cut(wp, target, p, direction, dia_expr, depth_expr, back)
+        _named(res["features"][0], "%s_%02d" % (name, i))
+        feats.extend(res["features"])
+    return {"features": feats, "bodies": [], "count": len(feats)}
+
+
+def pocket_intersect(wp, target, frame, profile_uz, plan_uv, v_span, z_span,
+                     name="POCKET", help_sec=None, help_plan=None):
+    """口部型腔 = 侧视轮廓棱柱 ∩ 俯视轮廓棱柱，再对 target 求差。
+
+    台阶腔/清角腔的侧面与底面不能用一个棱柱表达（一个沿 V 拉、一个沿 Z
+    拉），求交才是两条实测轮廓同时成立的地方；先求交再求差，与"两次求差"
+    的体积相同但只在交集边界上生成面。
+
+    profile_uz: [(u, z)] 在 v=0 平面（data）；plan_uv: [(u, v)] 在 z=0 平面（data）。
+    help_sec / help_plan: 各自截面的料内参考点，按 (u, z) / (u, v) 给。
+    """
+    v = sk.normalize(frame.V)
+    z = sk.normalize(frame.Z)
+    if help_sec is not None:
+        hp1 = frame.pt(help_sec[0], 0.0, help_sec[1])
+    else:
+        hu = sum(p[0] for p in profile_uz) / float(len(profile_uz))
+        hz = sum(p[1] for p in profile_uz) / float(len(profile_uz))
+        hp1 = frame.pt(hu, 0.0, hz)
+    p1 = prism(wp, sk.loop_uz(wp, frame, profile_uz, 0.0), v,
+               str(-float(v_span)), str(float(v_span)), hp1)
+    _named(p1["features"][0], name + "_SEC")
+    if help_plan is not None:
+        hp2 = frame.pt(help_plan[0], help_plan[1], 0.0)
+    else:
+        hp2 = _centroid_pt(wp, frame, plan_uv, 0.0)
+    p2 = prism(wp, sk.loop_uv(wp, frame, plan_uv, 0.0), z,
+               str(z_span[0]), str(z_span[1]), hp2)
+    _named(p2["features"][0], name + "_PLAN")
+    b1 = p1["bodies"][0]
+    intersect(wp, b1, p2["bodies"][0])
+    _named(p1["features"][0], name + "_VOID")
+    cut(wp, target, p1["features"][0])
+    return {"features": p1["features"] + p2["features"], "bodies": [b1]}
+
+
+def fillet_run(wp, edges, radius_expr, name="FILLET", edges_id=None):
+    """逐边倒圆 + 逐边账本（G7 跑道账本的最小形态）。
+
+    `blend_try` 失败只给 None，账本拿不到原因就无法回答"这条跑道为什么
+    不可达"。这里自己开 undo mark：失败回滚并把原文留在 `msg`，成功记
+    `ok` 与半径。**一条失败不影响后续边**——跑道账本就是逐条记账。
+
+    edges_id: 可传入与 edges 对齐的 id 列表（例如跑道号），默认用下标。
+    返回 {"features", "bodies", "ledger": [{id, ok, radius, msg}]}。
+    """
+    session = NXOpen.Session.GetSession()
+    out, bs = [], []
+    ledger = []
+    ids = list(edges_id) if edges_id is not None else list(range(len(edges)))
+    for e, eid in zip(edges, ids):
+        tag = "%s_%s" % (name, eid)
+        mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, tag)
+        try:
+            res = blend_edges(wp, [e], radius_expr)
+            session.DeleteUndoMark(mark, tag)
+            out.extend(res["features"])
+            bs.extend(res["bodies"])
+            ledger.append({"id": eid, "ok": True, "radius": str(radius_expr),
+                           "msg": ""})
+        except Exception as exc:
+            msg = str(exc).splitlines()
+            try:
+                session.UndoToMark(mark, tag)
+                session.DeleteUndoMark(mark, tag)
+            except Exception:
+                pass
+            ledger.append({"id": eid, "ok": False, "radius": str(radius_expr),
+                           "msg": (msg[0] if msg else "")[:200]})
+    return {"features": out, "bodies": bs, "ledger": ledger,
+            "pass": all(r["ok"] for r in ledger) if ledger else False}

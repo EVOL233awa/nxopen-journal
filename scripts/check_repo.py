@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """本仓库自检：不依赖 NX 与第三方包，云端 CI 与本机都能跑。
 
-七组检查，判据尽量从目录树自身推出；只有设计决策（探针名单、外部依赖、
+八组检查，判据尽量从目录树自身推出；只有设计决策（探针名单、外部依赖、
 精简词表）显式登记在常量里，所以新增用例或文档不会让检查静默放过：
 
   1) PY36       scripts/tests/*.py 必须能以 Python 3.6 语法解析。NX 12 内嵌解释器
@@ -53,8 +53,8 @@ SELF_CONTAINED = {
 # 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
 PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
 # 期望计数：文档/批次头写错数字时在这里拦，而不是靠人眼比对。
-EXPECTED_CASES = 46
-EXPECTED_GATES = 43
+EXPECTED_CASES = 47
+EXPECTED_GATES = 44
 EXPECTED_PROBES = 3
 CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件
@@ -327,8 +327,34 @@ def check_nolib():
         except SyntaxError as exc:
             problems.append("NOLIB nxlib/%s:%s %s" % (n, exc.lineno, exc.msg))
             print("  FAIL nxlib/%s:%s %s" % (n, exc.lineno, exc.msg))
-    print("  nxlib 公开 API %d 个；豁免自包含用例 %d 个；非探针用例撞名 %d 处"
-          % (len(apis), len(SELF_CONTAINED), dup))
+    # A check id containing "_FAIL" fails the gate on a green run: the gate is
+    # `findstr /C:"_FAIL"` over the whole log, so a line like
+    # `T47_X_FAILURE_TEXT=PASS ...` matches and the case is reported failed no
+    # matter what it measured.  Only the deliberate verdict lines
+    # (`TESTxx_FAIL ...`, `REG_x=FAIL`) may carry the token; those go through
+    # say()/print(), never through check().
+    bad_ids = 0
+    for name in sorted(os.listdir(TESTS)):
+        if not CASE_RE.match(name):
+            continue
+        for node in ast.walk(ast.parse(read(os.path.join(TESTS, name)))):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            fn = node.func
+            fname = getattr(fn, "id", None) or getattr(fn, "attr", None)
+            if fname != "check":
+                continue
+            a0 = node.args[0]
+            if (isinstance(a0, ast.Constant) and isinstance(a0.value, str)
+                    and "_FAIL" in a0.value):
+                bad_ids += 1
+                problems.append("NOLIB %s:%d check id %r 含 _FAIL（通过时会误触 gate）"
+                                % (name, node.lineno, a0.value))
+                print("  FAIL %s:%d check id 含 _FAIL：%r"
+                      % (name, node.lineno, a0.value))
+    print("  nxlib 公开 API %d 个；豁免自包含用例 %d 个；非探针用例撞名 %d 处；"
+          "check id 含 _FAIL %d 处"
+          % (len(apis), len(SELF_CONTAINED), dup, bad_ids))
 
 
 def agent_docs():
