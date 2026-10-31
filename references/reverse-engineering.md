@@ -326,6 +326,16 @@ for ct in curves:
 
 `nxlib.measure.fillet_run_samples` / `fillet_coverage` 从面表生成同半径连通跑道、支撑面和 UV 中心/样本；几何覆盖按跑道核对，不按面数比分母。
 
+### 9.1b 过渡规划（`nxlib.transitions`）
+
+`transitions.plan_runway(run, faces_by_tag)` 把一条参考跑道落成机制决策，`transitions_plan(part, measure, radii)` 出整件计划。它只读测量、不建几何；产出三样东西：
+
+- `mechanism`：按支撑面构成路由（两侧平面-平面开链 → `roll_edge`；平面 + 曲面或曲面 + 曲面 → `face_blend`；闭合整圆 → `roll_general`；支撑面读不全 → `measured_section`，即 §9.8）。
+- `reachable` + `reasons`：支撑面宽度（**包围盒上界**，按法向去掉法向分量后取面内小跨度）< `2R+0.5`、二面角超出 20°–160°、跑道长度不足。三条都在试建前判，不必靠失败反推。
+- `evidence`：只有不可达跑道才有。G7 的 `BLOCKED` **只认这份**（`verify_parts(..., g7_transitions=True)`）；没有证据的跑道一律 FAIL。
+
+两个读法要点：宽度是包围盒上界，斜置窄壁会算得偏窄——它只用于"撑不撑得住 R"的粗判，判定边界上的跑道要回到 `structures.fillet_feasible` 按边几何复算；机制路由只给"该用哪种刀"，实际是否成功仍按 §9.4–§9.7 的提交与回滚判据。
+
 ### 9.2 支撑面就绪判据（先查，后倒）
 
 - 两支撑面必须是完整解析面（平面 22 / 圆柱 16 / 圆锥 17 / 环面 19）或确实参与过渡的 B 曲面 43；从边到支撑面边界的最小宽度 ≥ `2R + 0.5 mm`。

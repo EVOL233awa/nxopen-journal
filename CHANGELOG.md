@@ -7,6 +7,9 @@
 
 ### Added
 
+- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。
+- `scripts/tests/49_structure_inference.py`：24 → 28 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面）。
+- `references/reverse-engineering.md` §9.1b：过渡规划的接口、机制路由判据、证据口径与两个读法要点。
 - `scripts/nxlib/structure_inference.py`：结构判定补三条——① 同一轴上的多个半径并成一条 `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成多行 `cylinder`，而多行同轴 cylinder 正是 z 带堆叠的入场券），同轴凹面组不并入凸面行；② `_arc_fit` 用**等弧长重采样的局部圆拟合**提取边界圆弧并聚簇，给出瓣数/瓣半径/瓣心偏移（射线扇会把背后的整条臂算进半径，半径序列没有平台；局部圆拟合要按弧长重采样，否则样条陡段的近直三点拟合会给出半径任意的"圆"），参考点先判是否在料内、非星形截面另报；③ `_loft_structures` 沿板带行程取两张截面，面积比 >2% **且** 两截面形状不相似（`_sections_similar`：归一化到平均半径 1 后逐点比，拔模体是相似形、变截面臂不是）才判 `section_loft`。修 `_sampled_structures` 恒返回 `[]` 的交付漏洞（判据对、行被丢），行补齐 `id/build_order/frame`。
 - `scripts/tests/49_structure_inference.py`：20 → 24 项（同轴多半径并成一条 revolved 行、凹面不并入凸面、拔模相似形不判放样、变截面判放样）。
 - `scripts/nxlib/structures.py` 结构级 builder（第三批）：`section_loft`（结构分界截面 → 一张放样实体；截面基向量从首张取、逐张投影正交化，索引才连续；先查同点数是提交前条件；提交后查实体性与体积，因为对应关系扭曲时 `ThroughCurves` 会给出 `IsSolidBody=True`、体积 0 的自交实体）、`_resample_ring`（绕参考点等角 N 点；参考点在料外与环非星形分别报错，不静默填凹口）、`window_cut`（一平面轮廓 + 可选拔模拉伸的切除体，成功/被拒都逐刀记新增面型与去料体积，布尔被拒时用 undo mark 把刀具体一起回滚）；`plate_2p5d` 的拔模路径抽成 `_extrude_z` 供两者共用。

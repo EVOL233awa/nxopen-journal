@@ -32,6 +32,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 from nxlib.testing import check, say, RESULTS
 import nxlib.measure as ms
 import nxlib.structure_inference as si
+import nxlib.transitions as tr
 
 PLANE, CYL, CONE, TORUS = ms.PLANE, ms.CYLINDER, ms.CONE, ms.TORUS
 
@@ -297,6 +298,78 @@ def main():
           "loft")
     check("T49_LOFT_DETECTED", sim_flat is False,
           "a variable-section arm's sections differ in aspect ratio")
+
+    # transitions: mechanism choice and unreachability evidence.  G7 may only
+    # be BLOCKED when a per-runway topological reason exists, so the planner
+    # must produce `evidence` for exactly those runways and nothing for the
+    # rest.
+    wide = plane_face(30, [0.0, 0.0, 10.0], [0.0, 0.0, 1.0], area=400.0)
+    wide["box"] = [-20.0, -20.0, 10.0, 20.0, 20.0, 10.0]
+    wide2 = plane_face(31, [0.0, 20.0, 5.0], [0.0, 1.0, 0.0], area=400.0)
+    wide2["box"] = [-20.0, 20.0, 0.0, 20.0, 20.0, 10.0]
+    narrow = plane_face(32, [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], area=4.0)
+    narrow["box"] = [-5.0, 0.0, 0.0, 5.0, 1.0, 10.0]
+    fbt = {30: wide, 31: wide2, 32: narrow}
+
+    ok_run = {"radius": 3.0, "nfaces": 2, "faces": [40, 41],
+              "supports": [("22/R0.000/A0.000", 3)], "closed": False}
+    # the runway's own faces must exist for support lookup; give them edges
+    # to the two wide planes so the planner sees a 90 deg plane-plane pair
+    fa = cyl(40, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    fa["edges"] = [{"tag": 900, "faces": [40, 30]}, {"tag": 901,
+                                                    "faces": [40, 31]}]
+    fb = cyl(41, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    fb["edges"] = [{"tag": 902, "faces": [41, 30]}, {"tag": 903,
+                                                    "faces": [41, 31]}]
+    fbt[40] = fa
+    fbt[41] = fb
+    plan_ok = tr.plan_runway(ok_run, fbt)
+    say("transition wide=%r" % (plan_ok,))
+    check("T49_TRANSITION_MECHANISM",
+          plan_ok["mechanism"] == "roll_edge" and plan_ok["reachable"] is True,
+          "two planar supports on an open runway route to roll_edge: %r"
+          % (plan_ok["mechanism"],))
+    check("T49_TRANSITION_NO_FALSE_EVIDENCE", plan_ok["evidence"] is None,
+          "a reachable runway must not carry BLOCKED evidence: %r"
+          % (plan_ok["evidence"],))
+
+    # a support narrower than 2R+0.5 cannot hold the blend.  The two supports
+    # must be a legitimate pair (parallel walls): with perpendicular supports
+    # the dihedral check fires first and the width reason never appears --
+    # which is the right behaviour, so the fixture has to isolate one cause.
+    narrow2 = plane_face(33, [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], area=4.0)
+    narrow2["box"] = [-5.0, -1.0, 0.0, 5.0, 0.0, 10.0]
+    tight = {"radius": 3.0, "nfaces": 2, "faces": [50, 51],
+             "supports": [("22/R0.000/A0.000", 3)], "closed": False}
+    ta = cyl(50, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    # slot walls 2 mm apart, normals antiparallel -> dihedral 180 deg would
+    # fail the range check, so give them a slight included angle instead
+    wall_a = plane_face(34, [0.0, 1.0, 5.0], [0.0, 0.866, -0.5], area=20.0)
+    wall_a["box"] = [-5.0, 0.0, 0.0, 5.0, 2.0, 10.0]
+    wall_b = plane_face(35, [0.0, -1.0, 5.0], [0.0, -0.866, -0.5], area=20.0)
+    wall_b["box"] = [-5.0, -1.0, 0.0, 5.0, -1.0, 10.0]
+    ta["edges"] = [{"tag": 910, "faces": [50, 34]}, {"tag": 911,
+                                                    "faces": [50, 35]}]
+    tb = cyl(51, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    tb["edges"] = [{"tag": 912, "faces": [51, 34]}, {"tag": 913,
+                                                    "faces": [51, 35]}]
+    fbt[50] = ta
+    fbt[51] = tb
+    fbt[34] = wall_a
+    fbt[35] = wall_b
+    fbt[33] = narrow2
+    plan_tight = tr.plan_runway(tight, fbt)
+    say("transition tight=%r" % (plan_tight,))
+    check("T49_TRANSITION_WIDTH_REASON",
+          plan_tight["reachable"] is False and
+          "support width" in (plan_tight["evidence"] or {}).get("reason", ""),
+          "a 1 mm support cannot hold R3 and must say why: %r"
+          % (plan_tight["evidence"],))
+    check("T49_TRANSITION_EVIDENCE_SHAPE",
+          (plan_tight["evidence"] or {}).get("runway_faces") == [50, 51] and
+          "supports" in (plan_tight["evidence"] or {}),
+          "evidence must name the runway and its supports (G7 BLOCKED needs "
+          "per-runway topology): %r" % (plan_tight["evidence"],))
 
     failed = [n for n, ok in RESULTS if not ok]
     say("TEST49_CASES=%d" % len(RESULTS))

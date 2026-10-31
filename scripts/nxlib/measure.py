@@ -2885,7 +2885,8 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                  section_iou_min=0.95, section_area_pct=5.0,
                  section_mode="stl",
                  ref_a=None, ref_b=None, g7="auto", g7_radii=None,
-                 g7_ceiling=None, g9=True, structure_count=None,
+                 g7_ceiling=None, g7_transitions=False, g9=True,
+                 structure_count=None,
                  g8=True, design=None, derived=None, factor=1.1,
                  g9_feature_factor=4.0, g9_feature_offset=12,
                  g9_type_share=0.50, g9_depth=8, blocked_g4=True,
@@ -3024,6 +3025,21 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
         # whether a correct build can cover the fillet, and scoring it as
         # BLOCKED made the reference solution itself un-passable.
         evidence = [e for e in (reach.get("evidence") or []) if e.get("reason")]
+        if g7_transitions:
+            # nxlib.transitions 逐跑道判可达性（支撑面宽度 / 二面角），它是
+            # 唯一被允许产出 BLOCKED 证据的来源；只作 opt-in，因为它要对每个
+            # 跑道读支撑面几何，整件上开销明显
+            import nxlib.transitions as _tr
+            tplan = _tr.transitions_plan(
+                part_o, mo, radii=ref_radii,
+                fillet_faces=None)
+            evidence = list(tplan.get("unreachable") or [])
+            reach["transitions"] = {
+                "status": tplan.get("status"),
+                "by_mechanism": tplan.get("by_mechanism"),
+                "run_count": tplan.get("run_count"),
+                "reachable_count": tplan.get("reachable_count"),
+            }
         if cov["pass"]:
             status = "PASS"
         elif evidence:
