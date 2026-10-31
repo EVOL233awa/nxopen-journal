@@ -7,6 +7,8 @@
 
 ### Added
 
+- `scripts/nxlib/audit.py`：`locality` 返回 `coverage`（`designed_exprs`/`measured_exprs`/`partial`）与 `pass`——只测了一部分参数时 `partial=true` 且 `pass=false`，"测了 3 条全过"与"全表通过"不再长得一样；新增 `locality_screen(part, plan, structures)` 整件穿透筛查——逐条按固定小倍率改参数、记哪些站动过，一个站都没动即该参数 UNCOVERED（站表看不到它），只回答覆盖不回答归属，先于 `locality` 跑。
+- `scripts/tests/46_edit_envelope.py`：11 → 19 项（`partial` 声明、部分扫描不得报 pass、穿透筛查的未覆盖参数与 `pass` 联动）。
 - `scripts/nxlib/structures.py` `sweep_trim` + `profile_uz_curves`：端壁按测量侧视轮廓沿 ±V 扫掠切，`profile_segs` 支持 `{"line":...}` / `{"arc":...}` 混合段——折线剖面会把一段弧切成几十个小平面（`added_types` 只剩 22），圆弧作为一条曲线进剖面才留下 type16 柱面。`checks` 记体数/去料体积/新增面型，布尔被拒时记原文。
 - `scripts/tests/47_structure_builders.py`：57 → 63 项（45° 斜切端壁只留一侧料且只多平面；带弧端壁新增一个柱面；去料体积与轮廓外体积对账）。
 - `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。"

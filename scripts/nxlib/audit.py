@@ -297,9 +297,86 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
         _say(report, "locality: %s done (%d exprs, %d inconclusive)"
              % (sid, len(rows),
                 len([r for r in rows if r.get("inconclusive")])))
+    total = sum(len(v.get("exprs") or []) for v in design.values())
+    measured = sum(len(rows) for rows in res.values())
+    n_out = sum(1 for rows in res.values() for r in rows
+                if r.get("outside"))
+    n_inc = sum(1 for rows in res.values() for r in rows
+                if r.get("inconclusive"))
     return {"structures": res, "usable_stations": usable,
             "excluded_stations": excluded, "factors": list(scan),
-            "per_structure": per_structure}
+            "per_structure": per_structure,
+            # 代表集声明：只测了一部分参数时必须能一眼看出，否则"全表局部性
+            # 通过"与"测了 3 条"在报告里长得一样
+            "coverage": {"designed_exprs": total, "measured_exprs": measured,
+                         "partial": measured < total,
+                         "per_structure_limit": per_structure},
+            "outside_count": n_out, "inconclusive_count": n_inc,
+            "pass": (measured > 0 and measured == total and n_out == 0 and
+                     n_inc == 0)}
+
+
+def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
+                    rel_tol=0.005, area_tol=1.0, report=None):
+    """整件穿透筛查：不指定参数，直接看有没有"大块没被任何站覆盖"。
+
+    `locality` 回答"改 A 会不会动到 B"，需要一条条改参数；整件上百条参数时
+    先跑这个筛查，只对它的输出再跑 `locality`。做法是把每条设计表达式按
+    `min_fraction` 同向缩放，统计**有站动过**的结构集合——一条参数一个站都
+    没动，说明站表没覆盖到它（UNCOVERED），这比"局部性通过"更要紧。
+
+    `structures` 是 {sid: {exprs, stations}}；返回每个参数的
+    {expr, structure, changed_structures, covered}。它不替代 `locality`：
+    穿透筛查只回答覆盖，回答不了"动到的是不是自己的站"。
+    """
+    exprs = _expr_map(part)
+    base = _mesh(part)          # 基线网格只取一次：每次改完都要跟它比
+    out = []
+    for sid in sorted(structures):
+        for name in (structures[sid].get("exprs") or []):
+            e = exprs.get(name)
+            if e is None:
+                out.append({"expr": name, "structure": sid,
+                            "error": "expression not found"})
+                continue
+            rhs = e.RightHandSide
+            try:
+                val = float(rhs)
+            except Exception:
+                out.append({"expr": name, "structure": sid,
+                            "error": "non-numeric rhs"})
+                continue
+            e.RightHandSide = "%.6f" % (val * (1.0 + float(min_fraction)))
+            try:
+                ms._do_update("scr_%s" % name)
+                moved = _mesh(part)
+            except Exception as exc:
+                e.RightHandSide = rhs
+                try:
+                    ms._do_update("scr_restore_%s" % name)
+                except Exception:
+                    pass
+                out.append({"expr": name, "structure": sid,
+                            "error": (str(exc).splitlines() or [""])[0][:160]})
+                continue
+            e.RightHandSide = rhs
+            ms._do_update("scr_restore_%s" % name)
+            touched = []
+            for i, st in enumerate(plan.get("stations", [])):
+                r = ms.section_iou(base, moved, st["origin"], st["normal"])
+                sym = r["area_union"] - r["area_inter"]
+                lim = max(area_tol,
+                          rel_tol * max(abs(r["area_union"]), 1.0))
+                if sym > lim:
+                    touched.append(i)
+            out.append({"expr": name, "structure": sid,
+                        "changed_stations": touched,
+                        "covered": bool(touched)})
+            _say(report, "screen: %s changed %d stations"
+                 % (name, len(touched)))
+    uncovered = [o["expr"] for o in out if o.get("covered") is False]
+    return {"rows": out, "uncovered": uncovered,
+            "checked": len(out), "pass": bool(out) and not uncovered}
 
 
 # ------------------------------------------------------------------ 预算

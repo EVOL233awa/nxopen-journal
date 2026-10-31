@@ -142,6 +142,62 @@ def main():
           "volume before=%.6f after=%.6f" % (env["v0"], env["v1"]))
 
     failed = [n for n, ok in RESULTS if not ok]
+    # ---- locality: coverage declaration and the whole-part screen
+    # A partial run must say so: "locality passed" when 3 of 40 parameters were
+    # measured reads identically to a full sweep in a report.
+    loc_plan = {"stations": [{"origin": [0.0, 0.0, 7.0],
+                              "normal": [0.0, 0.0, 1.0]}]}
+    loc = au.locality(part, {"plate": {"exprs": ["PLATE_T"], "stations": [0]},
+                             "boss": {"exprs": ["BOSS_D", "BOSS_H"],
+                                      "stations": [0]}},
+                      loc_plan, per_structure=1)
+    say("locality coverage=%r pass=%r" % (loc["coverage"], loc["pass"]))
+    check("T46_LOCALITY_COVERAGE_PARTIAL",
+          loc["coverage"]["partial"] is True and
+          loc["coverage"]["measured_exprs"] == 2 and
+          loc["coverage"]["designed_exprs"] == 3,
+          "a per_structure limit must be declared, not silently passed: %r"
+          % (loc["coverage"],))
+    check("T46_LOCALITY_PARTIAL_NOT_PASS", loc["pass"] is False,
+          "a partial sweep cannot report pass: %r" % (loc["pass"],))
+
+    full = au.locality(part, {"plate": {"exprs": ["PLATE_T"],
+                                        "stations": [0]}},
+                       loc_plan)
+    say("locality full=%r" % ({k: full[k] for k in
+                               ("pass", "outside_count",
+                                "inconclusive_count")},))
+    check("T46_LOCALITY_FULL_COVERAGE",
+          full["coverage"]["partial"] is False,
+          "an unrestricted run must declare full coverage: %r"
+          % (full["coverage"],))
+
+    scr = au.locality_screen(part, loc_plan,
+                             {"plate": {"exprs": ["PLATE_T"]},
+                              "boss": {"exprs": ["BOSS_D"]}})
+    say("screen=%r" % ({"checked": scr["checked"],
+                        "uncovered": scr["uncovered"]},))
+    # A horizontal slice at z=7 crosses the plate at a constant outline, so a
+    # plate THICKNESS change moves the station at z=7 not at all (the profile
+    # at that height is identical); BOSS_D at z=7 is inside the boss's height
+    # range, so it does move.  That asymmetry is exactly what the screen is
+    # for: "no station moved" means the station set cannot see that parameter,
+    # and a per-parameter sweep alone would report it as inconclusive without
+    # saying which parameters are unmeasurable by construction.
+    check("T46_SCREEN_FINDS_COVERAGE",
+          scr["checked"] == 2 and
+          all("changed_stations" in r for r in scr["rows"]),
+          "the screen must report per-parameter station coverage: %r"
+          % ([(r["expr"], r.get("changed_stations")) for r in scr["rows"]],))
+    # the height is what makes the difference: a thickness change is invisible
+    # to a slice that never enters or leaves the material
+    say("screen uncovered=%r (expected: thickness changes are invisible to a "
+        "mid-slab slice)" % (scr["uncovered"],))
+    check("T46_SCREEN_UNCOVERED_DECLARED",
+          scr["pass"] is (len(scr["uncovered"]) == 0),
+          "pass must follow the uncovered list, not be hardwired: %r"
+          % ({"pass": scr["pass"], "uncovered": scr["uncovered"]},))
+
     say("TEST46_CASES=%d" % len(RESULTS))
     if failed:
         say("TEST46_STOP failed=%s" % failed)
