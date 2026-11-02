@@ -7,6 +7,12 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §12.2：派生量按"几何是否连续变形"定性——上游改名后几何连续跟随则建派生表达式（`A = B/2`），接公式会让轮廓自交/退化则留 data 字面量并披露。两种做法都要在 schema 标 `derived`/`data`，不许既不声明也不披露。反例：腿长恰等于 `sqrt(R²−r²)` 接公式后草图自交；帽半径不接公式则上游改大后截面拓扑跳变、改回残留告警。
+- `references/reverse-engineering.md` §9.4：多边圆角链的拆分点由支撑面归属定，不由边数定。整圈一条链在上游改尺寸时报 `Blend faces overlap`，逐边全拆报 `Unable to terminate the blend faces`；判据是"链两端是否有终止面"，按子体（板周/凸台周/塔周）各自成链。
+- `references/modeling.md` §1.13：`CreateSketchPolygonBuilder` 的尺寸点必须落在多边形原语自己的默认半径上（先读 `RadiusDimension.RightHandSide` 取种子值，再对圆心与尺寸点各加固定约束）；放在目标半径再改绑会让多边形整体平移而不是缩放。
+- `references/modeling.md` §2 倒角段：`ChamferBuilder.FirstOffset`/`.Angle` 是普通 `str` 属性不是 `Expression`，写 `.RightHandSide` 抛 `'str' object has no attribute`；驱动命名表达式直接赋表达式名字符串。
+- `references/reverse-engineering.md` §9.3：滚边长度门槛按机制分工——`apply_roll`/`rolling` 默认 ≥`4R`（刀具行程），候选边粗筛 ≥`max(1.2R, 面宽)`（预筛，非可行性判据），`structures.fillet_feasible` 的 ≥`0.5R`（几何下限）。判"倒不出来"以 `fillet_feasible` 为准。
+
 - `scripts/nxlib/measure.py` `face_area` + `face_table(with_area=True)`：每面带 `area`（`MeasureManager.NewFaceProperties().Area`）。平面族分带、板面积占比与堆叠判据都以面积为输入，缺面积时它们静默退化成"面积恒 0、比值恒 1"——即"偏置数 ≥6 就判堆叠"。合成夹具手工传 `area`，所以这个缺口一直没被测出来。
 - `scripts/nxlib/transitions.py` `plan_runway` 可达性判据：由"所有邻面的最小宽度 ≥ 2R+0.5"改为"至少两条支撑面各 ≥ R+0.5"。一个滚球圆角只需要两侧各一条撑得住的面；按最窄邻面判会把 114 条跑道里的 88 条标成障碍，而其中 43 条其实有两条合格支撑（可达圆角面 36/509 → 413/509）。返回补 `support_widths`/`support_need`，`_round` 归一到判据层。
 - `scripts/nxlib/structure_inference.py` `_bands` 一个法向族只出一条厚度带（取面积最大的那一对）；其余相邻对逐对进 `unresolved`（`kind="unclaimed_offsets"`）。按"每对相邻偏置一块板"出表会把 L 形件在 X 方向的两个跨度、六角头的三个相邻侧面都切成两块板，而真实的板只有一个厚度方向。
@@ -96,6 +102,9 @@
 
 ### Changed
 
+- 圆角支撑面宽度判据统一为"至少两条支撑面各自 ≥ `R + 0.5 mm`"：`references/modeling.md` §2 与 `references/reverse-engineering.md` §4.1/§9.2/§9.3 的 `2R+0.5`（按最窄邻面判）改为与 `scripts/nxlib/transitions.py`、`structures.fillet_feasible` 一致的口径。`2R+0.5` 的误读把"每个面都要独立撑 2R"当成条件，实际一个滚球圆角只在两侧各吃掉一个 R。
+- `references/reverse-engineering.md` §9.5：删除"`ceiling <0.70` 时 G7 记 BLOCKED"的旧口径，与同文件 §4.1/§9.5 后段及 `measure.g7_reachability` 实现对齐——`ceiling` 只作诊断，BLOCKED 需逐跑道拓扑证据。
+- `docs/wiki/03-modules.md`/`docs/wiki/README.md`/`README.md`/`README.en.md`/`SKILL.md`/`scripts/tests/README.md`：模块数 13→14（补 `transitions`）、`nxlib` 公开 API 212/199→221、带判定用例 44/45→46、用例项数 38→32、48→34、49→34、`reverse-engineering.md` 行数 606→656。
 - `scripts/tests/47_structure_builders.py`：20 → 38 项，覆盖第二批 builder（孔链逐段体积与逐刀对账、锥口半角、故意错报声明值必须失败、双瓣耳相切与不共切上报、叉耳槽宽、平面修边体积与保留侧选反、倒圆前置判定）。
 - `scripts/check_repo.py`：第 2 组新增"每条 `call :gate` 的返回值必须紧跟 `if errorlevel 1 exit /b 1`"（`RUN_TESTS.bat` 里 48/49 两门漏了它，失败也被后面的 `ALL TESTS PASSED` 吞掉）；第 8 组新增"wiki 名录的行数列必须等于文件实际行数"。
 - `scripts/tests/RUN_TESTS.bat`：48/49 两门补上返回值检查。

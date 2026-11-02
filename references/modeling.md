@@ -123,6 +123,7 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 **适用**：轮廓简单（圆/矩形/台阶/扇形）、尺寸要由命名表达式驱动（模板/零件族/逆向重建）。测量轮廓（短弧+倒角+偏移线）不要开自动尺寸——会被拉变形，走 §1.5 固定约束 + 数据层字面值。
 
 - **配方**：`make_sketch_dims(wp, curves, links=[(数值, "2 * R_TEST"), ...])` 建草图 → AutoDimension 出尺寸 → 按数值把尺寸改指命名表达式，返回 `(sketch, 改指数)`。改指后 `GetStatus()` 的 dof 归 0；`R_TEST ×1.5` 后体积按 r² 变 2.25 倍，还原回原值（`tests/37`）。
+- ⚠ **多边形原语的尺寸点必须落在它自己的默认半径上**：`CreateSketchPolygonBuilder` 建出的多边形初始半径是默认值（100），若把尺寸点直接放在目标半径（如 4.0）再去改绑半径尺寸，约束是"尺寸点到多边形中心的距离"而不是标定半径，改绑后整个多边形**平移**到别处而不是缩放。做法是先读 `poly.RadiusDimension.RightHandSide` 取种子值把尺寸点放在该半径上，再对圆心与尺寸点各加 `CreateFixedConstraint`，之后改半径才只缩放不变位。
 - **主要前提**：**不要先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。曾把"0 尺寸"归因于"少调 `GetStatus`"，受控实验证明 `GetStatus` 只用来读 dof，少调不影响出尺寸。已知证据只覆盖简单轮廓上的这种抢占；复杂轮廓的其它 0 尺寸成因未逐一排除，别把这一条当唯一解释。
 - **links 的数值要写自动尺寸真会生成的量**（半径、直径 2r、长度），匹配按 `float(RightHandSide)` 1e-6；写推导量匹配不上时该尺寸不改指、也不报错，只表现为返回的改指数偏小——用改指数与 links 条数对账。
 - **骨架帧**：`Frame.from_azimuth(az, origin)` 给径向 U、切向 V、+Z；构造函数即校验两两正交，非正交在构造处抛 `ValueError`，不要等提交特征才失败。`frame.pt/vec/vec3` 是唯一坐标出口，结构代码里不手写 sin/cos。
@@ -311,6 +312,7 @@ builder.Destroy(); collector.Destroy()
 ```
 
 - ⚠ `Edge.GetVertices()` 返回 `Point3d` 列表。
+- ⚠ `ChamferBuilder.FirstOffset` / `.Angle` 是普通 `str` 属性，不是 `Expression` 对象。写 `builder.FirstOffset.RightHandSide = ...` 会抛 `'str' object has no attribute`；要给命名表达式驱动，直接赋表达式名（`builder.FirstOffset = "TIP_CHAMF_L"`），特征树里会记成该名字的引用，改表达式仍然驱动几何。
 - `EdgeBlend` 在角点处不能逐条相邻边倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"。FaceBlend 走两支撑面，不共享这条限制（见下）。
 - **双瓣耳/眼**：矩形块沿孔轴拉伸，平台两侧各一条顶边倒 `R_EYE`，肩面应得到解析圆柱（类型 16）；平台半宽用系统式（`W_HALF = H_LOBE + R_EYE`）。端面整圈倒 `R_END` 得到环面（major = R_EYE − R_END、minor = R_END）。
 - **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
@@ -327,7 +329,7 @@ feat, rev = face_blend_edge(wp, edge, 1.5875)  # 未知法向组合时自动试
 
 - 建造器固定 `BlendTwoFace` + `FirstFaceCollector`/`SecondFaceCollector` + `CircularCrossSection.SetRadius`；`BlendFromEdges` 只给边链会报 `combination ... not sufficient`。不要设 `OverflowOption.None`（NX12 无此枚举）。
 - 法向组合不固定：凸平面-平面、凹口通常 `(True, True)`；凸圆柱-圆柱常见 `(False, False)`。`face_blend_edge` 按 `(TT, FF, TF, FT)` 各在自己的 undo mark 内试，失败回滚，返回成功的 `(rev_a, rev_b)` 并可用 `trace` 记录。
-- 前置检查：两支撑面宽 ≥ `2R + 0.5 mm`、边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错；回建模加宽/重建支撑面，不要降半径。
+- 前置检查：**至少两条支撑面各自 ≥ `R + 0.5 mm`**（一个滚球圆角在两侧各吃掉一个 R，一条跑道旁常挂着尽端面与侧壁，按"最窄邻面"判会把可倒的跑道误标成障碍）、边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错；回建模加宽/重建支撑面，不要降半径。
 - 开放链逐段 `face_blend_edge`，每段成功后按几何重找下一条边；闭合矩形窗口四段可逐段提交、0 告警。角部若原件是环面，另建角过渡；不要用直线段圆角冒充整圈。
 - 结果面型：直边平面-平面 → type 16、`radius` = R；圆形平面-圆柱 → type 19、`rad_data` = R、`radius` = 主半径；圆柱-圆柱可能是 type 43。验收按半径/环面主副半径 + 体积变化。
 - 命名表达式可驱动 `CircularCrossSection.SetRadius`：×1.1 后体积变化、还原后体积差 0、`DoUpdate` 0 错；这是可编辑性门的要求。
@@ -348,7 +350,7 @@ ok, body = apply_roll(wp, body, edge, radius)
 - 弧段与直边共点、截面在 edge 的局部系内建（`e1 = sgn*n0`、`e2 = d × e1`、滚心 `o·u_i = R`），拉伸方向沿边、终点穿出 `ee = min(0.8, 0.25L)`；起点与边端点平齐（起点在顶点处与邻边相接，穿出会切掉邻边该留的料），刀具体不要与目标体共面收尾。
 - 截面与拉伸必须在 undo mark 内建，布尔失败立刻 `UndoToMark` + `DeleteUndoMark` + `UpdateManager.ClearErrorList()`，然后重新取实体（`part.Bodies` 的包装对象已失效）。
 - **已成功提交的圆角不要回滚**：回滚后实体 out-of-date，质量属性读 0，下一次布尔报 `Tool body completely outside target body`。逐条滚时“成功就留在树上”。
-- 候选边先筛：两面都是平面（type 22）、夹角 30°–150°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。
+- 候选边先筛：两面都是平面（type 22）、夹角 30°–150°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。这是"值不值得试"的预筛，不是可行性判据；`apply_roll` 的刀具有默认 ≥4R 行程门槛，判"倒不出来"用 `structures.fillet_feasible` 的 ≥0.5R。
 - 端缘是 2–5 mm 折面链时逐段滚，长度下限放到 1.2R，两端仍各穿出 0.8；相邻两段的刀具有重叠，顶点处自然形成过渡，不必另建球面。
 - 每条边记中点（四舍五入到 0.01），被拒的边不再重试，否则重扫循环不收敛。
 - 验收：滚出的圆角面是类型 16、`radius` = 圆角半径（直边，精确圆弧）或类型 19（`rad_data` = 圆角半径、`radius` = 主半径）；体积按“截面面积 × 边长”校验在 35% 以内（凸减、凹加）。

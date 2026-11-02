@@ -238,7 +238,7 @@ scripts\tests\RUN_TESTS.bat
 
 改动 references、`check_journal.py`、`run_journal_batch.bat` 后，先跑 `RUN_TESTS.bat` 全绿再交付。
 
-**写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`audit`/`structure_inference`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
+**写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
 ⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。46 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
@@ -276,7 +276,7 @@ nxopen-journal/
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
 ├── references/*.md                 ← 八个域文件；各自的域与覆盖范围见 §5 路由表
 ├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/标题栏/技术要求/尺寸道位/PDF；验收=33 号用例，用法=references/gb-drawing.md）
-├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting/measure/rolling/template/reverse/skeleton/structures/audit/structure_inference；新用例 import 它、不复制配方）
+├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting/measure/rolling/template/reverse/skeleton/structures/transitions/audit/structure_inference；新用例 import 它、不复制配方）
 ├── scripts/render/                 ← 离线出图链（STL→着色渲染、PDF→PNG；用法=scripts/render/README.md）
 ├── scripts/check_journal.py        ← 静态检查（语法/占位符/已固化约束，含 NX12 专属名与 Py3.6 API）
 ├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 + check id 禁含 _FAIL / 文档精简 / 路线优先 / wiki 同步）

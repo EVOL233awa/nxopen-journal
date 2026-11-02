@@ -1,6 +1,6 @@
 # 模块
 
-## nxlib 标准层（13 模块，212 个公开 API）
+## nxlib 标准层（14 模块，221 个公开 API）
 
 用例不得复制配方，只能 `import nxlib`。注册与引导代码在 `scripts/nxlib/__init__.py` 的 `from . import` 区块，引导片段（`__file__` 缺失时回退 `sys.argv[0]`）写在文件头 docstring 里（`scripts/nxlib/__init__.py` 的 docstring 引导段）。
 
@@ -54,7 +54,7 @@
 | `gb-drawing.md` | 国标标准件 `gb_drawing.py` 的调用骨架与 API 速查 | 187 行 | 33 |
 | `fea.md` | 有限元：CAD→FEM §1、材料与 PSOLID §2、壳 §3a、CTETRA §4、SIM 与解算方案 §5-6a、求解 §7 | 288 行 | 09 24 25 30 |
 | `motion.md` | 运动仿真：Link §M.2、运动副 §M.3、驱动 §M.4、连接件 §M.5a、求解 §M.6、结果 §M.7、静不定 §M.8 | 321 行 | 18 23 36 |
-| `reverse-engineering.md` | 逆向：流程 §1、结构表 §1.1、草图-拉伸 §2、分层基线 §3、验收门 §4、过渡 §9、测量链 §10、参数化模板 §11、测量编译 §12 | 606 行 | 38 39 40 41 42 43 44 45 46 47 48 49 |
+| `reverse-engineering.md` | 逆向：流程 §1、结构表 §1.1、草图-拉伸 §2、分层基线 §3、验收门 §4、过渡 §9、测量链 §10、参数化模板 §11、测量编译 §12 | 656 行 | 38 39 40 41 42 43 44 45 46 47 48 49 |
 
 域文档之间不互相引用成链：`reverse-engineering.md` 把构造配方推给 `modeling.md`，自己不重复 API；`drafting.md` 把标注规则推给 `drafting-annotation.md`（`references/drafting.md` 抬头）。这种"只指路不复制"的写法让每个域的配方只有一处权威，代价是读跨域任务要读多个文件。
 
