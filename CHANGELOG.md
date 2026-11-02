@@ -7,6 +7,13 @@
 
 ### Added
 
+- `references/reverse-engineering.md` §4.1 包盒位置与尺寸差（G4）：包盒取网格三角顶点或内核精确包盒，**不得取 `face_table` 的面盒**——面盒是 `AskFaceData` 的控制点盒，环面/B 曲面的控制点会伸出真实表面，正将 G4 判成假超差。
+- `references/reverse-engineering.md` §12.2 补齐生量双向判据：上游改名后几何连续跟随则建派生表达式，接公式会让轮廓自交/退化则留 data 字面量并披露；两种都要在 schema 标 `derived`/`data`。
+- `references/reverse-engineering.md` §9.4 多边圆角链拆分点由支撑面归属定（不由边数定），判据是“链两端是否有终止面”。
+- `references/modeling.md` §1.13：`CreateSketchPolygonBuilder` 尺寸点必须落在多边形原语自己的默认半径上（先读 `RadiusDimension.RightHandSide` 取种子值再加固定约束），放在目标半径再改绑会让多边形平移而不是缩放。
+- `references/modeling.md` §2 倒角段：`ChamferBuilder.FirstOffset`/`.Angle` 是普通 `str` 属性不是 `Expression`，驱动命名表达式直接赋表达式名字符串。
+- `references/reverse-engineering.md` §9.3：滚边长度门槛按机制分工——`apply_roll`/`rolling` 默认 ≥`4R`（刀具行程）、候选边粗筛 ≥`max(1.2R, 面宽)`（预筛）、`structures.fillet_feasible` 的 ≥`0.5R`（几何下限）。
+
 - `references/reverse-engineering.md` §12.2：派生量按"几何是否连续变形"定性——上游改名后几何连续跟随则建派生表达式（`A = B/2`），接公式会让轮廓自交/退化则留 data 字面量并披露。两种做法都要在 schema 标 `derived`/`data`，不许既不声明也不披露。反例：腿长恰等于 `sqrt(R²−r²)` 接公式后草图自交；帽半径不接公式则上游改大后截面拓扑跳变、改回残留告警。
 - `references/reverse-engineering.md` §9.4：多边圆角链的拆分点由支撑面归属定，不由边数定。整圈一条链在上游改尺寸时报 `Blend faces overlap`，逐边全拆报 `Unable to terminate the blend faces`；判据是"链两端是否有终止面"，按子体（板周/凸台周/塔周）各自成链。
 - `references/modeling.md` §1.13：`CreateSketchPolygonBuilder` 的尺寸点必须落在多边形原语自己的默认半径上（先读 `RadiusDimension.RightHandSide` 取种子值，再对圆心与尺寸点各加固定约束）；放在目标半径再改绑会让多边形整体平移而不是缩放。
