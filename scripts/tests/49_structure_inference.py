@@ -140,6 +140,17 @@ def main():
           [p["thickness"] for p in z_band[0]["pairs"]] == [12.0, 12.0],
           "the z band must carry three offsets and two 12 mm pairs: %r"
           % (z_band,))
+    # 一个法向族只有一个厚度方向：宽面那一对是板厚，其余的相邻对是**同一个
+    # 体的台阶/凸台高度**，是另一个结构决策，不是第二块板。按"每对相邻偏置
+    # 一块板"出表会把 17 面支架切成 7 块板。
+    check("T49_BAND_ONE_PLATE_PER_FAMILY",
+          all("pair" in b and "spare" in b for b in bands) and
+          z_band[0]["pair"]["thickness"] == 12.0 and
+          [p["thickness"] for p in z_band[0]["spare"]] == [12.0],
+          "one family = one thickness pair + leftovers, not one plate per "
+          "pair: %r" % ([{"pair": b["pair"]["thickness"],
+                          "spare": [p["thickness"] for p in b["spare"]]}
+                         for b in bands],))
 
     result = si.infer_structures(meas)
     rows = result["structures"]
@@ -345,9 +356,9 @@ def main():
     # slot walls 2 mm apart, normals antiparallel -> dihedral 180 deg would
     # fail the range check, so give them a slight included angle instead
     wall_a = plane_face(34, [0.0, 1.0, 5.0], [0.0, 0.866, -0.5], area=20.0)
-    wall_a["box"] = [-5.0, 0.0, 0.0, 5.0, 2.0, 10.0]
+    wall_a["box"] = [-40.0, 0.0, 0.0, 40.0, 2.0, 60.0]
     wall_b = plane_face(35, [0.0, -1.0, 5.0], [0.0, -0.866, -0.5], area=20.0)
-    wall_b["box"] = [-5.0, -1.0, 0.0, 5.0, -1.0, 10.0]
+    wall_b["box"] = [-40.0, -1.0, 0.0, 40.0, -1.0, 60.0]
     ta["edges"] = [{"tag": 910, "faces": [50, 34]}, {"tag": 911,
                                                     "faces": [50, 35]}]
     tb = cyl(51, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
@@ -361,24 +372,55 @@ def main():
     plan_tight = tr.plan_runway(tight, fbt)
     say("transition tight=%r" % (plan_tight,))
     obs = plan_tight.get("build_obstacle") or {}
+    # 判据的核心是"两侧各要一条撑得住的面"。合成面表里两条壁的法向相同、
+    # 被 `_planar_families` 之外的单面宽度计算各算一次，几何上无法构造出
+    # "两条都宽"的干净夹具；这里直接对判据本身下断言，几何夹具只覆盖拒绝
+    # 分支（下面单个窄支撑的用例）。
+    widths = plan_tight.get("support_widths") or []
+    need = plan_tight.get("support_need")
+    adequate = [w for w in widths if need is not None and w >= need]
+    check("T49_TRANSITION_WIDTH_RULE",
+          need is not None and abs(need - (3.0 + 0.5)) < 1e-9 and
+          len(adequate) == len([w for w in widths if w >= need]) and
+          (len(adequate) >= 2) == (plan_tight["reachable"] is True),
+          "reachability must follow 'two supports >= R+0.5 each': need=%r "
+          "widths=%r reachable=%r"
+          % (need, widths, plan_tight["reachable"]))
+    single = dict(tight)
+    single["faces"] = [52, 53]
+    tc = cyl(52, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    td = cyl(53, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+    narrow_wall = plane_face(36, [0.0, 1.0, 5.0], [0.0, 0.866, -0.5],
+                             area=2.0)
+    narrow_wall["box"] = [-1.0, 0.0, 0.0, 1.0, 1.0, 2.0]
+    tc["edges"] = [{"tag": 920, "faces": [52, 36]}]
+    td["edges"] = [{"tag": 921, "faces": [53, 36]}]
+    fbt[52] = tc
+    fbt[53] = td
+    fbt[36] = narrow_wall
+    plan_one = tr.plan_runway(single, fbt)
+    say("transition single-support=%r" % (plan_one,))
+    obs1 = plan_one.get("build_obstacle") or {}
     check("T49_TRANSITION_WIDTH_REASON",
-          plan_tight["reachable"] is False and
-          "support width" in obs.get("reason", ""),
-          "a 1 mm support cannot hold R3 and must say why: %r" % (obs,))
+          plan_one["reachable"] is False and
+          "wide enough" in obs1.get("reason", "") and
+          "support(s) wide enough" in obs1.get("reason", ""),
+          "a runway without two wide supports must say how many are short: "
+          "%r" % (obs1,))
     check("T49_TRANSITION_EVIDENCE_SHAPE",
-          obs.get("runway_faces") == [50, 51] and "supports" in obs,
+          obs1.get("runway_faces") == [52, 53] and "supports" in obs1,
           "the obstacle record must name the runway and its supports: %r"
-          % (obs,))
-    # a support narrower than 2R is a BUILD obstacle, not topology: the
-    # reference part already has that fillet, so width proves "hard to
-    # reproduce", never "physically unreachable".  Mixing the two made the
-    # reference solution itself un-passable.
+          % (obs1,))
+    # a support narrower than the needed width is a BUILD obstacle, not
+    # topology: the reference part already has that fillet, so width proves
+    # "hard to reproduce", never "physically unreachable".  Mixing the two
+    # made the reference solution itself un-passable.
     check("T49_TRANSITION_WIDTH_NOT_BLOCKED",
-          plan_tight["evidence"] is None and
-          (plan_tight.get("build_obstacle") or {}).get("reason"),
+          plan_one["evidence"] is None and
+          bool(obs1.get("reason")),
           "a width shortfall must be a build obstacle, never BLOCKED evidence: "
           "evidence=%r obstacle=%r"
-          % (plan_tight["evidence"], plan_tight.get("build_obstacle")))
+          % (plan_one["evidence"], obs1))
 
     # A stack fingerprint is "many offsets whose areas agree", not "many
     # offsets".  A real part with a flange, a boss and a lofted arm has plenty
@@ -386,19 +428,19 @@ def main():
     # areas differ hugely.  Refusing it as a z-band stack reported a correct
     # multi-structure build as a per-slice tree (it silently dropped the arm
     # row and set unresolved).
-    def band(areas):
-        offs, pairs = 0.0, []
+    def band(areas, pitch=1.0):
+        pairs = []
         prev = None
         for i, a in enumerate(areas):
-            cur = {"offset": float(i), "faces": [100 + i], "area": a}
+            cur = {"offset": i * pitch, "faces": [100 + i], "area": a}
             if prev is not None:
                 pairs.append({"lo": prev["offset"], "hi": cur["offset"],
-                              "thickness": 1.0,
+                              "thickness": pitch,
                               "faces": [prev["faces"][0], cur["faces"][0]],
                               "area": a + prev["area"]})
             prev = cur
         return {"normal": [0.0, 0.0, 1.0],
-                "offsets": [float(i) for i in range(len(areas))],
+                "offsets": [float(i) * pitch for i in range(len(areas))],
                 "n_offsets": len(areas), "pairs": pairs}
 
     stacked = band([5000.0] * 8)
@@ -408,9 +450,22 @@ def main():
     check("T49_STACK_AREAS_DECIDE",
           si._explained_offsets(stacked) is False and
           si._explained_offsets(mixed) is True,
-          "a stack is many offsets with agreeing areas; differing areas mean "
-          "different structures: stacked=%r mixed=%r"
+          "a stack is many offsets with agreeing areas AND a constant pitch; "
+          "differing areas mean different structures: stacked=%r mixed=%r"
           % (si._explained_offsets(stacked), si._explained_offsets(mixed)))
+    # Agreeing areas alone are not a stack: a fan of step faces on one
+    # oblique arm also has similar areas, but the pitch varies.  Convicting
+    # it dropped the whole family from the structure table (the knuckle's own
+    # 45-degree arm has exactly this shape).
+    varying_pitch = band([1500.0] * 8, pitch=7.0)
+    for i, p in enumerate(varying_pitch["pairs"]):
+        p["thickness"] = 6.35 if i % 2 == 0 else 3.175
+    say("varying pitch explained=%r"
+        % (si._explained_offsets(varying_pitch),))
+    check("T49_STACK_NEEDS_CONSTANT_PITCH",
+          si._explained_offsets(varying_pitch) is True,
+          "agreeing areas with a varying pitch are steps, not a slice tree: "
+          "%r" % (si._explained_offsets(varying_pitch),))
     # a short stack is just a plate: two outer faces and nothing else
     check("T49_SHORT_BAND_EXPLAINED",
           si._explained_offsets(band([5000.0, 5000.0])) is True,

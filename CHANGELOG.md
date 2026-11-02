@@ -7,6 +7,13 @@
 
 ### Added
 
+- `scripts/nxlib/measure.py` `face_area` + `face_table(with_area=True)`：每面带 `area`（`MeasureManager.NewFaceProperties().Area`）。平面族分带、板面积占比与堆叠判据都以面积为输入，缺面积时它们静默退化成"面积恒 0、比值恒 1"——即"偏置数 ≥6 就判堆叠"。合成夹具手工传 `area`，所以这个缺口一直没被测出来。
+- `scripts/nxlib/transitions.py` `plan_runway` 可达性判据：由"所有邻面的最小宽度 ≥ 2R+0.5"改为"至少两条支撑面各 ≥ R+0.5"。一个滚球圆角只需要两侧各一条撑得住的面；按最窄邻面判会把 114 条跑道里的 88 条标成障碍，而其中 43 条其实有两条合格支撑（可达圆角面 36/509 → 413/509）。返回补 `support_widths`/`support_need`，`_round` 归一到判据层。
+- `scripts/nxlib/structure_inference.py` `_bands` 一个法向族只出一条厚度带（取面积最大的那一对）；其余相邻对逐对进 `unresolved`（`kind="unclaimed_offsets"`）。按"每对相邻偏置一块板"出表会把 L 形件在 X 方向的两个跨度、六角头的三个相邻侧面都切成两块板，而真实的板只有一个厚度方向。
+- `scripts/nxlib/structure_inference.py` `_explained_offsets` 堆叠判据补"等节距"：相邻层面积比 ≥0.95 **且**层厚差 ≤2% 才算一条堆叠链。只看面积会把斜臂/扇形上的一组台阶面判成堆叠（相邻面积比 0.5–0.99、层厚按台阶交替），连带整族不出结构。
+- `scripts/nxlib/structure_inference.py` 面归属对账：`infer_structures` 返回 `claimed_faces`/`unclaimed_faces`/`face_coverage`，未被认领的面按 (类型, 半径) 分组进 `unresolved`（`kind="unclaimed_faces"`）。推断层只建模平面/柱/锥/环，球面(18)/B 曲面(23)/圆角(43) 不点名就等于静默丢弃。
+- `scripts/nxlib/structure_inference.py` 臂/板共存：臂的证据取行程方向的两张端面，不再把整族面算给臂（否则板的上下宽面被认领、板行因证据为空整行消失）。板行被臂拿走少量面时只摘掉那些面并记 `shared_with_arm`。
+- `scripts/tests/49_structure_inference.py`：31 → 34 项（一个法向族只出一块板、堆叠需要等节距、跑道宽度按"两条支撑各 R+0.5"判）。
 - `scripts/nxlib/structure_inference.py` 平面堆叠判据："同法向 ≥6 偏置"改判为"相邻层面积一致"（`_explained_offsets`）——多结构组合件有大量同法向面但分属不同轮廓，按面数拒收会把合法的板+阶梯回转+孔链+放样臂单实体判成 z 带堆叠（表现为少一行臂 + 一条 unresolved）；面积一致的层链够长才判堆叠，C01 坏例（16 层同轮廓）仍被拒。
 - `scripts/nxlib/structures.py` `revolved_profile` 的 `(t, r)` 轮廓接受表达式名（`_expr_number`：建体时求值，之后仍由表达式驱动）；未知名字报错，不猜 0。
 - `scripts/tests/49_structure_inference.py`：29 → 31 项（堆叠按面积判、少于阈值的薄带永不拒收）。

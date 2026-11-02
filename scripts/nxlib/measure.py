@@ -265,9 +265,58 @@ def expression_survey(part, factor=1.1):
     }
 
 
-def face_table(part, with_edges=False):
+def face_area(part, face):
+    """单面面积（部件单位²）；读不到返回 None。
+
+    走 `MeasureManager.NewFaceProperties`，返回对象的 `.Area` 就是面积。
+    与包围盒乘积、UV 雅可比积分两条独立路径逐位一致（探针见 §10.1）。
+    面积是平面族分带、板面积占比与平行面堆叠判据的共同输入：缺了它这些
+    判据会静默退化成"面积恒 0"（比值恒 1.0），堆叠判据变成"偏置数 ≥ N
+    就判堆叠"——这会误拒合法的多结构件。
+    """
+    try:
+        m = part.MeasureManager.NewFaceProperties(_area_unit(part),
+                                                  _length_unit(part),
+                                                  0.99, [face])
+        val = float(m.Area)
+        if val != val or abs(val) == float("inf"):
+            return None
+        return val
+    except Exception:
+        return None
+
+
+def _area_unit(part):
+    uc = part.UnitCollection
+    for name in ("SquareMilliMeter", "SquareMillimeter", "SquareMeter",
+                 "SquareInch", "SquareMillimetre"):
+        try:
+            u = uc.FindObject(name)
+            if u is not None:
+                return u
+        except Exception:
+            continue
+    raise RuntimeError("no area unit found in the part unit collection")
+
+
+def _length_unit(part):
+    uc = part.UnitCollection
+    for name in ("MilliMeter", "Millimeter", "Meter", "Inch", "Millimetre"):
+        try:
+            u = uc.FindObject(name)
+            if u is not None:
+                return u
+        except Exception:
+            continue
+    raise RuntimeError("no length unit found in the part unit collection")
+
+
+def face_table(part, with_edges=False, with_area=True):
     """全量面表。with_edges=True 时每面带边（类型/长度/相邻面 tag），
-    供同轴组的端面定位使用。"""
+    供同轴组的端面定位使用；with_area=True 时每面带 `area`（部件单位²）。
+
+    面积默认读：结构推断的平面族分带、板面积占比与堆叠判据都以它为输入。
+    """
     u = _ufs()
     rows = []
     for b in part.Bodies:
@@ -290,6 +339,8 @@ def face_table(part, with_edges=False):
                             "radius": 0.0, "rad_data": 0.0, "norm_dir": 0,
                             "invalid": True,
                             "error": str(exc)[:200]})
+            if with_area:
+                rec["area"] = face_area(part, f)
             if with_edges:
                 edges = []
                 try:

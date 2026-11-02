@@ -160,17 +160,18 @@ def _planar_families(measure, tol_deg=NORMAL_TOL_DEG,
     return fams
 
 
-def _explained_offsets(band, share=0.5):
+def _explained_offsets(band, area_share=0.05, thickness_share=0.02):
     """同法向的多层平面是否有结构解释。True = 有解释（不判堆叠）。
 
-    z 带堆叠的指纹不是"同一法向有很多面"，而是**相邻层面积几乎相同**——
-    每一层都是同一个轮廓在另一个高度上的复制。真实多结构组合件也会有很多
-    同法向面（板顶、板底、臂根上下面、臂端上下面…），但它们分属不同轮廓，
-    相邻层面积差得远。
+    逐片堆叠的指纹是**同一个轮廓按恒定节距复制**，所以要同时满足两条：
+    相邻层面积几乎相同（比 ≥ 1-area_share）**且**层间厚度几乎恒定
+    （两两差 ≤ thickness_share）。只看面积不够：扇形/斜臂上的一组台阶面
+    面积量级也相近（实测 401–1617 mm²，相邻比对 0.52–0.99），按"面积相近"
+    判会把原件自己的 45° 臂台阶族判成逐片堆叠，连带整族不出结构。
 
-    判据：按偏移排序后找最长的一条"相邻层面积比 ≥ 1-share"的连续链；
-    链长 ≥ `STACK_OFFSETS` 才判无结构解释（返回 False）。层面积从
-    `pairs` 取——`offsets` 只是偏移值列表，没有各自的面积。
+    判据：按偏移排序找最长的一条"面积与厚度同时一致"的连续链；
+    链长 ≥ `STACK_OFFSETS` 才判无结构解释（返回 False）。
+    层面积从 `pairs` 取——`offsets` 只是偏移值列表，没有各自的面积。
     """
     pairs = sorted(band.get("pairs") or [], key=lambda p: p["lo"])
     if len(pairs) + 1 < STACK_OFFSETS:
@@ -179,21 +180,35 @@ def _explained_offsets(band, share=0.5):
     for i in range(1, len(pairs)):
         a = max(float(pairs[i - 1].get("area") or 0.0), 1e-9)
         b = max(float(pairs[i].get("area") or 0.0), 1e-9)
-        ratio = min(a, b) / max(a, b)
-        if ratio >= 1.0 - share:
+        ta = max(abs(float(pairs[i - 1].get("thickness") or 0.0)), 1e-9)
+        tb = max(abs(float(pairs[i].get("thickness") or 0.0)), 1e-9)
+        same_area = min(a, b) / max(a, b) >= 1.0 - area_share
+        same_pitch = (abs(ta - tb) / max(ta, tb) <= thickness_share)
+        if same_area and same_pitch:
             run += 1
             if run >= STACK_OFFSETS:
-                return False      # 面积一致的层链够长 → 无结构解释
+                return False      # 同轮廓等节距的层链够长 → 无结构解释
         else:
             run = 1
-    return True                   # 至少有一处换轮廓 → 有结构解释
+    return True                   # 至少有一处换轮廓或换节距 → 有结构解释
 
 
 def _bands(families):
-    """平面族 → 厚度带：同法向 ≥2 偏置即一条带（相邻偏置配对）。
+    """平面族 → 厚度带：**一个族最多一条带**，取面积最大的那一对偏置。
 
-    每对带两侧面的面积和：板的厚度方向由**宽面**决定，一张板的另外两个
-    “带”其实是它的外轮廓范围（侧面面积远小于宽面），建件时按宽面选板厚。
+    旧实现给每一对相邻偏置都出一条带，于是按"面与面的几何距离"而不是
+    "结构语义"出板：L 形件 X 方向的 0/10/125 三个偏置变成两块板，六角头的
+    三个相邻侧面变成两块板，方管壁厚与总宽变成两块板。真实的板只有一个
+    厚度方向，其余同法向偏置是**同一个体的轮廓范围**（外轮廓跨度、台阶
+    高度），不是第二块板。
+
+    判据：同一法向族里，板厚方向的那一对是**面积最大**的一对（宽面面积远
+    大于侧面/端面）。其余相邻对被记为 `spare`，由调用方决定它们是否有
+    结构解释——不静默丢弃，也不自动变成板。
+
+    返回每族一条：
+      normal / offsets / faces / thickness / pair(选中那对) / pairs(全部) /
+      n_offsets / spare(未选中的相邻对)
     """
     bands = []
     for fam in families:
@@ -209,11 +224,22 @@ def _bands(families):
             pairs.append({"lo": offs[i], "hi": offs[i + 1],
                           "thickness": _round(offs[i + 1] - offs[i]),
                           "faces": faces, "area": _round(area)})
+        chosen = max(pairs, key=lambda p: (p.get("area") or 0.0,
+                                           -abs(p["thickness"])))
+        spare = [p for p in pairs if p is not chosen]
         bands.append({"normal": fam["normal"], "offsets": offs,
+                      "levels": [{"offset": o["offset"], "faces": o["faces"],
+                                  "area": o.get("area", 0.0)}
+                                 for o in fam["offsets"]],
                       "faces": sorted(set(t for o in fam["offsets"]
                                           for t in o["faces"])),
-                      "pairs": pairs, "n_offsets": len(offs)})
-    bands.sort(key=lambda b: (-b["n_offsets"], b["normal"]))
+                      "pairs": pairs, "pair": chosen, "spare": spare,
+                      "thickness": chosen["thickness"],
+                      "pair_area": _round(chosen.get("area") or 0.0),
+                      "max_pair_area": _round(max(p.get("area") or 0.0
+                                                  for p in pairs)),
+                      "n_offsets": len(offs)})
+    bands.sort(key=lambda b: (-(b["pair"].get("area") or 0.0), b["normal"]))
     return bands
 
 
@@ -741,7 +767,15 @@ def _loft_structures(measure, part, bands):
         # 同一面积后，若逐点重合就是拔模/缩放，否则才是变截面。
         if _sections_similar(shape[0], shape[1], SHAPE_SIMILARITY):
             continue
-        faces = [t for o in band["offsets"] for t in band["faces"]]
+        # 臂的证据是**沿行程方向的两张端面**，不是整条带的所有平面面。
+        # 旧实现把 band["faces"]（整族全部面）都算作臂的证据，于是这块板的
+        # 上下宽面被臂认领，板行随即"证据为空"而整行消失——原件上板行全灭、
+        # 只剩臂，就是这个原因。这里只认最外侧两个偏置上的面。
+        end_faces = []
+        for o in band.get("levels") or []:
+            if abs(o["offset"] - lo) <= 1e-6 or abs(o["offset"] - hi) <= 1e-6:
+                end_faces.extend(o["faces"])
+        faces = sorted(set(end_faces))
         used.update(faces)
         out.append({
             "role": "arm",
@@ -751,7 +785,7 @@ def _loft_structures(measure, part, bands):
             "area_lo": _round(min(areas)),
             "area_hi": _round(max(areas)),
             "area_ratio": _round(ratio),
-            "evidence_faces": sorted(set(faces)),
+            "evidence_faces": faces,
             "boundary_faces": [],
             "confidence": "high" if ratio > 1.05 else "low",
         })
@@ -856,31 +890,48 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
                                "slice"),
             })
             continue
-        for pair in band["pairs"]:
-            if pair["thickness"] <= 0.0:
+        pair = band["pair"]
+        if pair["thickness"] > 0.0:
+            # 一个平面族只出一条厚度带：板厚方向是面积最大的那一对（宽面）。
+            # 其余相邻对是同一个体的轮廓范围/台阶，不是第二块板。
+            if not (max_pair_area > 0.0 and pair.get("area", 0.0) <
+                    BAND_AREA_SHARE * max_pair_area):
+                prefix = "PLATE"
+                rows.append({
+                    "id": nid(prefix),
+                    "role": "plate",
+                    "template": "plate_2p5d",
+                    "frame": frame,
+                    "evidence_faces": pair["faces"],
+                    "boundary_faces": [],
+                    "design_params": ["%s_T" % prefix],
+                    "data_refs": ["%s_OUTLINE" % prefix, "%s_NORMAL" % prefix],
+                    "depends_on": [],
+                    "build_order": 0,
+                    "expected_face_types": [ms.PLANE],
+                    "validation_stations": [],
+                    "confidence": "high" if len(pair["faces"]) >= 2 else "low",
+                    "status": "planned",
+                    "thickness": pair["thickness"],
+                    "normal": band["normal"],
+                })
+        # 未选中的相邻对不是第二块板，但它们是**未被解释的面组**：登记下来，
+        # 让调用方知道这些面还没有结构归属，而不是静默丢掉。
+        for p in band["spare"]:
+            if p["thickness"] <= 0.0:
                 continue
-            # 板的厚度方向由宽面决定：一张板的另两个"带"是它的外轮廓范围
-            # （侧面面积远小于宽面）。面积占比不足的带只作诊断，不出板行。
-            if max_pair_area > 0.0 and                     pair.get("area", 0.0) < BAND_AREA_SHARE * max_pair_area:
-                continue
-            prefix = "PLATE"
-            rows.append({
-                "id": nid(prefix),
-                "role": "plate",
-                "template": "plate_2p5d",
-                "frame": frame,
-                "evidence_faces": pair["faces"],
-                "boundary_faces": [],
-                "design_params": ["%s_T" % prefix],
-                "data_refs": ["%s_OUTLINE" % prefix, "%s_NORMAL" % prefix],
-                "depends_on": [],
-                "build_order": 0,
-                "expected_face_types": [ms.PLANE],
-                "validation_stations": [],
-                "confidence": "high" if len(pair["faces"]) >= 2 else "low",
-                "status": "planned",
-                "thickness": pair["thickness"],
-                "normal": band["normal"],
+            unresolved.append({
+                "reason": ("extra offset pair on normal %r at %.3f..%.3f "
+                           "(thickness %.3f): same-family offsets that are "
+                           "not the plate thickness band -- outline extent or "
+                           "a step, needs an explicit structure decision"
+                           % (band["normal"], p["lo"], p["hi"],
+                              p["thickness"])),
+                "evidence_faces": list(p["faces"]),
+                "next_probe": ("decide whether these faces belong to the "
+                               "plate outline or to a separate structure "
+                               "(boss/step/arm); do not emit a second plate"),
+                "kind": "unclaimed_offsets",
             })
 
     # 变截面臂：沿板带行程方向取两张截面，面积随行程变 → 放样。
@@ -890,8 +941,21 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
     unresolved.extend(loft_unresolved)
     loft_faces = set(t for r in lofted for t in r["evidence_faces"])
     if lofted:
-        rows = [r for r in rows
-                if not (set(r["evidence_faces"]) & loft_faces)]
+        # 只把**被臂认领的面**从板上摘掉，不要因为一两面重叠就删掉整块板。
+        # 旧实现按"任一面重叠即整行删除"，一块 12 面的大板只要有一个面被
+        # 臂的端面截面用到就整行消失——原件上板行全灭就是这个原因。
+        kept = []
+        for r in rows:
+            ev = [int(t) for t in r.get("evidence_faces") or []]
+            rest = [t for t in ev if t not in loft_faces]
+            if not rest:
+                continue
+            if len(rest) != len(ev):
+                r = dict(r)
+                r["evidence_faces"] = rest
+                r["shared_with_arm"] = [t for t in ev if t in loft_faces]
+            kept.append(r)
+        rows = kept
     for r in lofted:
         rows.append({
             "id": nid("ARM"),
@@ -945,6 +1009,41 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
     for i, row in enumerate(rows):
         row["build_order"] = i
 
+    # ---- 面归属对账：每一张面都必须有结构解释，否则显式登记。
+    # 旧实现只处理 PLANE/CYLINDER/CONE/TORUS，SPHERE(18)/B_SURFACE(23)/
+    # BLEND(43) 既没有角色也不进 unresolved——球面、环面、自由曲面在结构表
+    # 里完全消失，而报告看起来"完整"。这里把未归属面按类型与半径分组点名。
+    claimed = set()
+    for row in rows:
+        claimed.update(int(t) for t in (row.get("evidence_faces") or []))
+    for u in unresolved:
+        claimed.update(int(t) for t in (u.get("evidence_faces") or []))
+    unclaimed = [f for f in measure.get("faces", [])
+                 if int(f.get("tag", -1)) not in claimed]
+    if unclaimed:
+        by_kind = {}
+        for f in unclaimed:
+            typ = int(f.get("type", -1))
+            rad = _round(abs(float(f.get("rad_data") or f.get("radius") or 0.0)))
+            key = (typ, rad)
+            by_kind.setdefault(key, []).append(int(f.get("tag", -1)))
+        for (typ, rad), tags in sorted(by_kind.items()):
+            unresolved.append({
+                "reason": ("%d face(s) of type %d (radius %s) have no "
+                           "structure: this face type is not modelled by any "
+                           "template yet" % (len(tags), typ, rad)),
+                "evidence_faces": sorted(tags),
+                "next_probe": ("decide a template for face type %d; if the "
+                               "type is a free-form/blend surface, either "
+                               "reproduce it by measured sections or declare "
+                               "it as a listed simplification"
+                               % typ),
+                "kind": "unclaimed_faces",
+                "face_type": typ,
+                "radius": rad,
+            })
+    result_counts_roles = dict(graph["counts"])
+
     counts = {}
     for row in rows:
         counts[row["template"]] = counts.get(row["template"], 0) + 1
@@ -952,12 +1051,20 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
         "structures": rows,
         "unresolved": unresolved,
         "counts": counts,
-        "counts_roles": graph["counts"],
+        "counts_roles": result_counts_roles,
+        "claimed_faces": len(claimed),
+        "unclaimed_faces": len(unclaimed),
+        "face_coverage": (_round(len(claimed) /
+                                 float(len(measure.get("faces") or [1])))),
         "planar_families": [{"normal": fam["normal"], "count": fam["count"],
                              "offsets": [o["offset"] for o in fam["offsets"]]}
                             for fam in families],
         "bands": [{"normal": b["normal"], "offsets": b["offsets"],
-                   "n_offsets": b["n_offsets"]} for b in bands],
+                   "n_offsets": b["n_offsets"],
+                   "thickness": b["thickness"],
+                   "pair_area": b["pair_area"],
+                   "max_pair_area": b["max_pair_area"],
+                   "spare_pairs": len(b["spare"])} for b in bands],
     }
     return result
 

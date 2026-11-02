@@ -40,6 +40,12 @@ DIHEDRAL_RANGE = (20.0, 160.0)
 MIN_RUN_FACTOR = 0.5           # 跑道长度 / 半径 的下限
 
 
+def _round(v, nd=6):
+    """定量输出：-0.0 归一（判据 JSON 要可复现）。"""
+    r = round(float(v), nd)
+    return 0.0 if r == 0.0 else r
+
+
 def _dihedral(face_a, face_b):
     """两平面/柱面支撑的夹角（度）；拿不到就 None。"""
     ta = face_a.get("type")
@@ -160,14 +166,26 @@ def plan_runway(run, faces_by_tag, radius=None):
         supports_only.append(f)
     widths = [w for w in (_face_width(f) for f in supports_only) if w]
     if widths and r > 0.0:
-        need = 2.0 * r + SUPPORT_WIDTH_MARGIN
-        narrow = [w for w in widths if w < need]
-        if narrow:
+        # 一个滚球圆角只需要**两侧各一条**撑得住的面，不是要求每个邻面都宽。
+        # 一条跑道的邻面常常有几十个（尽端面、侧壁、相邻跑道），按"最窄的
+        # 那个邻面"判会把绝大多数跑道判成障碍：实测 114 条里 88 条被这样标
+        # 记，而其中 43 条其实有两条合格支撑。
+        #
+        # 每个支撑面要承担一个 roll 半径，所以门槛是 R + 余量（不是 2R+0.5：
+        # 那个两倍半径的余量是给"每个面都要独立撑 2R"的误读，与
+        # `structures.fillet_feasible` 的单面判据 R 不一致）。
+        need = r + SUPPORT_WIDTH_MARGIN
+        adequate = [w for w in widths if w >= need]
+        if len(adequate) < 2:
             out["reachable"] = False
             out["reasons"].append(
-                "support width ~%.3f (bounding-box upper bound) "
-                "< 2R+%.1f = %.3f"
-                % (min(narrow), SUPPORT_WIDTH_MARGIN, need))
+                "only %d support(s) wide enough (%.3f each, need %d x "
+                "R+%.1f = %.3f); widest=%.3f"
+                % (len(adequate),
+                   max(adequate) if adequate else 0.0, 2,
+                   SUPPORT_WIDTH_MARGIN, need, max(widths)))
+        out["support_widths"] = [_round(w) for w in sorted(widths, reverse=True)]
+        out["support_need"] = _round(need)
 
     plane_sups = [f for f in supports_only if f.get("type") == ms.PLANE]
     if len(plane_sups) >= 2:
