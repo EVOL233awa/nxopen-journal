@@ -20,7 +20,7 @@
 | `skeleton` | 骨架层：局部坐标系 `Frame`、二维轮廓曲线、基准轴与面 | `Frame` / `loop_uv` | 172 |
 | `structures` | 构造层：参数（表达式）与数据（实测）分离的通用 builder + 结构级 builder（孔链 / 双瓣耳 / 叉耳 / 平面修边 / 逐边圆角账本 / 变截面放样 / 拔模窗口） | `revolved_profile` / `plate_2p5d` / `hole_chain` | 1265 |
 | `transitions` | 过渡规划：参考圆角跑道 → 机制决策（面圆角/滚边/滚球/测量截面）+ 逐跑道可达性与拓扑证据（支撑面宽度、二面角）；G7 的 BLOCKED 只认这里的 `evidence` | `plan_runway` / `transitions_plan` | 287 |
-| `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差、编辑包络 | `liveness` / `locality` / `g1full` / `edit_envelope` | 824 |
+| `audit` | 审计层：活性、局部性、特征预算、全集站表 G1full、包络偏差、编辑包络 | `liveness` / `locality` / `g1full` / `edit_envelope` | 823 |
 
 三层关系（逆向域专用）：`reverse` 产出表 → `skeleton`/`structures` 按表建几何 → `audit` 复核"几何是否真的跟着参数动"。分层口径写在各自 docstring：`structures` 只吃 `(frame, design 表达式名, data 字面量)`，`data` 永不建表达式（`scripts/nxlib/structures.py` 的 docstring（"每个 builder 只吃"）、`scripts/nxlib/skeleton.py` 的 docstring（"data 永不建表达式"））。
 

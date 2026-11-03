@@ -241,9 +241,8 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
                 e.RightHandSide = "%.6f" % (val * fac)
                 rollback = None
                 try:
-                    errs = ms._do_update("loc_%s_%d" % (name, int(fac * 100)))
+                    ms._do_update("loc_%s_%d" % (name, int(fac * 100)))
                 except Exception as exc:
-                    errs = None
                     rollback = str(exc).splitlines() or [""]
                 if rollback is not None:
                     e.RightHandSide = rhs

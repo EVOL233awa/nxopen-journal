@@ -275,6 +275,7 @@
 - `SKILL.md` §6 输出令牌段：补 `TEST46_STOP failed=[...]`（token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓）与 34/35/37 走 `check_finish` 的 `TESTxx_FAIL checks=...` 两种失败形态。
 - `scripts/tests/README.md`：`checks=` 形态那句由“同样不含 `_FAIL`”改为“整个 token 含 `_FAIL`、走 `:gate` 的 `_FAIL` 路径（与 46 相反）”；`stages=` 形态的编号由（17/19/20/21/31/32）补齐为 06/07/17/19/20/21/31/32/33。
 - `docs/wiki/01-architecture.md`：架构图里的标准层模块数 12 → 14。
+- `scripts/nxlib/audit.py`、`scripts/tests/47_structure_builders.py`、`scripts/tests/49_structure_inference.py`：删掉四处未使用的局部变量绑定（`errs`/`frame`/`n0`/`obs`），`ruff --select F` 归零；`docs/wiki/03-modules.md` 的 `audit` 行数 824 → 823。
 
 ## [1.3.0] - 2026-10-26
 

@@ -471,7 +471,6 @@ def case_fillet_precheck(wp):
 
 def case_section_loft(wp):
     """Variable-section arm: two rings loft to the frustum, not to a band stack."""
-    frame = sk.Frame()
     n = 48
     # a round-to-round frustum: r 15 at t=0, r 8 at t=40 -> analytic frustum
     a = [(15.0 * math.cos(2.0 * math.pi * k / n),
@@ -745,7 +744,6 @@ def case_sweep_trim(wp):
 def case_window_no_material(wp):
     """A window that lands outside the body must report 'removed nothing'."""
     frame = sk.Frame()
-    n0 = len(list(wp.Bodies))
     blk = mdl.block(wp, NXOpen.Point3d(0.0, 0.0, 0.0), "20", "20", "10")
     body = list(blk.GetBodies())[0]
     win = [(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)]

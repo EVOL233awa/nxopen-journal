@@ -371,7 +371,6 @@ def main():
     fbt[33] = narrow2
     plan_tight = tr.plan_runway(tight, fbt)
     say("transition tight=%r" % (plan_tight,))
-    obs = plan_tight.get("build_obstacle") or {}
     # 判据的核心是"两侧各要一条撑得住的面"。合成面表里两条壁的法向相同、
     # 被 `_planar_families` 之外的单面宽度计算各算一次，几何上无法构造出
     # "两条都宽"的干净夹具；这里直接对判据本身下断言，几何夹具只覆盖拒绝
