@@ -126,7 +126,7 @@ view = svb.Commit(); svb.Destroy()           # -> NXOpen.Drawings.SectionView
 
 ⚠ 剖视图显示"剖切面 + 面后可见几何"，不是只有切口：两孔在 y=20/60 时对应剖切面读数完全一样；曲线数只反映模型里有什么，不反映切面在哪。
 
-⚠ **剖视朝向**：默认建法**会斜置**——同一切面（Y=0）的四种默认建法（父=主视/俯视 × 直剖/半剖/阶梯）出图内容框全不轴对正（主线程探针 `scratch/verify/v_sect_probe.py`，日志 `wd_sect/log_probe_sect.txt`：剖切坐标系首向量相对 X 轴 −37.9°/+86.4°/+30.7°）。**批处理里可控制**：Commit 前设 `svb.ViewOrientation.OrientationType = NXOpen.Drawings.ViewOrientationBuilder.Orientation.UseParentOrientation`，出图即与父视图同向、内容框为真实剖切轮廓。本地探针 `scratch/fix/probe/probe_sxorient.py`（同一 Y=0 切面，120×80×12 板，1:1）：默认内容框 120×80、`axis_aligned=False`；设 `UseParentOrientation` 后 120×12、`axis_aligned=True`（读回 2）；`Orthographic`（读回 0）仍不正；`InheritOrientation`/`SectionExisting` 需再给 `SelectView`，缺则 Commit 分别报 `Invalid view.` / `The view tag is NULL_TAG`。
+⚠ **剖视朝向**：默认建法**会斜置**——同一切面（Y=0）的四种默认建法（父=主视/俯视 × 直剖/半剖/阶梯）出图内容框全不轴对正（剖切坐标系首向量相对 X 轴 −37.9°/+86.4°/+30.7°）。**批处理里可控制**：Commit 前设 `svb.ViewOrientation.OrientationType = NXOpen.Drawings.ViewOrientationBuilder.Orientation.UseParentOrientation`，出图即与父视图同向、内容框为真实剖切轮廓（同一 Y=0 切面、120×80×12 板、1:1：默认内容框 120×80、`axis_aligned=False`；设后 120×12、`axis_aligned=True`，读回 2）；`Orthographic`（读回 0）仍不正；`InheritOrientation`/`SectionExisting` 需再给 `SelectView`，缺则 Commit 分别报 `Invalid view.` / `The view tag is NULL_TAG`。
 
 #### 阶梯剖
 

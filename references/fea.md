@@ -277,14 +277,14 @@ def ask_max(rt_name, comp):                          # comp: Component.Magnitude
 
 ## 7a. 读数从哪儿取（先看这一节再写自检）
 
-**本技能既有用例的 `.f06` 里没有打印结果表**：`blind/t1/work/d7_sim-solution_1.f06`（48425 行）与 `blind/t3/work_fea_c8/*.f06`（154450 行）都只有 bulk echo + model summary，`D I S P L A C E M E N T` 表头命中 0（`MAXDISP=none`）。所以"数值只落 op2"要读成"f06 里连位移/应力表的表头都没有"。
+**本技能既有用例的 `.f06` 里没有打印结果表**：只落 bulk echo + model summary，`D I S P L A C E M E N T` 表头命中 0（`MAXDISP=none`）。所以"数值只落 op2"要读成"f06 里连位移/应力表的表头都没有"。
 
 三条可行途径，按用途选：
 
 | 途径 | 出什么量 | 说明 |
 |---|---|---|
-| NX 后处理结果对象（`ResultManager` + 上面 `ask_max`，脚本内首选） | 位移/vM/支反力的极值，逐类型 | 盲测读数：`VM_MAX_GLOBAL=20.556198 MPa`、`CHECK_FORCE_BALANCE sum_Z=-2000.0000` |
-| 自加 `PRINT` 输出请求后重跑求解器（要 f06 文本表时） | f06 里可读的 D I S P L A C E M E N T / S T R E S S 表 | 重跑后解析到 σ 327.8742 / 329.8307 MPa、位移 11.607156 / 11.660061 mm、SPC 合力 −99.99997 N |
+| NX 后处理结果对象（`ResultManager` + 上面 `ask_max`，脚本内首选） | 位移/vM/支反力的极值，逐类型 | 键名：`VM_MAX_GLOBAL`（全局 vM 极值）、`CHECK_FORCE_BALANCE` 的 `sum_Z`（支反力合力，做力平衡自检） |
+| 自加 `PRINT` 输出请求后重跑求解器（要 f06 文本表时） | f06 里可读的 D I S P L A C E M E N T / S T R E S S 表 | 按表头定位：四面体应力表的 `CENTER` 与逐格 `X` 行末列是 von Mises（单位 kPa，÷1000 得 MPa），`Y`/`Z` 续行末列是方向余弦；位移表用 `D I S P L A C E M E N T   V E C T O R` 表头 |
 | 解析 `.op2`（要逐节点/逐单元原始值时） | 结果块 `OUG`（位移）/`OES`（应力）/`OQG`（支反力） | 不挂输出请求时 op2 仍非空但这三个 token 计数为 0，只能当"没有结果"的证据 |
 
 - **判据链**：求解是否成功看 `.f06` 的 FATAL 计数（0 才算过）+ 后处理能否取到结果；`.log` 的 `EXIT(0)` 和 `SolveChainOfSolutions` 返回值都无判别力（§7 的 ⚠）。

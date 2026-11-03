@@ -293,8 +293,13 @@ the `SimpleInterference` route, for threaded holes use "pilot hole plus annotati
   `Features.MirrorFeatureBuilder` (case 03).
 - Reverse engineering still does not guarantee success on complex parts: this version provides a
   structure inventory, an editable feature tree and an independently recomputed acceptance chain,
-  but the latest blind tests on a complex casting (steering knuckle) still do not pass every gate.
+  but a complex casting (steering knuckle) is still not rebuilt correctly in one pass.
   It is not a promise that any part can be rebuilt in one pass.
+- The assembly layer offers positioning mates only (`Touch`/`Concentric`/`Fix`/`Distance`/
+  `Parallel`/`Perpendicular`/`Angle`/`Fit`/`Bond` and friends): ball, cylindrical, hinge and slider
+  joints cannot be created there on NX 12 (assigning the type throws). For a true spatial linkage,
+  position the components and build the joints in Motion; forcing `Fit`/`Bond` makes the solver
+  throw the parts away.
 - The skill only generates scripts and artifacts; it does not modify the NX installation, and
   scripts and models are written to the working directory.
 

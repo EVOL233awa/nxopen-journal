@@ -261,7 +261,8 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 - 阵列九个类型里，`Linear`、`Circular`、`AlongPath`、`Helix`、`Polygon`、`Spiral`、`General`、
   `Reference` 都能在 `PatternFeatureBuilder` 里生成实例（用例 01、02、22、28、32）；`Mirror`
   在提交阶段被 NX 拒绝，特征镜像改用 `Features.MirrorFeatureBuilder`（用例 03）。
-- 逆向重建仍不保证复杂件通过：本版提供结构清单、可编辑特征树和独立复算的验收链，但复杂铸件（如转向节）的最新盲测仍未全部达标，不能当作任意零件一次还原的保证。
+- 逆向重建仍不保证复杂件通过：本版提供结构清单、可编辑特征树和独立复算的验收链，但复杂铸件（如转向节）仍不能保证一次还原到位。
+- 装配层只提供定位类约束（`Touch`/`Concentric`/`Fix`/`Distance`/`Parallel`/`Perpendicular`/`Angle`/`Fit`/`Bond` 等）：球铰、圆柱铰、铰链与滑块在 NX 12 装配层建不出来（赋类型直接抛错），真空间机构请用装配层定位后到 Motion 域建运动副；硬凑 `Fit`/`Bond` 会让解算把件甩飞。
 - 技能只生成脚本和产物，不修改 NX 安装目录，脚本与模型都落在工作目录下。
 
 ## 目录结构

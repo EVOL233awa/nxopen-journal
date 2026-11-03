@@ -278,6 +278,11 @@
 - `scripts/nxlib/audit.py`、`scripts/tests/47_structure_builders.py`、`scripts/tests/49_structure_inference.py`：删掉四处未使用的局部变量绑定（`errs`/`frame`/`n0`/`obs`），`ruff --select F` 归零；`docs/wiki/03-modules.md` 的 `audit` 行数 824 → 823。
 - `SKILL.md` §1 第 6 条 + `docs/wiki/05-boundaries.md`：参数类型不符的后果由“传错参数类型会损坏原生堆、进程直接死且无 traceback”改为“抛 `TypeError: No overload matches these arguments` / `AttributeError ... is not writable`、进程存活且带 traceback；`Internal error: memory access violation` 只来自已知坑位的特定调用”（禁止“猜签名逐个试”的结论不变）。
 - `SKILL.md` §7 第 10 条：`CHANGELOG.md` 补注“是人类文档，不参与 CONCISE/ROUTE 扫描，这条约定靠人工守，没有机器门”。
+- `LICENSE`：版权署名由占位串 `nxopen-journal contributors` 改为 `EVOL233awa`。
+- `README.md`/`README.en.md` 已知限制：补“装配层只有定位类约束，球铰/圆柱铰/铰链/滑块在 NX 12 建不出来（赋类型直接抛错），真空间机构用装配层定位后到 Motion 域建运动副，硬凑 `Fit`/`Bond` 会让解算把件甩飞”；逆向重建那条去掉“盲测”用词。
+- `references/fea.md` §7a：删掉溯源用的审计路径与读数，改为按表头解析的规则（四面体应力表 `CENTER`/`X` 行末列是 von Mises 且单位 kPa、`Y`/`Z` 续行末列是方向余弦；位移表用 `D I S P L A C E M E N T   V E C T O R` 表头）。
+- `references/drafting.md` §B.4 剖视朝向：删掉探针路径与日志名，只留结论与读数。
+- `references/assembly.md` §A.2：约束类型可用性结论去掉“盲测”用词。
 
 ## [1.3.0] - 2026-10-26
 
