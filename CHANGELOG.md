@@ -263,7 +263,7 @@
 - `references/gb-drawing.md` §模块路线约束补充：`model_bbox` 回退由“静默回退直边”改为“先打印 `WARN model_bbox: ...using linear edges` 再回退（非静默），纯回转体无直边直接抛错”。
 - `references/gb-drawing.md` §非轴对齐零件出图：`TransformEntities` 由“对实体静默不生效、保存后才报 Update undo happened”改为“有效、16 浮点矩阵、效果在 update 后可见（未 update 回读陈旧易被误判）、保存不报该串”；模型视图路线改述为其替代做法。
 - `references/gb-drawing.md` §视图级简化：`AskVisibleObjects()` 由“返回 `DraftingCurve` 列表”改为“混合列表（Body+DraftingCurve），须先筛出 `DraftingCurve`”（对 Body 调 `GetDraftingCurveInfo()` 报 AttributeError）；交线筛除写法改为 `edge.SolidEdgeType == NXOpen.Edge.EdgeType.Intersection`（`Edge.SolidEdgeType` 无枚举成员）。
-- `references/gb-drawing.md` §文字控制字符：标题与各行改为按“表格单元 / Note”分别给症状——`×`/拉丁补充区在单元照样报错而 Note 静默丢字，`~` 两侧都渲染成空格；`%` 行改为给触发条件与三档读数（不显式设 cell 字高时文字实际约 7 mm 高，`AskDefaultCellPrefs` 报的 2.50 不是实际字高，30mm 列宽 + 7mm 行高读出 `###`；字高 3.5 → 约 4.7 mm 读出 `50%`；字高 2.5 + 10mm 行高时 5mm 列宽读出 `##`），做法改“建表前显式 `SetDefaultCellPrefs` 定字高并留余量”。
+- `references/gb-drawing.md` §文字控制字符：标题与各行改为按“表格单元 / Note”分别给症状——`×`/拉丁补充区在单元照样报错而 Note 静默丢字，`~` 两侧都渲染成空格；`%` 行原写“可用”，改为给触发条件与做法（`%` 本身可用，单元文字装不下才把每个字符替成 `#`；建表前显式 `SetDefaultCellPrefs` 定字高并留余量，不按 `AskDefaultCellPrefs` 的读数估字高）。
 - `references/gb-drawing.md` §标注配方：`dim_text_box` 注明只有三行算术、不查字体度量，是保守上界（33 号图上字串实测 3.7–5.5mm、行距 5.25mm），判重叠后须在图上确认；`dim_diameter` 由“无数量前缀”改为“默认不带，但可用 `AppendedText.SetBeforeText` 加前缀”；删“`dim_diameter` 前导 mark 残留别视图”（未复现）。
 - `references/gb-drawing.md` §未覆盖范围：局部放大 `detail_rect` 删“半径 ≈ 半对角 × 0.83”的数值规律，改“外扩系数是启发式、来源不可复现，边界圆须目视确认”。
 - `scripts/gb_drawing.py` `set_cjk_font`/`save_model_view` docstring 与 `TB_COLS` 注释：删“默认 blockfont 出空框/`Arial Unicode MS` 已加载但不渲染”“UF transform 静默不生效”“2.5 字高字宽约 2.1mm、21mm 只容 10 字符”三处与本次定论冲突的旧说法（仅注释，无行为变更）。
@@ -276,6 +276,8 @@
 - `scripts/tests/README.md`：`checks=` 形态那句由“同样不含 `_FAIL`”改为“整个 token 含 `_FAIL`、走 `:gate` 的 `_FAIL` 路径（与 46 相反）”；`stages=` 形态的编号由（17/19/20/21/31/32）补齐为 06/07/17/19/20/21/31/32/33。
 - `docs/wiki/01-architecture.md`：架构图里的标准层模块数 12 → 14。
 - `scripts/nxlib/audit.py`、`scripts/tests/47_structure_builders.py`、`scripts/tests/49_structure_inference.py`：删掉四处未使用的局部变量绑定（`errs`/`frame`/`n0`/`obs`），`ruff --select F` 归零；`docs/wiki/03-modules.md` 的 `audit` 行数 824 → 823。
+- `SKILL.md` §1 第 6 条 + `docs/wiki/05-boundaries.md`：参数类型不符的后果由“传错参数类型会损坏原生堆、进程直接死且无 traceback”改为“抛 `TypeError: No overload matches these arguments` / `AttributeError ... is not writable`、进程存活且带 traceback；`Internal error: memory access violation` 只来自已知坑位的特定调用”（禁止“猜签名逐个试”的结论不变）。
+- `SKILL.md` §7 第 10 条：`CHANGELOG.md` 补注“是人类文档，不参与 CONCISE/ROUTE 扫描，这条约定靠人工守，没有机器门”。
 
 ## [1.3.0] - 2026-10-26
 
