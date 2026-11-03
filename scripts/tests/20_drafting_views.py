@@ -366,14 +366,45 @@ def main():
         if cnt < DETAIL_VISIBLE_MIN:
             raise RuntimeError("detail view has %d visible objects (< %d) %s"
                                % (cnt, DETAIL_VISIBLE_MIN, err))
-        # the detail scale multiplies the parent scale (UF values, which are
-        # what actually plots; the .NET Scale property tracks the creation
-        # autoscale chain and reported 2.36 = 2.0 x 1.18 in earlier runs)
-        if abs(dsc - DETAIL_SCALE * psc) > 0.01:
-            raise RuntimeError("detail view scale %.4f != %.4f x parent %.4f"
-                               % (dsc, DETAIL_SCALE, psc))
+        # the detail scale is ABSOLUTE - it does not multiply the parent's (the
+        # UF value is the requested scale; the .NET Scale property tracks the
+        # creation autoscale chain instead and reported 2.36 in earlier runs).
+        # The parent is at UF 1.0 here, where the multiplicative reading would
+        # coincide, so the negative control below re-runs the request with the
+        # parent at UF 0.5.
+        if abs(dsc - DETAIL_SCALE) > 0.01:
+            raise RuntimeError("detail view scale %.4f != requested %.4f"
+                               % (dsc, DETAIL_SCALE))
         if not v.IsOutOfDate:
             print("DETAIL_FRESH ok")
+        # negative control: parent UF 0.5 + request 3.0 must read back 3.0
+        # (multiplicative would give 1.5).  The probe view may catch no
+        # geometry - only its scale is asserted; an empty detail view is legal
+        # (references/drafting.md B.4).
+        ufs.Draw.SetViewScale(below.Tag, 0.5)
+        ufs.Draw.UpdateOneView(sheet.Tag, below.Tag)
+        _, psc_half = ufs.Draw.AskViewScale(below.Tag)
+        if abs(psc_half - 0.5) > 0.01:
+            raise RuntimeError("could not put the parent view at UF scale 0.5 "
+                               "(read %.4f); the negative control cannot run"
+                               % (psc_half,))
+        r2 = ufs.Draw.AddDetailView(
+            sheet.Tag, below.Tag,
+            [bref.X - 5.0, bref.Y - 5.0], [bref.X + 5.0, bref.Y + 5.0],
+            3.0, [fref.X + 125.0, fref.Y - 120.0])
+        tag2 = r2[-1] if isinstance(r2, tuple) else r2
+        sheet.Open()
+        ufs.Draw.UpdateOneView(sheet.Tag, tag2)
+        sheet.Open()
+        _, dsc2 = ufs.Draw.AskViewScale(tag2)
+        print("DETAIL_SCALE_NEG parent_uf=%.4f request=3.0 uf=%.4f "
+              "mult_would_be=%.4f" % (psc_half, dsc2, 3.0 * psc_half))
+        if abs(dsc2 - 3.0) > 0.01:
+            raise RuntimeError("detail scale %.4f != requested 3.0 with parent "
+                               "UF %.4f: the detail scale multiplied the parent"
+                               % (dsc2, psc_half))
+        ufs.Draw.SetViewScale(below.Tag, 1.0)
+        ufs.Draw.UpdateOneView(sheet.Tag, below.Tag)
         return v
     stage("detail_view", s_detail)
 

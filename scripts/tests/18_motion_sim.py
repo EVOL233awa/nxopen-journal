@@ -9,7 +9,7 @@
 #   * 关节驱动（MotionEulerAngle1, Type=Constant, IntegrationType=Velocity, deg/s）
 #   * 运动求解（MotionSolutionBuilder Normal/Dynamic + Step + TimeExpression）
 #   * 结果提取：AskNumberOfAnimationFrames / AskForceResults /
-#     AskLinkTransfromForGivenFrame（2 参优先，3 参回退）
+#     AskLinkTransfromForGivenFrame（只有 2 参形式；3 参回退不存在）
 #
 # 检查只卡「运动学」（可靠）：曲柄恒速特性（每帧转角恒定）、摇杆摆角 60.02°、
 #   每转换向 2 次。
@@ -19,7 +19,10 @@
 #   （6×3 − 5×4 = −2），摇杆极限位（曲柄与连杆共线）邻域反力可能是冗余约束伪影。
 #   本用例只校验反力 API 通路（返回条数、数值有限非空）。物理可信的反力须改用
 #   静定平面刚体动力学模型另解 —— 见 references/motion.md §M.8。
-# ⚠ 不要用 AskVelocityResults/AskAccelerationResults（实测全返回 0.0）。
+# ⚠ 速度/加速度口径：AskVelocity/AccelerationResults(tag, MotionType, VC.MAGNITUDE,
+#   RF.ABSOLUTE) —— **四个实参缺一不可**（缺 MotionType 抛 AttributeError）；对 Link 与
+#   Joint tag 都返回逐帧值，接地件与驱动关节读 0 属物理正确。本用例的速度判据走帧变换
+#   差分 + 外部解析解，未用该接口。
 #
 # 解析预期由本文件外的整周独立扫描算出（Grashof: 20+70=90 ≤ 60+40=100，AB 为曲柄）。
 #
@@ -248,18 +251,14 @@ def _main():
                     % (jn, vc, str(e).splitlines()[0][:70]))
     say("FORCES ok=%d/%d finite=%s" % (nforce, 4 * len(joints), force_finite))
 
-    # ---- 8. 结果提取：位姿（2 参优先，3 参回退）----
+    # ---- 8. 结果提取：位姿（只有 2 参形式）----
     def extract_tf(tg, fr):
+        """3 参写法不存在：传第三参抛 SyntaxError，故不做回退。"""
         try:
             r = ufs.Motion.AskLinkTransfromForGivenFrame(tg, fr)
-            if r is not None and len(r) >= 12:
-                return list(r)
-        except Exception:
-            pass
-        try:
-            return list(ufs.Motion.AskLinkTransfromForGivenFrame(tg, fr, [0.0] * 12))
         except Exception:
             return None
+        return list(r) if r is not None and len(r) >= 12 else None
 
     def link_angles(cn):
         vals = []

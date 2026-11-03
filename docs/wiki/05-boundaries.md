@@ -23,7 +23,7 @@ NX 12 内嵌解释器不可替换，3.7+ 的语法与标准库特性全部不可
 | 无已打开部件 | `Parts.Work` 为 `None`，`UI.GetUI()`/`Parts.Display` 无意义（`SKILL.md` §2） | journal 自己新建或打开部件，保存用 UF 无参保存 |
 | 每次起独立 NX 进程 | 不能注入已打开的 GUI 会话 | 交付时另附交互回放步骤 |
 | stdout 全缓冲 | 崩溃时控制台输出全丢 | `say()` 逐行写文件 + `sys.stdout.flush()`（`SKILL.md` §1 第 5 条） |
-| 传错参数类型损坏原生堆 | 进程直接死、无 traceback（`SKILL.md` §1 第 6 条） | 签名来自 MCP 或 `dir()`，只调一次正确的那次；禁止"猜签名逐个试" |
+| 参数类型不符 | 抛 Python 异常（`TypeError: No overload matches these arguments`、`AttributeError ... not writable`），进程存活、有 traceback（`SKILL.md` §1 第 6 条） | 签名来自 MCP 或 `dir()`，只调一次正确的那次；禁止"猜签名逐个试"（真崩溃只来自已知坑位的特定调用） |
 
 ## 3. 平台与版本绑定
 

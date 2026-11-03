@@ -23,10 +23,14 @@
 
 不可达判据（每条都写进 `reason`）：
 
-* 支撑面宽度 < 2R + 0.5（圆角要在两侧各吃掉一个 R，撑不住就 NX 报
+* 支撑面宽度 < R + 0.5（圆角要在两侧各吃掉一个 R，撑不住就 NX 报
   `Radius is too large`，真正的原因是宽度）；
-* 二面角不在 20°–160°（更尖的边倒圆会自交，更平的边没有料可去）；
-* 跑道长度 < 0.5R（容不下一个常半径圆角）。
+* 二面角不在 20°–160°（更尖的边倒圆会自交，更平的边没有料可去）。
+
+跑道长度（容不容得下一个常半径圆角）不在这里判：`plan_runway` 的判据里
+没有那条边的长度（run 行虽带 `samples`/`bbox`，计划层没把它做成长度判据），
+所以它不产出 length 原因；那一档由 `structures.fillet_feasible` 的
+`min_len_factor=0.5` 按边几何给。
 
 只读：不吃 part 的写操作，不建几何、不改表达式。
 """
@@ -37,7 +41,6 @@ import nxlib.measure as ms
 # 通用阈值（不含任何零件量值）
 SUPPORT_WIDTH_MARGIN = 0.5     # 支撑面要多出的余量（mm）
 DIHEDRAL_RANGE = (20.0, 160.0)
-MIN_RUN_FACTOR = 0.5           # 跑道长度 / 半径 的下限
 
 
 def _round(v, nd=6):
@@ -75,9 +78,11 @@ def _face_width(face):
     三个维度 2/10/10，排序后丢掉的是真实的 2）。
 
     所以按面法向去掉法向分量：把包围盒的三个边长分别投影到面内两轴，取
-    两个面内跨度里的小值。这是上界估计（矩形面精确、曲面偏大），只用于
-    "宽度是否撑得住 R"这一档粗判；精确判据在 `structures.fillet_feasible`
-    里按边几何算。
+    两个面内跨度里的小值。这个估计**不是上界**：轴对齐矩形面精确、曲面偏大，
+    但斜置窄壁会严重低估——实测 10 mm 宽的 45° 支撑算得 2.93 mm（`dims[i]`
+    取的是包围盒全局轴跨度，乘 `1-|n[i]|` 把斜面的面内长度也压掉了）。因此
+    它只用于"宽度是否撑得住 R"这一档粗判；边界上的跑道必须回到
+    `structures.fillet_feasible` 按边几何复算。
     """
     box = face.get("box")
     n = face.get("dir")
@@ -218,14 +223,13 @@ def plan_runway(run, faces_by_tag, radius=None):
     # 不可达分两档，只有第二档能进 G7 的 BLOCKED：
     #
     #  * 宽度不足是**构建约束**——NX 的圆角要在支撑面上各吃掉一个 R，支撑比
-    #    2R 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明的是
-    #    "复刻难"而不是"这处圆角物理上不可达"。这一档记 `build_obstacle`，
+    #    R+0.5 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明
+    #    的是"复刻难"而不是"这处圆角物理上不可达"。这一档记 `build_obstacle`，
     #    是构建阶段的行动项（改支撑/改刀），不构成 BLOCKED 证据。
-    #  * 二面角越界与长度为 0 是**拓扑不可达**——近共面缝、相切缝、退化跑道
-    #    无论用什么机制都不该倒，这才是 BLOCKED 的证据。
+    #  * 二面角越界是**拓扑不可达**——近共面缝、相切缝无论用什么机制都不该
+    #    倒，这才是 BLOCKED 的证据。
     if not out["reachable"]:
-        topo = [x for x in out["reasons"]
-                if x.startswith("dihedral") or "length" in x]
+        topo = [x for x in out["reasons"] if x.startswith("dihedral")]
         out["build_obstacle"] = {
             "runway_faces": out["faces"],
             "radius": out["radius"],

@@ -952,12 +952,17 @@ def _edge_vertices(edge):
 
 
 def g4_blocked_reason(part, axis_index, side, delta, limit,
-                      corner_radius=3.175):
+                      corner_radius=None):
     """G4 不可达证据：极值顶点是否落在三面短边锐角上。
 
     只有当极值点同时邻接 ≥3 个面、最短邻边小于 0.5×R 时才记 BLOCKED；
     否则返回 blocked=False，让调用方继续判 FAIL。`projection_reduction_mm`
     是滚边能带来的包盒降低量；短边小于 0.5R 时按 0 记。
+
+    `corner_radius` 不给（None）时**不猜**：判据里那个 0.5R 需要真实的参考
+    圆角半径，编一个零件常数（如 3.175 = 25.4/8）会把公制件判歪。此时返回
+    `blocked=False` 并把 `corner_radius_basis` 写成"半径未知"，由调用方
+    显式给 `g4_corner_radius`（或从参考件环面组取主半径）。
     """
     axis_names = ("x", "y", "z")
     target = float(delta)
@@ -1009,8 +1014,17 @@ def g4_blocked_reason(part, axis_index, side, delta, limit,
             n1 = _canon(normals[j][1])
             angles.append(round(math.degrees(math.acos(
                 max(-1.0, min(1.0, abs(_dot(n0, n1)))))), 3))
-    short = min_edge is not None and min_edge < 0.5 * corner_radius
+    short = (min_edge is not None and corner_radius is not None and
+             min_edge < 0.5 * corner_radius)
     blocked = len(face_tags) >= 3 and short
+    if corner_radius is None:
+        basis = ("corner radius unknown (no reference torus/fillet radius); "
+                 "pass corner_radius or g4_corner_radius")
+        reason = "no three-face short-edge corner (radius unknown)"
+    else:
+        basis = None
+        reason = ("three-face corner with adjacent edge <0.5R"
+                  if blocked else "no three-face short-edge corner")
     return {
         "blocked": blocked,
         "axis": axis_names[axis_index],
@@ -1022,10 +1036,10 @@ def g4_blocked_reason(part, axis_index, side, delta, limit,
         "edge_lengths": [x["length"] for x in incident],
         "min_edge_mm": min_edge,
         "corner_radius_mm": corner_radius,
+        "corner_radius_basis": basis,
         "dihedral_angles_deg": angles,
         "projection_reduction_mm": 0.0 if blocked else None,
-        "reason": ("three-face corner with adjacent edge <0.5R"
-                   if blocked else "no three-face short-edge corner"),
+        "reason": reason,
     }
 
 
@@ -3179,8 +3193,12 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
         corner_r = max(ref_radii)
         corner_basis = "largest reference fillet radius"
     else:
-        corner_r = 3.175
-        corner_basis = "default 3.175"
+        # 没有参考环面也没有 g7_radii 时**不猜半径**：3.175（=25.4/8）是英制
+        # 来源的零件常数，拿它算 0.5R 会把公制件判歪。R 未知 → 无法判"三面
+        # 短边锐角"，G4 只能按 0.05 mm 判 FAIL，不升级成 BLOCKED。
+        corner_r = None
+        corner_basis = ("unavailable: no reference torus/fillet radius "
+                        "(pass g4_corner_radius)")
     if pos_d > bbox_pos_mm:
         ev = g4_blocked_reason(part_b, bd["position_axis"],
                                bd["position_side"], pos_d, bbox_pos_mm,

@@ -56,6 +56,9 @@ PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
 EXPECTED_CASES = 49
 EXPECTED_GATES = 46
 EXPECTED_PROBES = 3
+# 标准层规模：模块数与公开 API 数在 wiki 里有散文计数，一并钉住（同名函数跨模块
+# 只算一次，与 check_nolib 的 nxlib_apis() 同口径）。
+EXPECTED_API_COUNT = 221
 CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件
 PATH_RE = re.compile(r"`([A-Za-z0-9_./\\-]+\.(?:md|py|bat|yaml|png|prt|sim|fem))`")
@@ -496,8 +499,12 @@ def check_wiki():
         return
     pages = [n for n in sorted(os.listdir(WIKI)) if n.endswith(".md") and n != "README.md"]
     idx = read(index)
+    # 判据取 markdown 链接目标本身：子串包含会让 `[模块](03-modules.md.bak)` 这种
+    # 坏链照样过（`.md.bak` 仍含 `03-modules.md`），只有删整行才报。
+    idx_links = {os.path.basename(m.group(1))
+                 for m in re.finditer(r"\]\(\s*([^)\s]+)\s*\)", idx)}
     for n in pages:
-        if n not in idx:
+        if n not in idx_links:
             problems.append("WIKI %s 未在索引页里链接" % n)
             print("  FAIL 索引页未链接 %s" % n)
     blob = wiki_text()
@@ -618,6 +625,21 @@ def check_wiki():
         if not re.search(pat % value, blob):
             problems.append("WIKI 的%s数应为 %d（与 check_repo.py 常量同步）" % (label, value))
             print("  FAIL %s数应为 %d" % (label, value))
+
+    # 2b) 标准层规模：wiki 散文里的"14 模块 / 221 个公开 API"没有名册背书（名册只保证
+    #     每个模块有一行，改错数字照样绿），按常量核对。
+    modules_now = len([n for n in os.listdir(NXLIB)
+                       if n.endswith(".py") and n != "__init__.py"]) if os.path.isdir(NXLIB) else 0
+    for value, label, pat in ((modules_now, "模块", r"(\d+)\s*(?:个)?\s*模块"),
+                              (EXPECTED_API_COUNT, "公开 API", r"(\d+)\s*个公开 API")):
+        found = [int(x) for x in re.findall(pat, blob)]
+        if value not in found:
+            problems.append("WIKI 未出现当前%s数 %d（数字变了要同步 wiki）" % (label, value))
+            print("  FAIL 缺当前%s数 %d" % (label, value))
+        stale = sorted(set(v for v in found if v != value and v >= 5))
+        if stale:
+            problems.append("WIKI 出现过期%s数 %s（当前 %d）" % (label, stale, value))
+            print("  FAIL 过期%s数 %s" % (label, stale))
 
     # 3) 行号锚点禁用：行号随维护漂移，wiki 会静默说谎
     line_refs = 0

@@ -5,8 +5,9 @@
 Touch 约束网络（10 号 s3 决定性配方：约束必须先 DoUpdate 再进网络求解）。
 
 已知限制（10 号实测）：Constraint.Type 属性只读（用 ConstraintType）；
-Distance 偏置 setter "Not yet implemented"——定位走 AddComponent placement
-或 Touch 对。
+Distance 偏置用 con.Expression.RightHandSide = "50"（实测生效并回读 50），
+con.OffsetRightHandSide setter 不可用（传 str 报 Not yet implemented、
+传 float 报类型错）。定位仍走 AddComponent placement 或 Touch 对。
 """
 import NXOpen
 import NXOpen.Positioning
@@ -28,6 +29,11 @@ def identity_matrix():
 
 def add_component(assy, part_path, origin, layer=1):
     """按绝对坐标加组件（AddComponent(path, "1", "MODEL", origin, 单位阵, layer)）。
+
+    实参第 2 位是引用集名、第 3 位是组件名（已核对；第 4 位起未逐位验证）。
+    这里沿 04/10 号验收过的写法传 ("1", "MODEL")：`"1"` 作引用集名是非法值、
+    被静默回退成 MODEL，`"MODEL"` 落到组件名上——功能可用，但没真正指定引用集。
+    要显式写就传 (path, "MODEL", "LINK_A", ...)，组件名也可加完后 SetName()。
 
     返回 (component, status)。
     """

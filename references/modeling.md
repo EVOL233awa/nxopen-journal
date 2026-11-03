@@ -45,11 +45,13 @@
 body.Layer = 5  # 实体可写；Feature 没有 .Layer（AttributeError），
   # 按特征归层只能在建它的那一层里设它产出的体
 wp.Layers.WorkLayer = 1  # 工作层
-wp.Layers.SetState(5, NXOpen.Layer.State.Hidden, True)  # ⚠ 第1参必须是 int（传 [5] → 0xC0000374 堆崩）
+wp.Layers.SetState(5, NXOpen.Layer.State.Hidden, True)  # ⚠ 第1参必须是 int；传 [5] / "[5]" 报
+                                                       # TypeError: No overload matches these arguments（进程存活，不崩）
 st = wp.Layers.GetState(5)  # Layer.State: Hidden=3 / Visible=2 / Selectable / WorkLayer
 n  = len(wp.Layers.GetAllObjectsOnLayer(5))
 wp.Layers.MoveDisplayableObjects(5, [body])  # 搬层，之后 GetAllObjectsOnLayer 计数 +1
-cat = wp.Layers.CreateCategory("PT_CAT", "probe category", [1, 2, 3, 4, 5])
+cat = wp.LayerCategories.CreateCategory("PT_CAT", "probe category", [1, 2, 3, 4, 5])
+  # ⚠ CreateCategory 在 wp.LayerCategories 上（wp.Layers 没有该方法 → AttributeError）
 cat.SetState(NXOpen.Layer.State.Hidden)  # 整类开关：成员层状态立即变 3
 members = cat.GetMemberLayers()  # → [1,2,3,4,5]
 ```
@@ -133,16 +135,23 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 
 ### 1.14 拉伸拔模与分段回转（结构级 builder 的两条承重配方）
 
-**拔模**：`ExtrudeBuilder.Draft` 是 `MultiDraft`。先设类型再设角度，两步缺一不可——只设角度提交成功、无告警、体积与直壁逐位相同：
+**拔模**：`ExtrudeBuilder.Draft` 是 `MultiDraft`。类型与角度两个都要设，但**先后顺序无关**（先类型后角度、先角度后类型逐位相同）；只设角度不设类型 = 静默无效。
 
 ```python
 b.Draft.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart
 b.Draft.SetDraftAngle("DRAFT_A")     # Angle 单位的命名表达式
 ```
 
-拔模后起剖面在拉伸起点、按半角收缩；量得轮廓在这两者之间。验收只能对锥台解析值：矩形截面 `V = h/3·(A₀ + A₁ + √(A₀A₁))`，回转截面 `V = πh/3·(r₀² + r₀r₁ + r₁²)`。体数、面数、告警都区分不出"拔模没生效"。
+拔模后起剖面在拉伸起点、按半角收缩；量得轮廓在这两者之间。验收只能对**等距收缩**的解析值（α 为拔模角、`t = tanα`，起剖面在拉伸起点）：
 
-**分段回转**：`revolve` 走 UF `Modl.CreateRevolved`，360° 只吃凸轮廓；带台阶/凹陷的整条轮廓报 `Cannot create Swept geometry`。按 (t, r) 轮廓切段、逐段回转再 unite，台阶落在段界上，不被平滑掉：
+```
+矩形截面  V = abh − (a+b)h²·t + (4/3)h³·t²      # 等价于 h/6·(A₀ + 4A_mid + A₁)
+回转截面  V = πh/3·(r₀² + r₀r₁ + r₁²)            # 回转体是相似截面，h/3 棱台式对它成立
+```
+
+`h/3·(A₀ + A₁ + √(A₀A₁))` 只对**相似截面**的锥台成立，一整圈均匀拔模的矩形块截面是**等距偏置矩形** `(a−2zt)(b−2zt)`（`t = tanα` 带符号、z 自固定面沿拔模方向量），不是相似矩形，用 h/3 式有系统偏差（120×60×40、四壁 +5°，固定面在拔模方向的一端：NX 263456.4290 vs h/3 式 263411.6808，差 −44.75；按本文档的带符号约定该读数对应 **+5°**，写成 −5° 会得 313849.8991，与 NX 读数不符）。体数、面数、告警都区分不出"拔模没生效"。
+
+**分段回转**：`revolve` 走 UF `Modl.CreateRevolved`，360° 吃凸轮廓，也吃**单调的带台阶/凹陷整条轮廓**（整条回转成功且体积等于解析值）；失败的是自交轮廓或越过旋转轴的轮廓（`Cannot create Swept geometry`）。按 (t, r) 轮廓切段、逐段回转再 unite 仍是可选路线：台阶落在段界上，不被平滑掉：
 
 ```python
 res = structures.revolved_profile(wp, [(0.0, 20.0), (10.0, 20.0),
@@ -150,7 +159,7 @@ res = structures.revolved_profile(wp, [(0.0, 20.0), (10.0, 20.0),
                                  name="SHAFT")   # r=0 的点在轴上，零长度段自动跳过
 ```
 
-同一阶梯轴，64 边形 z 带堆叠 131 面、分段回转 5 面（26.2×），体积一致——**面数爆炸是构造选择，不是网格化偶然**（`tests/47`）。（同 §2.2 的"共面堆叠要用表达式定起点"；那里是层的起点，这里是层的构造方式。）
+同一阶梯轴，64 边形 z 带堆叠 131 面、分段回转 5 面（26.2×），体积一致——**面数爆炸是构造选择，不是网格化偶然**（`tests/47`）。（同 §4.3 的"共面堆叠要表达式定起点把层错开"；那里是层的起点，这里是层的构造方式。）
 
 ## 2. 特征配方
 
@@ -165,7 +174,7 @@ blk.CommitFeature(); blk.Destroy()
 # 坐标必须 float（0.0），长度必须 str（"100"）；SKILL.md §3 路线约束 7/8。
 ```
 
-方块布尔用 `SetBooleanOperationAndTarget`（§2.5）：
+方块布尔用 `BlockFeatureBuilder.SetBooleanOperationAndTarget`（§2.5；该方法**只在方块 builder 上**，`BooleanBuilder` 没有）：
 
 ```python
 cut = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)
@@ -191,12 +200,12 @@ cut.CommitFeature(); cut.Destroy()
 - 显式设 `Direction`（否则 `No axis selected`）。
 - `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
-- **截面必须在新建件里建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`。在打开的原件上下文里对同一组曲线调 `AddToSection` 抛 `NXException: Internal error`（与 helpPoint 无关，换料内点同样报错）。
+- **截面在新建件或打开的原件里都能建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`；已打开的原件上下文里同样能 `AddToSection` 并拉伸（提交成功、体数 1）。保存/重开后**旧 tag 不可解析**（`cannot resolve all curves`），要用重新查到的曲线——本会话没构造出"跨保存复用同一组持久曲线"的样本，该报错的场景未取到证据。
 - **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔；体积与解析值比较时扣掉多边形化误差。
-- **每环必须精确闭合**：内环留 0.03 mm 缝时该环被静默丢弃，孔变实心；外环留 0.03 mm 缝时链被错误闭合，体积异常增大。截面环拼接后要校验首末点重合。
+- **每环必须精确闭合**：内环留 0.03 mm 缝时不是"静默丢弃"——外环轮廓被当整块填满，孔不出现，且缝隙环另生成一张片体、**体数变 2**（用体数断言能发现）；外环留 0.03 mm 缝时链被错误闭合，体积异常增大。截面环拼接后要校验首末点重合。
 - **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
-- **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`；先 `d.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart`（或 `SimpleFromProfile`）再 `d.SetDraftAngle("<deg>")`，正值向拉伸端收缩。只设角度不设类型 = 静默无效：提交成功、无告警、体积与直壁逐位相同；生效判据 = 体积显著低于直壁。
-- `helpPoint` 取料内一点；落在曲线上的点不可用。
+- **拔模角度**：`ExtrudeBuilder.Draft` 是 `MultiDraft`；`d.DraftOption = NXOpen.GeometricUtilities.SimpleDraft.SimpleDraftType.SimpleFromStart`（或 `SimpleFromProfile`）与 `d.SetDraftAngle("<deg>")` 都要给，**先后顺序无关**（两种顺序体积逐位相同），正值向拉伸端收缩；只设角度不设类型 = 静默无效：提交成功、无告警、体积与直壁逐位相同；生效判据 = 体积显著低于直壁。
+- `helpPoint` 取料内一点（落在曲线上或料外的点同样能提交，体积与料内点一致）。
 
 ### 2.2b 多截面放样（ThroughCurves）
 
@@ -215,14 +224,14 @@ tb.CommitFeature(); tb.Destroy()
 - `CreateSectionsUsingCurves` 返回 `Section` 对象列表（不是元组）；参数依次为曲线、`LoopOption.Separate`、链容差、距离容差、角度容差（弧度）。
 - 截面必须同向、同起点、同段数；方向翻转会让放样自交。
 - 闭合环不要做成单条周期闭合样条：拆成“开链 + 接缝处一段”两个截面元素再放样，否则 `ThroughCurves` 报 "Unable to reference edge"（同一对截面拆缝后可放样）。
-- 相邻截面面积突变（接近 3 倍）时，原始截面直接放样报 "Cannot create B-surface by through curves"；重采样后可提交，但常得到体积 0 的退化实体，必须按下面的体积校验走。
+- 相邻截面面积突变（接近 3 倍）可以直接放样成实体（体数 1、`IsSolidBody=True`、体积 5731.8240，非退化），不是必报 "Cannot create B-surface by through curves"；重采样不是前提。但**提交后仍必须查体积**（下一条）。
 - 段数/类型不一致的截面先重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。这条折线是放样输入，不是交付边界：放样后按面表半径重建解析圆弧，等截面件直接用直线 + 圆弧建截面（见 `reverse-engineering.md` §2）。参数化按截面相似度选：
   - 弧长等分 + 起点对齐上一站：相邻两站形状相近时用。
   - 绕形心等角：面积/拓扑变化大时用。面内取 N 条等角射线与闭合环求交，每角取最外交点；索引 k 即固定角度，无需起点对齐。基向量必须是测站平面内的两轴（常半径站族的法向是径向，面内轴为切向与 z）。该参数化只对星形截面保形，凹口会被最外交点填平；保留凹口时先放样外轮廓再切凹入区。
 - **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做。
 - **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低；在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，首站即可恢复。
 - **`BodyPreference=Solid` 也可能出片体**：提交后查 `IsSolidBody`；片体不可与实体合并（"Cannot add solids and sheets"）。
-- 两段实体合并：NX12 批处理里 `BooleanBuilder.Target/Tool/Tools` 会静默不执行（体数、体积都不变），`Tools.Add` 也不报错；用 `wp.Features.CreateUniteFeature(target, False, [tool], False, True)`。共面接触被拒（"zero wall thickness"/"completely outside"）。两段在同一区域体积重叠但侧面是同一张放样面时也失败（"Intersecting target and tool faces may have problems that cause intersection gaps"），此时不要加偏置领圈硬拼，改做一张连续放样；定位截面（上一条）是替代方案。合并前给 0.5–1 mm 重叠，合并后断言体数 = 1 且体积单调增加。合并报 intersection gaps 时把截面折线减到只保留棱线点（或改一条光滑闭合样条）；共面报 zero wall thickness 时把人工封口面错开 0.1 mm。
+- 两段实体合并：`BooleanBuilder` 的 `Target`/`Tool`/`Operation` 生效（48000→40000，体数 1）；`Tools.Add` 同样可用。完全贴合的**共面**接触 Unite 也能合体（两块 40×40×20 贴合 → 体数 2→1、体积恰 2×32000）；但下料侧要当心：面对面的工具体做 **Subtract** 报 `Tool body completely outside target body`（是报错，不是静默留两个体）。仍建议合并前给 0.5–1 mm 重叠，合并后断言体数 = 1 且体积单调增加。合并报 `Intersecting target and tool faces may have problems that cause intersection gaps` 时把截面折线减到只保留棱线点（或改一条光滑闭合样条）；报 `zero wall thickness` 的是**相切**工具体（壁厚为 0），把刀具体与目标面错开 0.1 mm，不要靠调整布尔顺序。
 - 提交前逐张校验闭合与方向；`BodyPreference=Solid` 出实体，否则出片体。
 - 端部形状（圆头、C 形开口）直接进末截面，或按端面轮廓单独切除；不要用球冠/方块求交二次修形。
 
@@ -237,7 +246,7 @@ hb.HoleLocation = NXOpen.Point3d(x, y, z)
 hb.CommitFeature(); hb.Destroy()
 ```
 
-⚠ **孔位贴边 = 零壁厚**（`... zero wall thickness`）；孔边与轮廓之间留出壁厚，不要把孔放到轮廓边上。
+⚠ **孔壁与轮廓相切 = 零壁厚**（`... zero wall thickness`）；孔边与轮廓之间要留壁厚。孔心落在轮廓边上、甚至孔有一半出界，都能提交（会切出开口），报错的只是壁厚真为 0 的相切情形。
 
 锥孔（functional cone）用 UF 旋转一条凸梯形剖面切成型，不用 Hole 特征：
 
@@ -254,11 +263,11 @@ feats = ufs.Modl.CreateRevolved(tag_list, ["0.0", "360.0"], c, a,
 wp.Features.CreateSubtractFeature(target, False, tool_bodies, False, True)
 ```
 
-- 凸梯形可以有两条边落在旋转轴上（360° 旋转可用）；凹剖面/带台阶剖面才报 "Cannot create Swept geometry"。
+- 凸梯形可以有两条边落在旋转轴上（360° 旋转可用）；自交或越过旋转轴的剖面才报 `Cannot create Swept geometry`。
 - 切完用 `ufs.Modeling.AskFaceData` 回读锥面：type 17、`rad_data` 即半角（弧度）、`radius` 在面基准点处。与孔表比较半径时，把两侧都归一到同一轴向站（面基准点），不要直接比原始 `radius`——UF 的面基准点随修剪边界移动。
 - 旋转轴方向与孔表 axis 相反时，`AskFaceData` 的 dir 会翻转；比较轴向用绝对值点积。
 - **孔轴与板法向不同（斜耳孔）时，耳座绕孔轴回转成圆柱再并**：棱柱只建到耳座切点，圆柱半径与轴向区间取面表；把棱柱直接沿板宽拉伸会把圆耳座包成方块，端站截面多料。反例与判据见 `reverse-engineering.md` §2.2/§4.2。
-- **孔包的入口延伸与锪面深度**：`HolePackageBuilder` 的刀具在孔位前固定延伸约 2 mm，量得孔壁起点更靠近入口面时改用独立圆柱切除体按轴向区间建；锪面形式的孔深必须大于 `(锪径−孔径)/2/tan(半角)`，通孔已存在时也写成该值加 1 mm。细则见 `reverse-engineering.md` §8。
+- **孔包的入口延伸与锪面深度**：`HolePackageBuilder` 的刀具**没有固定的 2 mm 入口延伸**——入口延伸量随孔位/孔深在 0.000–5.000 mm 之间变（孔位离入口面越近越小，孔已通到顶面时为 0）；量得孔壁起点与设计不符时，改用独立圆柱切除体按轴向区间建；锪面形式的孔深必须大于 `(锪径−孔径)/2/tan(半角)`，通孔已存在时也写成该值加 1 mm。细则见 `reverse-engineering.md` §8。
 - **锥底沉孔**：沉孔底面是锥面时，把沉孔深度减 `t`，用一把 45° 锥刀（底径 = 孔壁 − 2·t、顶径 = 孔壁、高 `t`）切底；不加实心锥填角，会堵孔并报 "zero wall thickness"。
 
 十字辅助线：
@@ -288,7 +297,7 @@ for rc in cross:
 ```python
 rule = wp.ScRuleFactory.CreateRuleEdgeDumb(edges)  # 或 CreateRuleEdgeFace(faces)
 col = wp.ScCollectors.CreateCollector()
-col.ReplaceRules([rule], False)  # 第二参数必须 False（SKILL.md §3）
+col.ReplaceRules([rule], False)  # 第二参是 createRulesWoUpdate，与选择集无关（SKILL.md §3）
 eb = wp.Features.CreateEdgeBlendBuilder(NXOpen.Features.Feature.Null)
 eb.AddChainset(col, "2.0")  # ⚠ 没有 Radius 属性，半径经 AddChainset 传
 eb.CommitFeature(); eb.Destroy(); col.Destroy()
@@ -301,7 +310,7 @@ body = [b for b in part.Bodies][0]
 faces = [f for f in body.GetFaces() if f.SolidFaceType == NXOpen.Face.FaceType.Cylindrical]
 rule = part.ScRuleFactory.CreateRuleEdgeFace(faces)  # 选中孔口棱边
 collector = part.ScCollectors.CreateCollector()
-collector.ReplaceRules([rule], False)  # 第二参数必须 False
+collector.ReplaceRules([rule], False)  # 第二参是 createRulesWoUpdate，与选择集无关
 builder = part.Features.CreateChamferBuilder(NXOpen.Features.Feature.Null)
 builder.Option = NXOpen.Features.ChamferBuilder.ChamferOption.OffsetAndAngle
 builder.FirstOffset = "1.0"
@@ -313,7 +322,7 @@ builder.Destroy(); collector.Destroy()
 
 - ⚠ `Edge.GetVertices()` 返回 `Point3d` 列表。
 - ⚠ `ChamferBuilder.FirstOffset` / `.Angle` 是普通 `str` 属性，不是 `Expression` 对象。写 `builder.FirstOffset.RightHandSide = ...` 会抛 `'str' object has no attribute`；要给命名表达式驱动，直接赋表达式名（`builder.FirstOffset = "TIP_CHAMF_L"`），特征树里会记成该名字的引用，改表达式仍然驱动几何。
-- `EdgeBlend` 在角点处不能逐条相邻边倒圆：同一顶点的相邻边要放进同一个 ChainSet，否则报 "Unable to terminate the blend faces"。FaceBlend 走两支撑面，不共享这条限制（见下）。
+- `EdgeBlend` 在角点处可以逐条提交：同一顶点的相邻边逐条独立 `AddChainset` 与并进同一个 ChainSet **都成功**（3 条相邻边各 R=1/3/5 均 ok）；`Unable to terminate the blend faces` 由**半径大于支撑面宽**触发（判据见下文 FaceBlend 前置检查），与"是否同 ChainSet / 边是否闭合"无因果。FaceBlend 走两支撑面，另有一条半径与支撑宽的判据（见下）。
 - **双瓣耳/眼**：矩形块沿孔轴拉伸，平台两侧各一条顶边倒 `R_EYE`，肩面应得到解析圆柱（类型 16）；平台半宽用系统式（`W_HALF = H_LOBE + R_EYE`）。端面整圈倒 `R_END` 得到环面（major = R_EYE − R_END、minor = R_END）。
 - **口部双圆角顺序**：布尔减后在目标体口边加，先下口、后上口；每次 blend 后跑 no-op `DoUpdate`，面数不变、无告警。腔顶凹边增大半径会增加体积，凸口减小体积；同一表达式驱动多个体时按体拆名。
 - 验收：孔口倒圆/倒角后体积下降；双棱边产生 2 个面、单直边 1 个面；倒角锥面 type **17**、直边倒角平面 22。
@@ -323,19 +332,19 @@ builder.Destroy(); collector.Destroy()
 ```python
 from nxlib.modeling import face_blend, face_blend_edge
 
-feat = face_blend(wp, face_a, face_b, 1.5875, True, True)
-feat, rev = face_blend_edge(wp, edge, 1.5875)  # 未知法向组合时自动试
+feat = face_blend(wp, face_a, face_b, R_BLEND, True, True)   # 半径用命名参数/表达式，不要写字面英寸换算值
+feat, rev = face_blend_edge(wp, edge, R_BLEND)  # 未知法向组合时自动试
 ```
 
 - 建造器固定 `BlendTwoFace` + `FirstFaceCollector`/`SecondFaceCollector` + `CircularCrossSection.SetRadius`；`BlendFromEdges` 只给边链会报 `combination ... not sufficient`。不要设 `OverflowOption.None`（NX12 无此枚举）。
 - 法向组合不固定：凸平面-平面、凹口通常 `(True, True)`；凸圆柱-圆柱常见 `(False, False)`。`face_blend_edge` 按 `(TT, FF, TF, FT)` 各在自己的 undo mark 内试，失败回滚，返回成功的 `(rev_a, rev_b)` 并可用 `trace` 记录。
-- 前置检查：**至少两条支撑面各自 ≥ `R + 0.5 mm`**（一个滚球圆角在两侧各吃掉一个 R，一条跑道旁常挂着尽端面与侧壁，按"最窄邻面"判会把可倒的跑道误标成障碍）、边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错；回建模加宽/重建支撑面，不要降半径。
+- 前置检查：**两条支撑面各自 ≥ R**——圆角在两侧各吃掉一个 R；FaceBlend 支撑宽 1.6 mm / R=1.6 可倒，支撑宽 1.5 mm / R=1.6 报 `Radius is too large for the faces selected`，没有 0.5 mm 余量（`structures.fillet_feasible` 也是 `width < R` 才拒）。`transitions.py` 与 `reverse-engineering.md` 多处按 ≥ `R + 0.5` 判，与本条读数口径不同，待统一。其余：边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错（`Unable to terminate the blend faces` 是 EdgeBlend 的文案，FaceBlend 不抛）。判据按**最窄邻面**取会误杀：一条跑道旁常挂着尽端面与侧壁；回建模加宽/重建支撑面，不要降半径。
 - 开放链逐段 `face_blend_edge`，每段成功后按几何重找下一条边；闭合矩形窗口四段可逐段提交、0 告警。角部若原件是环面，另建角过渡；不要用直线段圆角冒充整圈。
 - 结果面型：直边平面-平面 → type 16、`radius` = R；圆形平面-圆柱 → type 19、`rad_data` = R、`radius` = 主半径；圆柱-圆柱可能是 type 43。验收按半径/环面主副半径 + 体积变化。
 - 命名表达式可驱动 `CircularCrossSection.SetRadius`：×1.1 后体积变化、还原后体积差 0、`DoUpdate` 0 错；这是可编辑性门的要求。
 - **B 曲面只在真二面角上做**：放样条带之间的近相切缝是折面近似，FaceBlend 会“成功”但只生成近零体积薄片，不代表圆角已建；该处应回建模重建支撑面。
 
-**开放链圆角刀（EdgeBlend 的替代）**：边不闭合（端缘折面链、开放轮廓边）时 `EdgeBlend` 提交会存下 `Unable to terminate the blend faces`，且没有 API 能清——不要在真实零件上试。用 `nxlib.modeling` 的滚圆刀：
+**开放链圆角刀（EdgeBlend 的替代）**：`EdgeBlend` 在开放链上**不必然失败**——`Unable to terminate the blend faces` 由半径大于支撑宽触发（上一条），不是"边不闭合"本身。需要**逐段独立提交、失败即回滚、每段另按几何重找下一条边**的场合（端缘 2–5 mm 折面链、开放轮廓边），用 `nxlib.modeling` 的滚圆刀：
 
 ```python
 from nxlib.modeling import apply_roll, roll_edge
@@ -357,11 +366,16 @@ ok, body = apply_roll(wp, body, edge, radius)
 
 ### 2.5 布尔与孔壁识别
 
-**布尔路线**：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)` → `SetBooleanOperationAndTarget(Subtract/Unite, target)` → `CommitFeature()` → 断言体数。方块布尔只用这条入口；`BooleanOption.Type`+`SetTargetBodies` 会静默不生效（体数 1→2）。
+**布尔路线分两类，别混用**：
 
-- **目标体与刀具按 Tag 识别**：每次访问 `part.Bodies` 返回新的包装对象，用 `is` 比较会选错体；操作前记下 tag 集，操作后取新增 tag 的体作为结果，刀具只取本次新建的体。
+- **方块布尔**：`CreateBlockFeatureBuilder(Feature.Null)` → `SetOriginAndLengths(...)` → `SetBooleanOperationAndTarget(Subtract/Unite, target)` → `CommitFeature()`。`SetBooleanOperationAndTarget` 是 **BlockFeatureBuilder** 的方法。同 builder 上的 `BooleanOption.Type`+`SetTargetBodies` 会静默不生效（体数 1→2，无异常）。
+- **独立布尔**：`CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)` → `Target` / `Tool` / `Operation` → `CommitFeature()`。`BooleanBuilder` **没有** `SetBooleanOperationAndTarget`（照写报 AttributeError）；`Tool`/`Tools.Add` 都生效（48000→40000）。
 
-- 工具体与目标体必须**真正体积相交**；面/点/线接触会静默留两个体，工具体在外报 `Tool body completely outside target body`。
+两条路都要 `CommitFeature()` 后**断言体数**。
+
+- **目标体与刀具按 Tag 识别**：两次访问 `part.Bodies` 返回的是同一批包装对象（`is` 为 True、Tag 相同），"每次都是新对象"不成立；仍建议操作前记下 tag 集、操作后按新增 tag 取结果体，刀具只取本次新建的体——这样不依赖包装对象的身份语义。
+
+- 工具体与目标体必须**真正体积相交**；工具体在外报 `Tool body completely outside target body`。共面贴合的 Unite 可用（体数 2→1、体积精确），但面对面的工具体做 Subtract 也报 `Tool body completely outside target body`（是报错，不是静默留两个体）。
 - 相切工具体被拒（`... zero wall thickness.`）：留间隙或先合并；缩小凸台直径留出间隙，不要靠调整布尔顺序。
 - 孔壁识别：遍历 `GetFeatures()` 找 `FeatureType == "SUBTRACT"` 后取 `GetFaces()`，或 Hole 特征用 `AskFaceData` 按半径过滤（§5）；不要按"所有圆柱面"过滤。
 - 依次合并每步接触当前材料；命名体数与实际体数不符时查孤立体。
@@ -443,7 +457,7 @@ pb.CommitFeature(); pb.Destroy()
 
 - `CountOfInstances` 含种子：角步距 = `360/(CountOfInstances-1)`；`z=p·θ/2π`。
 - `SizeOptions`：`AngleHelixPitchAndSpan / AngleHelixPitchAndTurns / CountAngleDistance / CountHelixPitchAndSpan / CountHelixPitchAndTurns`。
-- ⚠ `RotationAxis` 必须给；留空不报错但无副本，用体数判定。
+- ⚠ `RotationAxis` 必须给；留空时体数不增（无副本），且更新报告会记 `Instance[i] Error: Parent features failed to update`——不是静默无错，别把"体数不变"当成唯一症状。
 
 ### 3.1c 正多边形阵列（`PatternType=Polygon`）
 
@@ -549,8 +563,8 @@ feats = ufs.Modl.CreateRevolved(
     [0.0, 0.0, 0.0], [1.0, 0.0, 0.0],  # 原点 + 旋转轴方向
     NXOpen.UF.ModlFeatureSigns.NULLSIGN,  # ⚠ 枚举是 ModlFeatureSigns，不是 FeatureSigns
 )
-# ⚠ 剖面含落在轴上的边时其余弦凸剖面可用（360° 可用）；凹剖面或带台阶/凹陷剖面报 "Cannot create Swept geometry"。
-#   复杂旋转体 = 多段凸剖面旋转 + BooleanBuilder Unite。
+# ⚠ 剖面含落在轴上的边时可以 360° 回转（成功、体积等于解析值）；自交或越过旋转轴的剖面才报 "Cannot create Swept geometry"。
+#   复杂旋转体 = 多段回转 + 布尔 Unite（分段仍可选，好处是台阶落在段界不被平滑）。
 ```
 
 ### 3.4 抽壳（Shell）与拔模（Draft）（`scripts/tests/15_shell_draft.py`）
@@ -565,7 +579,7 @@ sb.Tolerance = 0.01  # ⚠ 默认 0.0
 sb.Body = body
 sb.SetDefaultThickness("2.0")  # ⚠ 厚度传 str 表达式
 col = wp.ScCollectors.CreateCollector()
-col.ReplaceRules([wp.ScRuleFactory.CreateRuleFaceDumb([top_face])], False)
+col.ReplaceRules([wp.ScRuleFactory.CreateRuleFaceDumb([top_face])], False)  # 第二参 createRulesWoUpdate，与选择集无关
 sb.RemovedFacesCollector = col  # 要"挖掉"的面；不设 = 闭腔抽壳
 sb.CommitFeature(); sb.Destroy(); col.Destroy()
 ```
@@ -609,12 +623,12 @@ V = V0 − 64000·t + (32000/3)·t²  # V0=120000（100×60×20）
 uc = wp.UnitCollection
 units = [uc.FindObject(n) for n in
          ("SquareMilliMeter", "CubicMilliMeter", "Kilogram", "MilliMeter", "Newton")]
-mp = wp.MeasureManager.NewMassProperties(units, [0.99], [body])  # ⚠ 容差是 list，不是标量
+mp = wp.MeasureManager.NewMassProperties(units, [0.99], [body])  # 容差传 [0.99] 或标量 0.99，读数逐位相同
 print("V=%.3f A=%.3f C=(%.3f,%.3f,%.3f)" % (mp.Volume, mp.Area, mp.Centroid.X, mp.Centroid.Y, mp.Centroid.Z))
 ```
 
 - 基线（100×60×20）：`V=120000.000`、`A=18400.000`、质心 `(50,30,10)`。
-- ⚠ `tolerances` 是数组 `[0.99]`（签名 `(Unit[], Double[], IBody[])`）；多体测量返回各体之和。
+- 容差签名是 `(Unit[], Double[], IBody[])`，习惯写 `[0.99]`；**标量 0.99 也被接受**（体积/面积读数与 `[0.99]` 逐位相同），"必须数组、否则报错"的说法不成立。多体测量返回各体之和。
 - 无 `uf.Modl.AskBoundingBox`；包围盒用 `GetEdges()` → `GetVertices()` 取 min/max。
 
 ### 3.6 去参（改哑体，慎用）
@@ -635,7 +649,7 @@ res = involute_gear(wp, m=2, z=20, alpha_deg=20, b_width=20, bore_d=20,
                     hub_d=40, hub_len=30, z_offset=0.0)
 ```
 - 无变位、无根切保护；改 `p_gear_*` 表达式可联动；`hub_d`/`hub_len` 为 0 时不建轮毂。
-- 验收：34 号用例（体积对 z 敏感 ~5%/齿，容差 ±2%）；齿面表达式不能写 `atan`。
+- 验收：34 号用例（z=20/m=2/α=20°/B=20/孔Ø20，扣孔体积对解析值 18238.9 mm³ 带 ±2%）。齿数灵敏度是**约 14%/齿**（z=20→21 由 18239.150 变 20794.993，+14.013%），不是 ~5%/齿；齿面表达式不能写 `atan`。
 
 ## 4. 草图与表达式
 
@@ -671,7 +685,7 @@ print(template.clean_cells(cells))                  # 干净格/总格
 - `edit_check` 是"改值 → DoUpdate → 读数 → 还原 → 再读"：`update_errors`/`restore_errors` 都必须是 0，`diff_snapshot(base, after)` 只列变化项（体积/面数/包盒/告警），本结构 `probe` 读数用来证明"动的是该结构"。
 - 还原后体积/面数与基线不逐位相同 → 更新过程重写了几何，该参数不适合直接驱动；先改引用，不要加豁免。
 - 单格异常（如 `Update undo happened`）记 `invalid` 继续下一格，整张矩阵跑完再归因；一格崩掉整轮等于没有可编辑性证据。
-- 局部性判据：无关结构的读数变化在 STL 噪声内（1e-6 相对或 1e-5 mm 量级）；超了就是引用串了结构。
+- 局部性判据按**库里的实际口径**取，不要另立一套：`audit.locality` 判"越界站"用 `max(area_tol, rel_tol×面积)`，默认 `area_tol=1.0`（mm²）、`rel_tol=0.005`；形状变化用对称差（union−inter）栅格量。`template.diff_snapshot` 对体积/体数/面数是**严格不等**、对包盒用 1e-4 mm 阈值。局部性没有"相对 1e-6 / 1e-5 mm"这套阈值（`template.edit_check` 里的 1e-6 是**还原体积相等的绝对判据**，不是局部性阈值）。
 - 矩阵只覆盖挑出来的参数，交付前另做全表普查：每个命名表达式 +10% → 体积响应，live/named ≥0.9、broken=0；派生量不进编辑集（改其 RHS 会破坏公式，还原报变量不存在）。
 
 ### 4.2 自动约束 / 自动标注（替代手加约束）
@@ -710,7 +724,7 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 - 改参数后实体精确跟随（圆半径 → `R_WEB`，体积按解析值变化），且尺寸仍是驱动尺寸。
 - 同一草图多个尺寸时要成对链接直径/半径（`2 * R` 与 `R`），否则约束自相矛盾。
 - **系统式与位置量**：联动尺寸可以写成系统式（`W_HALF = H_LOBE + R_EYE`），但每个独立结构尺寸都要有数值参数入口；块原点、圆柱轴心在批处理只收字面值，列入不可参数化清单，不伪装成命名表达式。
-- **草图点不可标注**：对单点跑 AutoDimension 产生 0 尺寸、dof 不变；NXOpen 也没有参数化点特征（`PointFeatureBuilder.Point` 只收字面 `Point3d`）→ 孔位无法用“草图点 + 尺寸”参数化。
+- **草图点可以标注**：对单点跑 AutoDimension 产生 2 个驱动尺寸并把 dof 由 2 降到 0。NXOpen 也有**点特征**：`wp.BaseFeatures.CreatePointFeatureBuilder(NXOpen.Features.PointFeature.Null)` 可建，其 `Point` 只收 `NXOpen.Point` 对象（`wp.Points.CreatePoint(Point3d)` 的返回值），传字面 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`。该点特征能否由命名表达式驱动**本会话未测**，不要假定能或不能。
 - 驱动参数必须真的接到几何上：接到会移动的边上时，先确认改参数不会让该边的主人变化（见 §4.3 的拓扑陷阱）。
 
 
@@ -736,9 +750,9 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 - **AddGeometry 只收 NXOpen 对象**：UF `CreateArcThru3pts` 返回 tag，必须改用 `Curves.CreateArc(center, xaxis, yaxis, r, a0, a1)`；三点弧用外接圆公式自行求心（端点必须与相邻线严格重合，否则拉伸报 “Section curves are not connected each other”）。
 - **`RevolveBuilder` 对草图截面崩溃**（`memory access violation`）；改用 UF `Modl.CreateRevolved`（草图曲线可用，体积与解析值一致）。
 - `Sketch.CreateDimension` / `CreateRadialDimension`、`SketchLinearDimensionBuilder.FirstAssociativity` / `SecondAssociativity`、`SketchConstraintBuilder.GeometryToConstrain` / `GeometryToConstrainTo` 批处理不可用（只读或 `No overload matches`），不要在这条路线上尝试。
-- **共面堆叠特征要用表达式定起点**：板顶上的垫环/筋/轮缘/缺口，拉伸起点写 `Limits.StartExtend.Value.RightHandSide = "T_PLATE - 15.875"`，不要写 `"0"`。写死 0 时改 `T_PLATE` 会让上层特征与板顶脱开或互相吞并，更新整体回滚。
+- **共面堆叠特征建议用表达式定起点**：板顶上的垫环/筋/轮缘/缺口，拉伸起点写 `Limits.StartExtend.Value.RightHandSide = "T_PLATE - T_RIB"`（用**本件的参数**，不要写其它零件来的英寸换算值如 `15.875`），不要写 `"0"`。起点写 `0`、`T_PLATE`、`T_PLATE - 15.875` 三种写法改 `T_PLATE` 都 `errs=0`、**不触发回滚**；写 0 的真实后果是上层特征与板顶脱开或互相吞并（体积变化），所以表达式起点的作用是**消掉拓扑歧义**，不是"否则更新回滚"。
 - **倒圆不要贴在会移动的边上**：沉孔上沿的倒圆在驱动参数 +10% 后边的主人改变，整个更新回滚（“Update undo happened”）。要么把倒圆放到所有驱动参数之后，要么换一条不随参数移动的边。
-- **同一个 `FileNew` 只能建一个零件**：一个进程里第二次 `FileNew` 之后草图报 “Sketch is not initialized”、更新报 “Update undo happened”。批量跑多案例用进程级环境变量分流，一进程一案例。
+- **一个进程可以连续建多个零件**：同一进程里连续 4 次 `FileNew` 各建草图 + 方块全部成功（dof=0、体数 1）。批量跑多案例仍建议一进程一案例，但理由是崩溃类用例（如 `ThreadedHole` 的 `memory access violation`）会把整个进程带走，不是 `FileNew` 只能用一次。
 - 草图级镜像走不通（`SketchMirrorPatternBuilder.DirectionObject` 只读）；对称件用特征级 `MirrorFeatureBuilder`（§3.2）。
 - 面查询用 §5 的 `AskFaceData`（`Part.Faces.FindFace` / `Face.IsPointOnFace` 不存在）。
 
@@ -780,7 +794,7 @@ b.Validate(); b.CommitFeature()
 | `DrillSizeHole` | `DrillSizeStandard="ISO"` + `DrillSizeFitOption="Exact"` + `DrillSize` 标签（`"10"`）**且** `DrillSizeHoleDiameter/Depth` | 只给标签 → 默认 Ø11 贯通；只给 Expression → `Standard data not found` |
 | `ScrewClearanceHole` | `ScrewStandard="ISO"` + `ScrewType="General Screw Clearance"` + `ScrewSize="M10"` + `ScrewFitOption="Normal (H13)"` | 过孔 **Ø11** |
 
-- 直径/深度字段都收表达式名（`"D_BOLT"`、`"2 * R_BRKT_HOLE"`），命名参数才能驱动孔特征；写 float 只会固化成字面值。
+- 直径/深度是 Expression：**字段本身不可写**（直接赋 float 报 `AttributeError: attribute 'GeneralSimpleHoleDiameter' ... is not writable`），要驱动只能写 `RHS`，而 `RHS` **只收 str**（传 float 报 `Expecting Unicode str type, found float`）。所以命名参数走 `b.GeneralSimpleHoleDiameter.RightHandSide = "D_BOLT"`；不存在"写 float 静默固化成字面值"这回事——写 float 直接报错。
 
 - ⚠ `ScrewStandard/ScrewType/ScrewSize/ScrewFitOption` 仅螺钉过孔适用；成员名 `ScrewFitOption`，无 `ScrewFit`。
 - ⚠ 标准名须匹配 `modeling_standards\*.xml` 的 `Standard=`：钻孔 `nx6_Drill_Size_Hole_Standard.xml`（`ISO`，尺寸 `10`/`10.2`，`Fit` 仅 `Exact`）；螺纹孔 `nx502_Threaded_Hole_Standard.xml`（`Metric Coarse`，`M10 x 1.5`）。写错 → `Standard data not found`；别用 `thd_metric.dat`。

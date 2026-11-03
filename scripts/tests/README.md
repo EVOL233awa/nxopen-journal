@@ -20,7 +20,7 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 成功标志：出现该用例的判决 token，且输出中没有任何 `_FAIL`（实现见 `:gate` 子过程）。退出码不可作判据：未捕获异常才返回非零，journal 按 SKILL.md §3 每步 try/except 后继续，失败被吞时退出码仍为 0；26 号原生崩溃反而把退出码变成 1。
 
-⚠ 22-30、38-49 二十一个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，任一失败打 `TESTxx_FAIL failed=[...]` 并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）。
+⚠ 22-30、38-49 二十一个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，其余失败打 `TESTxx_FAIL failed=[...]`（46 例外，打 `TEST46_STOP failed=[...]`：token 里没有 `_FAIL`，只落“缺 token”这条路径）并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）；同类收尾的 34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`）——整个 token 含 `_FAIL`，走的是 `:gate` 的 `_FAIL` 这条路径（与 46 的 `TEST46_STOP` 相反）。
 
 NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
 
@@ -34,7 +34,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 
 ## 用例、文件与判决 token
 
-判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（17/19/20/21/31/32），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-47），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
+判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（06/07/17/19/20/21/31/32/33），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-49；46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓），走 `nxlib.testing.check_finish` 的 34/35/37 打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15；06/07 另在收尾处打 `stages=`）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
 
 | 用例 | 文件 | 判决 token | 决定性判据（验收什么；数字为值） |
 | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 17 | `17_motion_deadends.py` | `TEST17_DONE` | 6 阶段：圆边 `Concentric` `Solved` 且移 25 mm（DOF `0T+1R`）、圆柱面 `Concentric` `CannotSolve`、等半径 `Fit` `Solved`、不等半径 `Fit` `InternallyInconsistent`、7 种内部枚举全被拒；失败打 `TEST17_FAIL stages=...` |
 | 18 | `18_motion_sim.py` | `BENCH_PASS` | 曲柄 1.00000°/帧、摇杆 60.0282°（解析 60.0218°）、每转换向 2 次、反力通路；驱动 2π 时前三项 FAIL，`CD` 40→50 仅摆角 FAIL；0 基 361 帧；落盘 `m18_motion.csv`（不判） |
 | 19 | `19_drafting_annotation.py` | `TEST19_DONE` | 12 阶段：节距 70/40、字高 `textSize=5.00`（须非默认）、3 个 UF 关联尺寸、中心标记/中心线/注释/引线、表格回读、PDF >20KB；失败打 `TEST19_FAIL stages=...` |
-| 20 | `20_drafting_views.py` | `TEST20_DONE` | 10 阶段：`View.Base` 三视图各 ≥4 可见（5/5/7）、`View.Drawing` 对照 0、删 TOP/RIGHT 并钉 FRONT 1:1、2 投影视图各 7、局部放大按 UF `AskViewScale` 2.0=2.0×父（.NET `Scale` 2.36 不作口径）、超 A4 被拒 |
+| 20 | `20_drafting_views.py` | `TEST20_DONE` | 10 阶段：`View.Base` 三视图各 ≥4 可见（5/5/7）、`View.Drawing` 对照 0、删 TOP/RIGHT 并钉 FRONT 1:1、2 投影视图各 7、局部放大比例按 UF `AskViewScale` **第 2 项 = 请求值（绝对值、不乘父比例；负例：父 UF 0.5 + 请求 3.0 读 3.0）**（.NET `Scale` 2.36 不作口径）、超 A4 被拒 |
 | 21 | `21_drafting_section.py` | `TEST21_DONE` | 6 阶段：毛坯圆柱面 ≥1（`Hatch` 单独证明不了孔）、三视图各 ≥10（13/13/14）、先设父视图再 `AddCutSegment`（无父视图必抛）、剖视可见 18 且 `Hatch` ≥1、阶梯剖腿段 9>普通剖 5（`AskSxlineType` 均报 `STEPPED_SXLINE`） |
 | 22 | `22_modeling_extras.py` | `TEST22_DONE` | 13 项：图层/类别、`Feature.Layer` 不存在、`SetState` 只传 int（list 会堆损坏）、基准平面配方、`AlongPath` 质心 y=0/y=100（±1e-3）；`DatumCsysBuilder` 死路 |
 | 23 | `23_motion_connectors.py` | `TEST23_DONE` | 14 项：连接件集合真名、三个 `Scalar*` 不存在、弹簧 `AttachmentType` 只读、阻尼器补系数后 0→1、衬套缺 `Orientation` 报 `A NULL value`、`MotionInterference_Struct` 字段 `Solid1/Solid2`、`AskGrueblerCount` 整数、`DriverMultiOperations` 三项 |
@@ -66,9 +66,9 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 28 | `28_pattern_helix.py` | `TEST28_DONE` | 18 项：`PatternEnum.Helix` 满足 `z=节距·θ/2π`、`r=R`，`CountOfInstances` 含种子，不给轴零副本；三种间距标定，超末端副本丢弃；末条崩溃探针 |
 | 29 | `29_interference.py` | `TEST29_DONE` | 8 项：布尔交集干涉体积 500.000 mm³（5×10×10）；分离/面贴面被拒且不留空壳；`CreateSimpleInterferenceObject()` 独立判定；四件落盘 >100 KB |
 | 30 | `30_fea_descriptors.py` | `TEST30_DONE` | 15 项：描述符全集 11 个并用独立字面量钉项数；显示名≠描述符名；垃圾名报 `Error number: 1775003`；新建方案带走激活方案，回切后恢复；中性名黑名单 3 拒、白名单 2 可建 |
-| 31 | `31_drafting_sections.py` | `TEST31_DONE` | 8 阶段：半剖（`HALF_SXLINE`、可见 18、`DraftingCurve` 8）、两点直线也提交（17/7）、旋转剖（`REVOLVED_SXLINE`、两腿 4 段）、缺 `RotationPoint` 必抛、展开剖只靠出图字节数区分、落盘 210181 字节 |
+| 31 | `31_drafting_sections.py` | `TEST31_DONE` | 8 阶段：半剖（`HALF_SXLINE`、可见 18、`DraftingCurve` 8）、两点直线也提交（17/7）、旋转剖（`REVOLVED_SXLINE`、两腿 4 段）、缺 `RotationPoint` 必抛、展开剖对象级读数与折叠态相同、靠两份出图**不相同**区分（字节数随视图名/视图数浮动，不能拿"字节相同"判开关失效）、落盘 210181 字节 |
 | 32 | `32_pattern_enums.py` | `TEST32_DONE` | 13 阶段：`Polygon` 逐点核质心（`NCopies=4` 时 18 件、沿边等弦长，偏差 6e-14）、`NCopies=1` 必拒；`General` 按目标点映射、空 `ToPoints` 抛 `Update undo happened.`；`Reference` 种子兼基准实例、`SetBaseInstance(1,0)` 整族平移；`Mirror` 提交抛 `Feature cannot be mirrored.`；`Spiral` 缺水平参考抛 `No section curves or points created.` |
-| 33 | `33_gb_sheet.py` | `TEST33_DONE` | 7 阶段经 `gb_drawing` 出国标图：三视图按内容包盒钉位（5/7/5）、标题栏回读、4 线性尺寸（100/44/60/10）+`2x<O>10` 引线、道位同向小内大外（`LANE_ORDER_OK`，换道 FAIL）、PDF 38912 字节。模块事实：`SetDrawingReferencePoint` 移动 plot 内容、越界回滚、`AskViewBorders` 被标签余量撑大（禁布局）、`DraftingDrawingSheet` 无 `Width/Height`、枚举 `END_POINT` |
+| 33 | `33_gb_sheet.py` | `TEST33_DONE` | 7 阶段经 `gb_drawing` 出国标图：三视图按内容包盒钉位（5/7/5）、标题栏回读、4 线性尺寸（100/44/60/10）+`2x<O>10` 引线、道位同向小内大外（`LANE_ORDER_OK`，换道 FAIL）、PDF 38912 字节。模块事实：`SetDrawingReferencePoint` 移动 plot 内容、越界移动**不报错也不回滚**（须自查内容包盒）、`AskViewBorders` 被标签余量撑大（禁布局）、`DrawingSheet` 有 `Height`/`Length`（没有 `Width`）、枚举 `END_POINT` |
 | 34 | `34_involute_gear.py` | `TEST34_DONE` | 齿轮：表达式驱动规律曲线 40 条+ZLaw Constant+闭合轮廓一次 UF 拉伸；体积与解析积分比 ±2%（扣孔 18238.9 mm³）、圆柱面 bore=1/tip=20/root=20、`model_bbox` 走 `ufs.ModlGeneral.AskBoundingBox`（不是 Modeling）；轮毂分支体积增量 π(4.5²−2.5²)×4（175.929，0.000%） |
 | 35 | `35_assembly_preload.py` | `TEST35_DONE` | 预载+干涉：base+pin 悬空 5mm 装配后重开；不预载则 SimpleInterference 空跑 inst_bodies=0，重复加载幂等；实例体 2；SimpleInterference 0 对（悬空负例；判材料重叠须布尔交集） |
 | 36 | `36_motion_slider.py` | `BENCH_PASS` | 滑动副：3 Revolute+1 Slider，偏置曲柄滑块 r40/l120/e20；5 判据：721 帧、滑块 x 偏差 0.001316 mm、y 恒 20、杆长守恒 0.001303 mm（兼探针行主序，转置漂 14 mm）、线速度偏差 0.003213 mm/s |

@@ -29,7 +29,7 @@ def say(msg):
     sys.stdout.flush()
 ```
 
-6. **传错参数类型会损坏原生堆，进程直接死且无 traceback**：禁止“猜签名、逐个候选调用”的自适应循环；签名来自 MCP 或 `dir()`，只调一次正确的那次。
+6. **参数类型不符抛 Python 异常，进程存活；空对象/结构体传错才可能触发内存访问违例**：`TypeError: No overload matches these arguments` / `AttributeError ... is not writable` 都带 traceback，别当成崩溃；真正的崩溃（`Internal error: memory access violation`）来自已知坑位的特定调用。所以仍禁止“猜签名、逐个候选调用”的自适应循环：签名来自 MCP 或 `dir()`，只调一次正确的那次。
 7. 未知 API/参数 → 标注“未验证”，交付时提醒用户回放确认。
 8. 不修改 NX 安装目录（默认 `D:\UG-NX12`，可用 `NX_HOME` 覆盖）；脚本与模型保存到用户工作区。
 9. 回放前要求用户备份当前 Part；先用最小用例（新建 Part + 方块 + 保存）验证环境，再跑正式脚本。
@@ -102,7 +102,7 @@ assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
 2. **FileNew 不覆盖**：重复运行报 `File already exists`；生成类 journal 启动时清理本工程旧 `.prt`（含 `_i.prt`），多部件各用独立路径。同一进程内不要对同一路径 FileNew 两次。阶段件用 `SaveAs(新路径)`，`SaveAs` 到已存在路径同样报 `File already exists`，先删目标或换路径。
 3. **`Part.FullPath` 批处理中可能只显示文件名**；以磁盘落盘位置为准。
 4. **集合无 `ToArray()`**：`part.Bodies`、`DrawingSheets`、`DraftingViews` 直接 `for x in ...`。
-5. **`ScCollector.ReplaceRules(rules, False)` 第二参必须 `False`**（立即求值）；`True` 会选中 0 条边。
+5. **`ScCollector.ReplaceRules` 有两个重载**：2 参 `(rules, createRulesWoUpdate)` 的第二个 bool 与选择集**无关**（True/False 选中的对象相同）；3 参 `(rules, negatedEntities, createRulesWoUpdate)` 的第 2 位才是排除对象，要 `DisplayableObject` 列表，传 bool 报 `TypeError: No overload matches these arguments`。
 6. **STL 可导，位图不可导**：STL 用 `SetArray`，不要用 `SelectionComp`：
 
 ```python
@@ -172,7 +172,7 @@ sc.ExportSelectionBlock.SelectionScope = NXOpen.ObjectSelector.Scope.SelectedObj
 sc.ExportSelectionBlock.SelectionComp.Add(body)
 sc.InputFile  = wp.FullPath
 sc.OutputFile = r"C:\path\out.stp"
-sc.ProcessHoldFlag = True                                  # 必设，否则 Commit 返回时文件未落盘
+sc.ProcessHoldFlag = True                                  # 必设，否则 Commit 返回时文件还没写盘（约 5 秒后才出现）
 sc.Commit(); sc.Destroy()
 ```
 
@@ -182,7 +182,7 @@ sc.Commit(); sc.Destroy()
 
 ```python
 ufs = NXOpen.UF.UFSession.GetUFSession()
-ufs.Ps.ExportData([body.Tag], r"C:\path\out.x_t")   # 首 24 字节含 **PARASOLID
+ufs.Ps.ExportData([body.Tag], r"C:\path\out.x_t")   # 首 48 字节是 **A..Z 校验串，PARASOLID 在偏移 84
 ```
 
 IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Parasolid，等价于 STEP 的实体边界表示”。
@@ -193,7 +193,7 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 2. 按 §5 路由读域文件；建模先过 `modeling.md` §1 方法论。
 3. 用 nxopen MCP 核实将用到的类/方法/枚举；新 API 先写最小探针（`scripts/tests/11_api_probe.py`、`12_api_probe2.py`、`13_api_probe3.py` 可抄）。
 4. 按域文件配方生成 journal（`main()`、Session、部件新建/打开、保存、日志与阶段断言）。
-5. `python scripts/check_journal.py <journal.py>` 静态检查。豁免标记：整文件探针写 `# check_journal: allow-probes`，单行负向对照写 `# check_journal: expected-raise`。
+5. `python scripts/check_journal.py <journal.py>` 静态检查。豁免标记：整文件探针写 `# check_journal: allow-probes`；单行负向对照写 `# check_journal: expected-raise`（只对按行定位的 AST 规则 5.1 系列、5.5、5.9、5.14a、5.17、5.20 生效）。不带行号的规则（5.2/5.7/5.11/5.13/5.14b/5.15/5.19）只能整文件豁免，且不是每条都读这个标记：5.2（FileNew 的 `.Units` 与文件名后缀）与 5.7（`NXOpen.UF.FeatureSigns`、`UFDraw`、`UFMotion`）两种标记都不放行、照样报错，5.11/5.13/5.14b/5.15/5.19 才随 `allow-probes` 跳过。
 6. `scripts\run_journal_batch.bat <绝对路径\journal.py> <workdir>` 试跑 → 成功后交付交互回放；报错则 MCP 核实修正。
 
 ## 5. 模块路由
@@ -240,7 +240,7 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。46 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。46 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`，见 `scripts/nxlib/testing.py:65`）。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
@@ -258,7 +258,7 @@ scripts\tests\RUN_TESTS.bat
 7. 入库门槛 = 铁律 2：MCP 核实 + 批处理验证双通过。
 8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|路线约束 [0-9]"`。
 9. 吸收外部技能/项目时先在本机 NX12 验证；与本机冲突处以本机结果为准并注明。
-10. `CHANGELOG.md` 只记 diff：一行一条（位置 + 改了什么），不写验证过程、实验读数、归因沿革、影响分析；理由与证据留在报告或域文件正文。
+10. `CHANGELOG.md` 只记 diff：一行一条（位置 + 改了什么），不写验证过程、实验读数、归因沿革、影响分析；理由与证据留在报告或域文件正文。它是人类文档，不参与 CONCISE/ROUTE 扫描，这条约定靠人工守，没有机器门。
 11. 改动 nxlib 模块、域文件、`scripts/` 工具或会话流程后，同一次改动里更新 `docs/wiki/`：新增/改名项补进对应 roster 表（`<!-- roster: nxlib|scripts|references -->` 标记下的表格首列），受影响页面的描述与计数一并改。`check_repo.py` 的 WIKI 组会拦：名册缺项、索引页漏链接、用例/gate 计数过期、行号锚点、以及指向已不存在的符号或 §章节。
 
 **增长纪律**：不设体积硬上限。新增条目先查重并合并，同一主题不新开小节；每次版本发布前跑 `check_repo.py`。文件明显膨胀时，优先把坑位并回路线、删旧条目、压重复；只有两个独立任务域被迫共读一个文件时才按域拆分（装配/工程图即此例），不要靠拆文件掩盖重复。域文件不设坑位表；负面事实写进对应路线的约束句。
@@ -271,7 +271,7 @@ nxopen-journal/
 ├── LICENSE                         ← MIT 许可证
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
-├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.3.0）
+├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.4.0）
 ├── docs/wiki/                      ← 维护者导览（架构/主执行流/模块/数据流/边界与风险；不进 agent 必读路径，与 SKILL.md 冲突以 SKILL.md 为准）
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
 ├── references/*.md                 ← 八个域文件；各自的域与覆盖范围见 §5 路由表

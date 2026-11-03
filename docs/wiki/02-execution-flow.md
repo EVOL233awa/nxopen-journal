@@ -27,13 +27,13 @@ graph TD
 |---|---|---|
 | 语法 | `ast.parse(..., feature_version=(3, 6))`，按 NX 解释器而非宿主解释器判语法 | `scripts/check_journal.py` 的 `ast.parse(..., feature_version=(3, 6))` |
 | 占位符 | 只看注释 token 与真正的 `raise NotImplementedError`，字符串里的 TODO 不误报 | `scripts/check_journal.py` 的占位符扫描（`tokenize.generate_tokens` 只看注释 token） |
-| 规则库 | 5.1–5.20 共 20 组已固化的 NX 12 批处理坑位，全部用 AST 判定 | `scripts/check_journal.py` 规则 5.1 起 |
+| 规则库 | 5.1–5.20 共 20 组已固化的 NX 12 批处理坑位，按 AST 判定（5.3 挂在语法层：裸 `.True`/`.False` 解析不过） | `scripts/check_journal.py` 规则 5.1 起 |
 
 规则库的关键设计：**按变量作用域判定**。同一文件里 `builder.Length = x` 报错，但另一个对象的同名属性不误报（`scripts/check_journal.py` 的 `_builder_vars()` 的 `_builder_vars`）。这是文本匹配做不到的——本技能的用例里有大量刻意演示坑位的探针文件。
 
-豁免只有两种标记：整文件 `# check_journal: allow-probes`，单行 `# check_journal: expected-raise`（`scripts/check_journal.py` 的 `_waived()`）。
+豁免只有两种标记：整文件 `# check_journal: allow-probes`，单行 `# check_journal: expected-raise`（`scripts/check_journal.py` 的 `_waived()`）。单行豁免只对按行定位的 AST 规则生效（5.1 系列/5.5/5.9/5.14a/5.17/5.20）；不带行号的规则只能整文件豁免，但 5.2 与 5.7 连整文件标记也不放行（判据是 AST、且不带 `not allow_probes` 闸），只有 5.11/5.13/5.14b/5.15/5.19 随标记跳过。
 
-规则库自身也要被验证：`scripts/tests/verify_check_rules.py` 里每个反例必须命中对应规则、干净样本必须通过，由 `RUN_TESTS.bat` 的 `:ruleselftest` 段调用。
+规则库自身也要被验证：`scripts/tests/verify_check_rules.py` 对 5.1–5.20 每条规则各配一个反例（报错级必须命中，提示级只断言输出提示、退出码仍为 0），干净与"看似该报实际合法"的样本必须通过，由 `RUN_TESTS.bat` 的 `:ruleselftest` 段调用。
 
 ## 动态门：run_journal_batch.bat + RUN_TESTS.bat
 

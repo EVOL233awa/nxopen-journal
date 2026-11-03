@@ -9,29 +9,42 @@
   5. 已固化坑位（NX 12 批处理验证）:
      - 创建 builder 传 None -> 必须用 NXOpen.Features.Feature.Null / BooleanFeature.Null
      - FileNew 未设 Units 或 NewFileName 不带 .prt -> Commit 必然报错
-     - BasePart.SaveComponents/CloseAfterSave -> Python 关键字语法错误, 改用 ufs.Part.Save()
+       (Units 按 FileNew builder 变量作用域判, 同文件里别的对象的 .Units 不算)
+     - BasePart.SaveComponents/CloseAfterSave -> 成员是 TrueValue/FalseValue,
+       裸 True/False 是 Python 关键字 -> 在语法层拦并给定点提示 (规则 5.3)
      - PartCollection.Open 参数个数 -> 只传 1 个参数, 返回 (part, loadStatus) 元组
-     - BodyCollection.ToArray() -> 不存在, 直接迭代
-     - ScCollector.ReplaceRules 第二参数 True -> 规则不立即求值, 选中 0 条边
+     - BodyCollection.ToArray() / len(集合) -> 都不存在, 直接迭代
+     - ScCollector.ReplaceRules -> 2 参重载第二参是 createRulesWoUpdate, 与选择集无关;
+       排除实体走 3 参 negatedEntities([DisplayableObject])
      - Parts.Open 与 Parts.SetWork 同时出现 -> 批处理中会报 No Displayed Part
      - BlockFeatureBuilder.Length/Width/Height 只读 -> 用 SetLength/SetOriginAndLengths
        (AST 变量级判定: 只在该 builder 变量本身被赋值时报错,
         同文件里别的对象同名属性不再误报)
      - CreateRevolveBuilder 批处理 CommitFeature 内存违例 -> 用 UF Modl.CreateRevolved
      - NXOpen.UF.FeatureSigns 不存在 -> 用 NXOpen.UF.ModlFeatureSigns
+       (AST 判定: 注释/字符串里出现该名不算, 也不会被别处的 ModlFeatureSigns 静音)
      - ComponentAssembly.Components 不存在 -> 用 RootComponent.GetChildren()
      - DrawingSheets/DraftingViews 无 ToArray() -> 直接迭代
      - BlockFeatureBuilder.BooleanOption 被静默忽略 -> 用 SetBooleanOperationAndTarget
-     - Point3d/Vector3d 传 int -> TypeError, 必须传 float
-     - SetOriginAndLengths 长度传 float -> TypeError, 必须传 str
+     - Point3d/Vector3d 传 int -> TypeError, 必须传 float (含 from NXOpen import Point3d 的短形式)
+     - SetOriginAndLengths 长度传数字 -> TypeError, 必须传 str
      - NX12 无 Features.Thread / CreateThreadBuilder -> 用 HolePackage 螺纹选项
-     - StepCreator 未设 ProcessHoldFlag -> Commit 返回时文件尚未落盘
+     - StepCreator 未设 ProcessHoldFlag -> Commit 返回时文件尚未落盘(约 5 秒后才有)
      - RemoveParametersBuilder -> 销毁特征树, 违背历史模式铁律
      - DraftBuilder.Method 只读 -> 用 DraftIsoclineOrTruedraft
      - DraftBuilder.AngleTolerance / ShellBuilder.Tolerance 默认 0.0 -> 必须显式设
+       (同样按 builder 变量作用域判, 别的对象的 .Tolerance = 顶不掉)
      - NXOpen.UF.UFMotion / NXOpen.UF.UFDraw 不可导入 -> 会话对象 ufs.Motion / ufs.Draw
        (UF struct 按所属组查: NXOpen.UF.<组>.<名>, 如 Curve.SectionGeneralData;
         运动模块部分为顶层 NXOpen.UF.<名>_Struct, 如 MotionInterference_Struct)
+
+豁免标记:
+  `# check_journal: allow-probes` 整文件豁免;
+  `# check_journal: expected-raise` 单行豁免, 只对按行定位的 AST 规则生效
+  (5.1 系列 / 5.5 / 5.9 / 5.14a / 5.17 / 5.20); 判据不带行号的规则只能整文件
+  豁免: 5.7 / 5.13 / 5.19 是 AST 判定 (5.2 / 5.14b / 5.15 同为变量级 AST 判定,
+  5.11 是文本匹配); 其中 5.2 与 5.7 实测不读 allow-probes, 整文件豁免对这两条
+  不生效 (5.11 / 5.13 / 5.14b / 5.15 / 5.19 的分支带 `not allow_probes` 闸)。
 
 用法:
   python check_journal.py path/to/journal.py
@@ -133,6 +146,46 @@ def _is_number_literal(node: ast.AST) -> bool:
     return _is_int_literal(node) or _is_float_literal(node)
 
 
+# 规则 5.3: `.True` / `.False` 不是合法 Python 属性名, 带它的文件解析不过 ——
+# 提示挂在语法层 (ast.parse 的 except 分支), 没有可再判的 AST, 故不重复报。
+SAVE_KEYWORD_RE = re.compile(
+    r"(savecomponents|closeaftersave)\s*\.\s*(true|false)\b(?!value)", re.I)
+
+
+def _savecomponents_hint(text: str) -> str:
+    """规则 5.3 的定点提示: 成员名是 TrueValue/FalseValue, 不是裸 True/False。"""
+    if not SAVE_KEYWORD_RE.search(text):
+        return ""
+    return ("\n  -> 若是 BasePart.SaveComponents.True / CloseAfterSave.False: 其成员是 "
+            "TrueValue / FalseValue (裸 True/False 是 Python 关键字), "
+            "或改用 NXOpen.UF.UFSession.GetUFSession().Part.Save()")
+
+
+def _var_attr_assigned(tree: ast.AST, var_names: set[str], attr: str) -> bool:
+    """变量集合里是否有人被赋过 `var.<attr> = ...` (5.14b/5.15 的作用域判据)。"""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if (isinstance(tgt, ast.Attribute) and tgt.attr == attr
+                    and _root_name(tgt) in var_names):
+                return True
+    return False
+
+
+COLLECTION_PROPS = ("Bodies", "Features", "DrawingSheets", "DraftingViews",
+                    "Components", "Expressions")
+
+
+def _is_collection_len(node: ast.AST) -> bool:
+    """`len(<obj>.Bodies/.Features/...)` —— 集合没有 __len__, 直接迭代。"""
+    return (isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name) and node.func.id == "len"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Attribute)
+            and node.args[0].attr in COLLECTION_PROPS)
+
+
 def _waived(lines: list[str], lineno: int) -> bool:
     """该行行尾或上一行是否有 '# check_journal: expected-raise' 豁免标记."""
     marker = "check_journal: expected-raise"
@@ -143,10 +196,17 @@ def _waived(lines: list[str], lineno: int) -> bool:
 
 
 def _is_point3d_construction(node: ast.AST) -> bool:
-    """Point3d(...) 构造调用 (CreatePoint(Point3d(...)) 这种包了一层的不算)."""
-    return (isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in ("Point3d", "Point3d_Struct"))
+    """Point3d(...) 构造调用 (CreatePoint(Point3d(...)) 这种包了一层的不算).
+
+    两种写法同源: `NXOpen.Point3d(...)` 与 `from NXOpen import Point3d` 之后的
+    `Point3d(...)` —— 后者 AST 里是 Name 调用, 只看 Attribute 会漏。
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    fn = node.func
+    if isinstance(fn, ast.Attribute):
+        return fn.attr in ("Point3d", "Point3d_Struct")
+    return isinstance(fn, ast.Name) and fn.id in ("Point3d", "Point3d_Struct")
 
 
 # 需要 NXOpen.Point 对象、给 Point3d 会报 "Expecting NXOpen.Point type, found
@@ -171,13 +231,7 @@ def check(path: Path) -> int:
         # walrus / positional-only / match 等 3.7+ 语法，必须按 3.6 解析。
         tree = ast.parse(text, filename=str(path), feature_version=(3, 6))
     except SyntaxError as exc:
-        hint = ""
-        low = text.lower()
-        if re.search(r"(savecomponents|closeaftersave)\.(true|false)\b(?!value)", low):
-            hint = ("\n  -> 若是 BasePart.SaveComponents.True / CloseAfterSave.False: 其成员是 "
-                    "TrueValue / FalseValue (裸 True/False 是 Python 关键字), "
-                    "或改用 NXOpen.UF.UFSession.GetUFSession().Part.Save()")
-        print(f"[错误] 语法错误: {exc}{hint}")
+        print(f"[错误] 语法错误: {exc}{_savecomponents_hint(text)}")
         return 1
 
     src_lower = text.lower()
@@ -220,8 +274,15 @@ def check(path: Path) -> int:
 
     # ---- 已固化坑位检查 ----
 
-    # 5.1 builder 创建传 None
+    src_lines = text.splitlines()
+
+    # 5.1 builder 创建传 None 等按行定位的 AST 规则。
+    # 行尾 `# check_journal: expected-raise` 对这一组同样生效（负向对照用例常写在
+    # 5.1 系列的反例行上，见 SKILL.md §4）。
     for node in ast.walk(tree):
+        lineno = getattr(node, "lineno", None)
+        if lineno is not None and _waived(src_lines, lineno):
+            continue
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             attr = node.func.attr
             if attr in BUILDER_NULL:
@@ -244,15 +305,23 @@ def check(path: Path) -> int:
                     f"在 NX12 Python 封装没有 ToArray(), 直接迭代 for x in part.X"
                 )
             elif attr == "ReplaceRules":
-                if len(node.args) >= 2:
-                    second = node.args[1]
-                    if isinstance(second, ast.Constant) and second.value is True:
+                # 2 参重载 (rules, createRulesWoUpdate) 的 bool 与选择集无关, 两侧都合法;
+                # 3 参重载第 2 位是 negatedEntities, 要对象列表, 传 bool 报 TypeError。
+                if len(node.args) >= 3 and isinstance(node.args[1], ast.Constant) \
+                        and isinstance(node.args[1].value, bool):
+                    issues.append(
+                        f"第 {node.lineno} 行: ReplaceRules 3 参重载第 2 位是 negatedEntities "
+                        f"(要 DisplayableObject 列表), 传 bool 报 TypeError; "
+                        f"排除实体用 ReplaceRules(rules, [实体], False)"
+                    )
+                for kw in node.keywords:
+                    if kw.arg not in (None, "negatedEntities", "createRulesWoUpdate"):
                         issues.append(
-                            f"第 {node.lineno} 行: ReplaceRules 第二参数必须 False(立即求值), "
-                            f"True 会选中 0 条边导致特征创建失败"
+                            f"第 {node.lineno} 行: ReplaceRules 没有参数名 {kw.arg!r}, "
+                            f"签名是 (rules, negatedEntities, createRulesWoUpdate)"
                         )
-            elif attr in ("Point3d", "Vector3d"):
-                # 坐标必须 float, 传 int 报 "Expecting double type, found int"
+                        break
+            elif attr in ("Point3d", "Vector3d", "Point3d_Struct", "Vector3d_Struct"):
                 if allow_probes:
                     continue
                 for a in node.args:
@@ -263,14 +332,30 @@ def check(path: Path) -> int:
                         )
                         break
             elif attr == "SetOriginAndLengths" and len(node.args) >= 4:
-                # 第 2-4 参数(三个长度)必须 str, 传 float 报 "Expecting str type"
+                # 第 2-4 参数(三个长度)必须 str, 传数字报 "Expecting str type"
                 if allow_probes:
                     continue
-                if any(_is_float_literal(a) for a in node.args[1:4]):
+                if any(_is_number_literal(a) for a in node.args[1:4]):
                     issues.append(
                         f"第 {node.lineno} 行: SetOriginAndLengths 长度参数必须 str (\"100\"), "
-                        f"传 float (100.0) 报 'Expecting str type, found float'"
+                        f"传数字 (100 / 100.0) 报 'Expecting str type, found int/float'"
                     )
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in ("Point3d", "Vector3d"):
+            # from NXOpen import Point3d 之后直接 Point3d(...) 是同一坑位, 短形式不能漏
+            if not allow_probes:
+                for a in node.args:
+                    if _is_int_literal(a):
+                        issues.append(
+                            f"第 {node.lineno} 行: {node.func.id} 收到 int 字面量 -> NX12 报 "
+                            f"'Expecting double type, found int', 改写为 float (0 -> 0.0)"
+                        )
+                        break
+        elif _is_collection_len(node):
+            issues.append(
+                f"第 {node.lineno} 行: len({node.args[0].attr}) 报 "
+                f"'object of type ... has no len()'; 集合直接迭代 for x in part.X"
+            )
         if isinstance(node, ast.ExceptHandler) and node.type is None:
             warnings.append(f"第 {node.lineno} 行: 裸 except, 建议限定异常类型并记录日志")
 
@@ -282,7 +367,6 @@ def check(path: Path) -> int:
     # 负向对照(故意写错并断言必抛)可在该行行尾写豁免标记:
     #   # check_journal: expected-raise
     if not allow_probes:
-        src_lines = text.splitlines()
         for node in ast.walk(tree):
             if not isinstance(node, ast.Assign):
                 continue
@@ -306,9 +390,17 @@ def check(path: Path) -> int:
                     )
 
     # 5.2 FileNew: 只在实际调用时检查 Units 与 .prt
-    has_filenew_call = re.search(r"\.FileNew\s*\(", text) is not None
-    if has_filenew_call:
-        if not re.search(r"\.Units\s*=", text):
+    filenew_vars: set[str] = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "FileNew"):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    filenew_vars.add(t.id)
+    if filenew_vars:
+        # 判据挂在 FileNew 得到的 builder 变量上：同文件里别的对象的 .Units = 顶不掉它
+        if not _var_attr_assigned(tree, filenew_vars, "Units"):
             issues.append("FileNew 未设置 .Units (如 NXOpen.Part.Units.Millimeters) -> Commit 报模板不存在")
         for m in re.finditer(r"\.NewFileName\s*=\s*[\"']([^\"']*)[\"']", text):
             name = m.group(1)
@@ -319,9 +411,9 @@ def check(path: Path) -> int:
                     f"NewFileName 必须带 .prt/.fem/.sim 后缀 (当前: {name})"
                 )
 
-    # 5.3 BasePart.SaveComponents / CloseAfterSave: True/False 是 Python 关键字
-    # 5.3 裸 .True / .False 本身是 Python 语法错误，会在 ast.parse 处被拦截并给出提示（见上）；
-    #     .TrueValue / .FalseValue 才是正确写法（可用），此处不再重复检查。
+    # 5.3 BasePart.SaveComponents / CloseAfterSave: 成员名是 TrueValue / FalseValue。
+    #     裸 `.True` / `.False` 是 Python 关键字，文件根本解析不过 —— 这条在语法层
+    #     实现（_savecomponents_hint()，见上面的 SyntaxError 分支），此处不重复判。
 
     # 5.4 批处理: Open 后 SetWork 会报 No Displayed Part
     if ".parts.open(" in src_lower and ".parts.setwork(" in src_lower:
@@ -341,7 +433,7 @@ def check(path: Path) -> int:
             readonly_vars[var] = create_method
     if not allow_probes:
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
+            if not isinstance(node, ast.Assign) or _waived(src_lines, node.lineno):
                 continue
             for tgt in node.targets:
                 if not isinstance(tgt, ast.Attribute):
@@ -369,7 +461,20 @@ def check(path: Path) -> int:
         )
 
     # 5.7 (扩充 UFDraw) UF 枚举名
-    if re.search(r"\bFeatureSigns\b", text) and "ModlFeatureSigns" not in text:
+    #     FeatureSigns 用 AST 判：文本匹配既会被注释里出现的名字误报，
+    #     也会被注释/字符串里随便写一个 ModlFeatureSigns 静音。
+    bad_signs = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "FeatureSigns":
+            # _attr_chain 由外向内: NXOpen.UF.FeatureSigns -> ['FeatureSigns','UF','NXOpen']
+            if _attr_chain(node)[:2] == ["FeatureSigns", "UF"]:
+                bad_signs = True
+                break
+        elif (isinstance(node, ast.ImportFrom) and node.module == "NXOpen.UF"
+              and any(a.name == "FeatureSigns" for a in node.names)):
+            bad_signs = True
+            break
+    if bad_signs:
         issues.append(
             "检测到 NXOpen.UF.FeatureSigns: NX12 Python 封装不存在该枚举, "
             "改用 NXOpen.UF.ModlFeatureSigns (成员如 POSITIVE / NULLSIGN)"
@@ -408,6 +513,8 @@ def check(path: Path) -> int:
         if allow_probes:
             break
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Attribute):
+            if _waived(src_lines, node.lineno):
+                continue
             tgt = node.targets[0]
             if tgt.attr in ("BooleanOption", "Type", "SetTargetBodies"):
                 root_id = _root_name(tgt)
@@ -422,7 +529,7 @@ def check(path: Path) -> int:
         if allow_probes:
             break
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "SetTargetBodies":
+            if node.func.attr == "SetTargetBodies" and not _waived(src_lines, node.lineno):
                 root_id = _root_name(node.func.value)
                 if root_id and root_id in block_vars:
                     issues.append(
@@ -441,8 +548,9 @@ def check(path: Path) -> int:
     # 5.11  STEP 导出未设同步标志
     if not allow_probes and "createstepcreator" in src_lower and "processholdflag" not in src_lower:
         issues.append(
-            "使用 StepCreator 但未设 ProcessHoldFlag=True: 实测 Commit() 返回时 .stp 尚未落盘 "
-            "(约 3 秒后才出现), 随即校验存在性会误判失败; 必须显式设 True"
+            "使用 StepCreator 但未设 ProcessHoldFlag=True: Commit() 返回时 .stp 尚未落盘 "
+            "(逐秒轮询: T+0.1s~T+4s 都不存在, T+5s 才出现), 随即校验存在性会误判失败; "
+            "必须显式设 True"
         )
 
     # 5.12  去参销毁特征树, 违背历史模式铁律
@@ -452,13 +560,25 @@ def check(path: Path) -> int:
             "仅用户明确要求哑实体时才可用"
         )
 
-    # 5.13  Save 必须有落盘校验；save_checked 已内含 getize/存在性断言。
-    if not allow_probes and re.search(r"(?i)\bsave\s*\(", text):
-        checked = ("save_checked(" in text or "getsize(" in text or
-                   "os.path.exists(" in text)
-        if not checked:
+    # 5.13  Save/SaveAs 必须有落盘校验（save_checked 已内含存在性+大小断言）。
+    #     判据走 AST：注释或字符串里写个 "getsize(" 顶不掉它。
+    if not allow_probes:
+        save_lines = []
+        checked = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if isinstance(fn, ast.Attribute) and fn.attr in ("Save", "SaveAs"):
+                save_lines.append(node.lineno)
+            elif isinstance(fn, ast.Attribute) and fn.attr in ("getsize", "exists") \
+                    and "path" in _attr_chain(fn):
+                checked = True
+            elif isinstance(fn, ast.Name) and fn.id == "save_checked":
+                checked = True
+        if save_lines and not checked:
             issues.append(
-                "有 Save 但无落盘校验: 改用 nxlib.session.save_checked(path)，"
+                "有 Save/SaveAs 但无落盘校验: 改用 nxlib.session.save_checked(path)，"
                 "或保存后 assert os.path.exists(path) and os.path.getsize(path) > 0 "
                 "(见 SKILL.md §3)"
             )
@@ -468,6 +588,8 @@ def check(path: Path) -> int:
     if not allow_probes and draft_vars:
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Attribute):
+                if _waived(src_lines, node.lineno):
+                    continue
                 tgt = node.targets[0]
                 if tgt.attr == "Method":
                     root_id = _root_name(tgt)
@@ -479,15 +601,16 @@ def check(path: Path) -> int:
                             f"NXOpen.Features.DraftBuilder.Method.TrueDraft"
                         )
                         break
-        if not re.search(r"\.AngleTolerance\s*=", text):
+        if not _var_attr_assigned(tree, draft_vars, "AngleTolerance"):
             issues.append(
                 "使用 CreateDraftBuilder 但未设 .AngleTolerance: 默认 0.0, Commit 报 "
                 "'Angle tolerance is too small'; 必须显式设 0.5 (见 modeling.md §3.4)"
             )
 
     # 5.15  ShellBuilder.Tolerance 默认 0 必须显式设
-    if not allow_probes and "createshellbuilder" in src_lower:
-        if not re.search(r"\.Tolerance\s*=", text):
+    shell_vars = _builder_vars(tree, "CreateShellBuilder")
+    if not allow_probes and shell_vars:
+        if not _var_attr_assigned(tree, shell_vars, "Tolerance"):
             issues.append(
                 "使用 CreateShellBuilder 但未设 .Tolerance: 默认 0.0, Commit 报 "
                 "'Tolerance error'; 必须显式设 0.01 (见 modeling.md §3.4)"
@@ -519,10 +642,21 @@ def check(path: Path) -> int:
         elif isinstance(node, ast.Import):
             for a in node.names:
                 alias_mod[a.asname or a.name.split(".")[0]] = a.name.split(".")[0]
+    # 同一文件里被重新绑定过的名字（赋值 / def / class / 形参）不是模块对象：
+    # `class M: dist = ...` + `math = M()` 之后 `math.dist(...)` 是本地对象的方法，
+    # 按 math.dist 报 3.8+ 属于误报（规则头部注释承诺的正是"注释里提到名字不误报"）。
+    shadowed: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            shadowed.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            shadowed.add(node.name)
+        elif isinstance(node, ast.arg):
+            shadowed.add(node.arg)
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
             v = node.value
-            if isinstance(v, ast.Name):
+            if isinstance(v, ast.Name) and v.id not in shadowed:
                 mod = alias_mod.get(v.id, v.id)
                 hit = PY36_TRAPS.get((mod, node.attr))
                 if hit:
@@ -535,7 +669,7 @@ def check(path: Path) -> int:
         # 把 import 行本身或同名局部变量误报。
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             mod = alias_mod.get(node.func.id)
-            if mod:
+            if mod and node.func.id not in shadowed:
                 hit = PY36_TRAPS.get((mod, node.func.id))
                 if hit:
                     issues.append(
@@ -558,6 +692,9 @@ def check(path: Path) -> int:
     for node in ast.walk(tree):
         if allow_probes:
             break
+        lineno = getattr(node, "lineno", None)
+        if lineno is not None and _waived(src_lines, lineno):
+            continue
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr in ENUM_ACCESSOR_PROPS
                 and not node.args and not node.keywords):
@@ -569,19 +706,17 @@ def check(path: Path) -> int:
 
     # 5.18  CylinderBuilder.Types 成员名
     # NX12 只有 ArcAndHeight / AxisDiameterAndHeight, 无 AxisAndHeight
-    # (AxisAndHeight 是 .NET 文档名, Python 封装不存在)。
+    # (AxisAndHeight 是 .NET 文档名, Python 封装不存在)。判的是成员名本身:
+    # `T = ...CylinderBuilder.Types` 再写 `T.AxisAndHeight` 是同一坑位, 别名挡不住。
     if not allow_probes:
         for node in ast.walk(tree):
-            if (isinstance(node, ast.Attribute) and
-                    node.attr == "AxisAndHeight"):
-                chain = _attr_chain(node)
-                if "CylinderBuilder" in chain and "Types" in chain:
-                    issues.append(
-                        "CylinderBuilder.Types.AxisAndHeight 不存在 (NX12 Python "
-                        "封装只有 ArcAndHeight / AxisDiameterAndHeight); "
-                        "改用 AxisDiameterAndHeight"
-                    )
-                    break
+            if isinstance(node, ast.Attribute) and node.attr == "AxisAndHeight":
+                issues.append(
+                    "CylinderBuilder.Types.AxisAndHeight 不存在 (NX12 Python "
+                    "封装只有 ArcAndHeight / AxisDiameterAndHeight); "
+                    "改用 AxisDiameterAndHeight"
+                )
+                break
 
     # 5.19 NXOpen.UF 没有 UFDrf 容器
     # 装配图气泡符号用例实际踩中: NXOpen.UF.UFDrf → AttributeError。

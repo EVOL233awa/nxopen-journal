@@ -189,8 +189,9 @@ rem step silently does nothing.
 rem ------------------------------------------------------------
 rem ------------------------------------------------------------
 rem :ruleselftest - host-side selftest of the check_journal rules
-rem covers 5.17 enum accessor, 5.18 cylinder enum, 5.19 UFDrf, 5.16 math.
-rem Counter-examples must HIT; a clean sample must pass.
+rem covers every rule 5.1-5.20 plus the Python 3.6 syntax layer.
+rem Error-level counter-examples must HIT; warning-level ones only print a hint
+rem and still exit 0; clean samples must pass.
 rem ------------------------------------------------------------
 :ruleselftest
 set "PY=%PYTHON%"

@@ -26,24 +26,24 @@ svb.Commit(); svb.Destroy()
 **视图定位与比例路线**：
 
 - 落位统一用 `v.SetDrawingReferencePoint(Point3d(x,y,0))` + 内容包盒闭环（`gb_drawing.pin_view`）；它钉住的是 NX 建视图时选定的锚点模型点，不是内容中心，偏差按视图恒定，用包盒迭代补偿（收敛 <0.05 mm）。`MoveView`/`SetOrigin`/`Fit()` 不用（`Fit()` 报 "Member view may not be fit"）。
-- 比例用 `ufs.Draw.SetViewScale(view_tag, s)`：相对/乘性，新视图基准 1.0，传目标值一次即绝对比例；`AskViewScale` 读 `(0, 实际比例)`。`DraftingView.Scale` 是自缩放链（随父视图/autoscale 变），不等于实际出图比例，核对一律用 `AskViewScale`。
-- 视图越界会抛 `Cannot move view off of the drawing` 并回滚之前已成功的移动，摆位前先算内容包盒。
+- 比例用 `ufs.Draw.SetViewScale(view_tag, s)`：传目标值即**绝对比例**（不是乘父比例，父视图比例不参与）。`AskViewScale(view_tag)` 的 UF 原型是 `(view, scale_tag@, scale@)`，Python 回读成 `(scale_tag, 比例)` 两元组：第 1 项是 out 参数 `scale_tag`（本技能各次读数均为 0，**不是**恒定值），**取第 2 项**当比例（误取第 1 项会以为比例是 0）。`DraftingView.Scale` 是自缩放链（随父视图/autoscale 变），不等于实际出图比例，核对一律用 `AskViewScale` 第 2 项。
+- 视图越界移动**不报错、也不自动回滚**（四次越界 Set 全部正常返回、零异常，无 `Cannot move view off of the drawing`）；布局必须由代码自查——摆位后逐视图核对内容包盒仍在图框内。
 - `svb.Coordinate` / `FirstCorner` / `SecondCorner` / `HiddenObjects.Objects` 只读；`PlacementType` 只有 Center/Corner，提交后用 `SetDrawingReferencePoint` 摆。
-- 基准在建视图前 `Blank()`（DatumCsys 带 3 基准面 + 3 基准轴）；建视图后 `Blank()` 副本无效、`DraftingCurve.Blank()` 不生效，都改建视图前处理。
+- 基准 `Blank()`（DatumCsys 带 3 基准面 + 3 基准轴）：建视图前最省事；建视图后 `Blank()` + `UpdateOneView` **同样生效**（可见对象 13→5）。视图内 `DraftingCurve.Blank()` 不生效（视图曲线照投影）。
 - 装配出图前 `Parts.Open` 预载子件；`Component.RemoveComponent` 后当次会话视图仍投影旧几何，`SaveAs` 重开则组件 Body 不载入。
 
 拆件零件的构造曲线即使建视图前 `Blank()` 仍会投影，保留即可（都在图纸内）。
 
 ⚠ **视图排布与剖视语义**：
 1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图右侧（与 GB 第一角相反），严格第一角需手动重排。
-2. 全剖主视图的剖切线须画在 ⊥ 剖切面的视图（俯视图）上且过轴线；剖切腿平面恒 ⊥ 父视图图面。
+2. 全剖剖切线过轴线；**切点须落在父视图的投影平面内**（阶梯剖把 Z 形路径挂 Front(XZ) 第 3 点被拒、挂 Top(XY) 才通过）。挂哪个父视图不是硬条件——同一个 Y=0 切面挂主视图作父视图同样成功（vis=10、Hatch=1）；剖切腿平面恒 ⊥ 父视图图面。
 3. 关联尺寸前确认目标边投影非退化（轴向边挂横剖圆环视图会渲染成 "0"）；局部放大源视图须含目标细节，detail 标注比例。
 
-### B.2 批处理标注入口（不需要 `sheet.Open()`）
+### B.2 批处理标注入口（UF 尺寸前先 `sheet.Open()`）
 
 > 尺寸/文字/表格/中心线/球标的配方与字段约束统一见 `references/drafting-annotation.md` §4/§5/§6/§6b/§7；本文件只保留批处理入口与视图坐标映射。
 
-- **不用调 `sheet.Open()`**：当前图纸与未激活图纸下，UF 尺寸/中心标记/中心线/注释/引线标签/表格/PDF 导出全部成功（保留无副作用但非必要）。
+- **UF 尺寸须在图纸为当前图纸时创建**：非当前图纸上 `ufs.Drf.Create*` 尺寸报 `The input object view tag is invalid.` → 先 `sheet.Open()` 再建。中心标记/表格/PDF 导出不 Open 也可；中心线/注释/引线标签无单独读数，稳妥也先 Open。
 
 **模型点 → 图纸点：`ufs.View.MapModelToDrawing(view_tag, [x, y, z])`**：
 
@@ -59,9 +59,9 @@ pt = ufs.View.MapModelToDrawing(view.Tag, [35.0, -20.0, 9.0])   # 返回图纸�
 
 出图走 `View.Base` 视图（空视图问题见 §B.1）：`run_journal.exe` 批处理直接出 A3 三视图 PDF + 同名 .prt，无需 GUI/解锁。
 
-`PrintPDFBuilder`（`part.PlotManager.CreatePrintPdfbuilder()`，在 **part** 上）正常出图，每 sheet 一个 PDF。
+`PrintPDFBuilder`（`part.PlotManager.CreatePrintPdfbuilder()`，在 **part** 上）正常出图；**一次 `SetSheets([...])` 出一份多页 PDF**（多张图纸合成一份文件，不是每 sheet 一份）。
 
-PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（`SizeOption` 只读）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 的 sheet 必须属于 display part。
+PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（`SizeOption` 只读）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 接受外来图纸但**不报错**（会出空白页），必须自查 sheet 属于 display part（`sheet.OwningPart`），`gb_drawing.export_pdf` 已加该校验。
 
 **交付形态**：`run_journal.exe` 批处理一键（`.bat` 用 **GBK + CRLF**；Python 3.6 的 UTF-8 输出重定向进日志）。图纸 A3 三视图（第一角），**不含尺寸与中心线**。
 
@@ -87,9 +87,9 @@ ufs.Draw.AddDetailView(sheet.Tag, front.Tag,
 | 项 | 判据 |
 | --- | --- |
 | 投影视图 | 建出 `ORTHO@n`；**必须 `ufs.Draw.UpdateOneView(sheet.Tag, tag)` 再问**——不更新时 `AskVisibleObjects()`=0（几何已在出图），更新后有内容 |
-| 局部放大视图 | `DETAIL@n`，更新后 `AskVisibleObjects()` 大于 0 |
-| 局部放大比例 | UF `AskViewScale(detail)` = 设定比例 × UF 父比例（乘性）；.NET `view.Scale` 是自缩放链，**核对用 UF 值** |
-| 边界圆 | 虚线圆半径 ≈ **选框半对角的 0.83 倍**，选框留余量 |
+| 局部放大视图 | `DETAIL@n`，更新后 `AskVisibleObjects()` **仅在确有内容时**大于 0；框住空白区的局部放大合法地为 0，判据取**视图有效 + 出图上目视确认有内容**，不要只看这个计数 |
+| 局部放大比例 | UF `AskViewScale(detail)` **第 2 项** = 设定比例本身（绝对值，不乘父比例）；第 1 项是 out 参数 `scale_tag`（读数均为 0，别当比例）；.NET `view.Scale` 是自缩放链，**核对用 UF 值** |
+| 边界圆 | `AskViewBorders` 对 detail 返回**选框矩形本身**，不是边界圆，**不能用来量圆**；边界圆是否覆盖目标区只能在出图上目视确认，选框须留余量 |
 | 放置点越界 | y=250（A4 高 210）抛 `Input is not a valid parameter`，**不创建视图** |
 | 删除视图 | `ufs.Obj.DeleteObject(tag)`（无 `DeleteObj`；无 `UF_DRAW_delete_view`） |
 
@@ -98,7 +98,7 @@ ufs.Draw.AddDetailView(sheet.Tag, front.Tag,
 - 自动名 = `<标签>@<视图号>`（序号随建视图顺序变，**不要假设 `FRONT@1`**）：投影 `ORTHO@n`、剖视 `SX@n`、局部放大 `DETAIL@n`。
 - `@n` 是视图标签序号，**不连续也不可预测**（局部放大的边界圆会占号，5 之后直接到 7）。精确匹配用实际名；按类找用前缀 `name.split("@")[0]`。
 - 改名：`view.SetName("FRONT_MAIN")`，改后 `view.Name` 就是 `FRONT_MAIN`（`@n` 后缀消失）。`view.Name = ...` 抛 `AttributeError: attribute 'Name' of 'NXOpen.NXObject' objects is not writable`。
-- 查找：图纸视图迭代 `sheet.GetDraftingViews()` 比名字（`gb_drawing.base_view` 按 `split("@")[0]` 前缀匹配，改名不破坏它）；模型视图用 `part.Views.FindObject("VFRONT")`（`save_model_view` 存的名字）。
+- 查找：图纸视图迭代 `sheet.GetDraftingViews()` 比名字（`gb_drawing.base_view` 按 `split("@")[0]` 前缀匹配，改名不破坏它）；模型视图用 `part.Views.FindObject("VFRONT")`（`save_model_view` 存的名字）。⚠ **建模型视图必须在任何图纸/视图存在之前**：一旦有 sheet/view，`Views.SaveAs`（`save_model_view` 内部）抛 `Internal error`，恰在需要它的时候失效。
 
 UF 包装类：
 - 枚举挂在**会话对象**上：`NXOpen.UF.UFDraw` 不可 import，写 `ufs.Draw.ProjDir`；成员 `PROJECT_INFER/PROJECT_ABOVE/PROJECT_RIGHT/PROJECT_BELOW/PROJECT_LEFT`（无 `Below` 短名），`SxsegType` = `SXSEG_CUT/SXSEG_BEND/SXSEG_ARROW`。传裸 int 报 `Expecting NXOpen.UF.Draw.ProjDir type, found int`。
@@ -125,6 +125,8 @@ view = svb.Commit(); svb.Destroy()           # -> NXOpen.Drawings.SectionView
 判据分工：`IsSxview` 证"是剖视图"，`AskSxsolidsOfSxview` 证"剖到实体"，`Hatch` 证"画了剖面线"。**`Hatch` 单独说明不了切到没切到孔**——实心块剖开同样打剖面线，还须断言毛坯上存在圆柱面（`AskFaceData` 面类型 16）。
 
 ⚠ 剖视图显示"剖切面 + 面后可见几何"，不是只有切口：两孔在 y=20/60 时对应剖切面读数完全一样；曲线数只反映模型里有什么，不反映切面在哪。
+
+⚠ **剖视朝向**：默认建法**会斜置**——同一切面（Y=0）的四种默认建法（父=主视/俯视 × 直剖/半剖/阶梯）出图内容框全不轴对正（主线程探针 `scratch/verify/v_sect_probe.py`，日志 `wd_sect/log_probe_sect.txt`：剖切坐标系首向量相对 X 轴 −37.9°/+86.4°/+30.7°）。**批处理里可控制**：Commit 前设 `svb.ViewOrientation.OrientationType = NXOpen.Drawings.ViewOrientationBuilder.Orientation.UseParentOrientation`，出图即与父视图同向、内容框为真实剖切轮廓。本地探针 `scratch/fix/probe/probe_sxorient.py`（同一 Y=0 切面，120×80×12 板，1:1）：默认内容框 120×80、`axis_aligned=False`；设 `UseParentOrientation` 后 120×12、`axis_aligned=True`（读回 2）；`Orthographic`（读回 0）仍不正；`InheritOrientation`/`SectionExisting` 需再给 `SelectView`，缺则 Commit 分别报 `Invalid view.` / `The view tag is NULL_TAG`。
 
 #### 阶梯剖
 
@@ -176,7 +178,7 @@ segs.SegmentLocationForSecondLeg.AddCutSegment(
 - **读数**：半剖 `HALF_SXLINE`（4），`AskHalfSxline` 8 字段（第 6 段数 3）；旋转剖 `REVOLVED_SXLINE`（3），`AskRevolvedSxline` 11 字段（第 8 腿段数 4）。⚠ 元组长度非固定，断言取"≥ 已知最少"或按字段位置取；其余 `Ask*Sxline` 报 `Section line is not correct type.` → **剖切线类型是最省事判据**。
 - ⚠ **旋转剖不设旋转点必被拒**：默认落折点，报 `Rotation and bend points cannot be coincident.`；赋 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`。
 - ⚠ **`SegmentLocation.Length` 计段端点**：两腿各 2 点读 4、腿 2 单点读 2；半剖 L 形三点读 3，直线两点也读 3。别拿它判点数。
-- **展开剖 = `ViewUnfolded`**：可设可提交（`CreateFolded` 变 False），但对象级读数与折叠态相同，唯一差别是 PDF 字节数；判据只取"开关读回 + 视图有效 + 两份出图不同"。.NET 无展开剖类型，`AskUnfoldedSxline` 报 `Section line is not correct type.`。
+- **展开剖 = `ViewUnfolded`**：可设可提交（`CreateFolded` 变 False），但**对象级读数与折叠态完全相同**（同 `REVOLVED_SXLINE`、同可见对象/类型计数、同剖切腿向量）。唯一可用的差别在**出图**：两份 PDF 的**字节数不稳定**——随视图名与视图数浮动（`31_drafting_sections.py` 头注记三组 18372/18414、18248/18077、18246/18077，连大小顺序都不固定；复跑 18248/18076），甚至有单次读数两份恰好相等。所以判据只能取"开关读回 + 视图有效 + **两份出图不相同**"（31 号断言字节不等，要稳则比内容哈希）；**不能**用"字节数相同"反推开关没生效。.NET 无展开剖类型，`AskUnfoldedSxline` 报 `Section line is not correct type.`。
 
 **阶梯剖路线约束**：先设 `SectionViewType = SimpleStepped`，再把 Z 形 4 点整条挂到投影面匹配的父视图；阶梯剖的点全给一条腿，不要拆 `SegmentLocationForSecondLeg`（腿 2 不生效）。模式用默认值（`StandAlone` 报内存访问违例或 `Section line lost model associativity.`）；入口用 `SectionViewBuilder`（弃用的 `SectionLineBuilder` 报 `Section line must have a cut segment.` / `Invalid view.`；`CreateSimpleSxview`/`CreateSxviewFromDmv` 需要既有剖切线，builder 够用）。
 
@@ -189,7 +191,7 @@ segs.SegmentLocationForSecondLeg.AddCutSegment(
 | `ViewPlacementBuilder.Placement` | 同上，`.Value` 可写 |
 | `DetailViewBuilder.Origin` / `Scale` | 只读且无容器通道——局部放大仍走 UF `AddDetailView` |
 | `DetailViewBuilder.BoundaryPoint1/2` | 要 `NXOpen.Point` 对象，传 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`；都不给则报 `The points defining the boundary cannot be the same` |
-| 空 `SectionLine` 直接 Commit | `Null tag not allowed` |
+| 空 `SectionLine` 直接 Commit | **静默返回 `None`、不报错**（`Null tag not allowed` 实际源自点被拒后的提交） |
 
 **通用判据**：属性只读时先看返回的是否 `SelectObject`/`ScCollector` 容器（`.Value` 可写）；拿不到容器通道才退回 UF。
 
@@ -206,7 +208,7 @@ segs.SegmentLocationForSecondLeg.AddCutSegment(
 3. UF 曲线查询返回模型空间坐标；图纸坐标只用于 `AssocDwgPos`/球标原点。
 4. 尺寸关联：同一曲线两个 `END_POINT` 读数 0 时换两条不同边；端点含义不同时改挂顶圆弧 `ARC_CENTER`，创建后读数不对即删重试。
 5. 视图曲线被截断成多段时，共线匹配取最长段。
-6. `SetDrawingReferencePoint` 后 `AskViewScale` 回读 0 时，比例用内容包盒反推（右视图内容宽=模型 Y 跨度）。
+6. `AskViewScale` 的 UF 原型是 `(view, scale_tag@, scale@)`，Python 回读成 `(scale_tag, 比例)`：**只看第 2 项**——第 1 项是 out 参数 tag，读数均为 0，误取会以为比例是 0。取到真值后仍可用内容包盒反推校核（右视图内容宽=模型 Y 跨度）。
 7. 重跑同图页先 `ufs.Draw.DeleteDrawing(旧图页)`；图框显式 `gb.frame(sheet, size)`。
-8. 球标布点见 `drafting-annotation.md` §6b；origin 无碰撞检查。
+8. 球标布点见 `drafting-annotation.md` §6b；origin 无钳位、无碰撞检查（越界坐标静默接受且不渲染）。
 9. 表格 em dash 渲染成豆腐块时，跨栏格写中文短语。

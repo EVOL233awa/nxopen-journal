@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Current version 1.3.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Current version 1.4.0 (see [CHANGELOG.md](CHANGELOG.md)).
 
 An agent skill for Siemens NX 12. After installation, an agent can write NXOpen Python journal
 scripts from natural-language instructions, run them headlessly through NX 12 in batch mode, and
@@ -59,31 +59,39 @@ Solids and assemblies are rendered outside NX from STL exported by the same run 
 cannot capture an image, see limitations), the drawings are PDFs the run wrote directly, and both
 charts plot real solve data written to disk.
 
+The journal behind each figure is not part of this repository (no script here generates these
+images), so the node counts, step counts and part counts in the captions describe that one run.
+Suite cases pin their own mesh, step count and part count, so their numbers differ — do not use
+the captions to judge a suite case.
+
 | Modeling: bearing pedestal, ribs, hole pattern (trimetric render) | Assembly: plate, pins, bushing and cap, mates colour-coded |
 | --- | --- |
 | <img src="images/modeling.png" width="400"> | <img src="images/assembly.png" width="400"> |
 
-The assembly figure colour-codes the four red pins, the gold bushing and the dark cap on the grey
-base plate. 13 persistent constraints hold the seven components and every pose was read back and
-verified against its design value.
+The assembly figure comes from one standalone assembly run that colour-codes the four red pins,
+the gold bushing and the dark cap on the grey base plate: 13 persistent constraints hold the seven
+components and every pose was read back and verified against its design value (the assembly cases in
+the suite are much smaller — cases 04 and 10 use two components each).
 
 | Drafting: three views, section A-A, dimensions, centrelines | GB drawing: A4 sheet, frame, title block, notes |
 | --- | --- |
 | <img src="images/drafting-annotation.png" width="400"> | <img src="images/gb-drawing.png" width="400"> |
 
-All nine dimensions in the drafting figure are UF-related objects attached to geometry, and the PDF
-text layer was token-checked with pymupdf. The GB figure's sheet, frame, title block and general
-notes come from the skill's gb_drawing module in one pass.
+The drafting figure comes from one standalone drawing run: all nine dimensions are UF-related
+objects attached to geometry and the PDF text layer was token-checked with pymupdf (suite case 19
+creates only three dimensions, so it does not reproduce that count). The GB figure's sheet, frame,
+title block and general notes come from the skill's gb_drawing module in one pass.
 
 | FEA: SOL101 cantilever vs beam theory (two panels) | Motion: rocker angle and angular velocity vs analytic (720 steps) |
 | --- | --- |
 | <img src="images/fea.png" width="900"> | <img src="images/motion.png" width="900"> |
 
-The FEA figure overlays the real 14998-node displacement field on beam theory (free-end ratio 0.982)
-and samples bottom-fibre stress against the analytic distribution (ratio 1.000 mid-span; the
-Saint-Venant corner region is shaded and not used as a criterion). The motion figure plots per-frame
-data of a 720-step solve: the rocker swing span differs from the closed form by 0.0014 degrees and
-the reversal count matches.
+The FEA figure comes from a 14998-node mesh (suite case 09 uses a coarser mesh, hence a different
+node count): it overlays the displacement field on beam theory (free-end ratio 0.982) and samples
+bottom-fibre stress against the analytic distribution (ratio 1.000 mid-span; the Saint-Venant corner
+region is shaded and not used as a criterion). The motion figure plots per-frame data of a 720-step
+solve (suite case 18 uses `NSTEP = 360`): the rocker swing span differs from the closed form by
+0.0014 degrees and the reversal count matches. Both captions describe only their own run.
 
 ### Advanced cold start: the ZA crank-rocker assembly
 
@@ -254,9 +262,9 @@ recorded in `scripts/tests/README.md`.
 | Drafting | 06 07 19 20 21 27 31 33 |
 | FEA | 09 24 25 30 |
 | Motion | 18 23 36 (16 and 17 cover assembly-level joints) |
-| Measurement & reverse engineering | 38 39 40 |
+| Measurement & reverse engineering | 38 39 40 49 |
 
-Three further one-shot API probes are not part of the check and are kept for reference.
+The suite is 49 case files: 46 gated cases plus three one-shot API probes that are not part of the check and are kept for reference.
 
 ## Why this skill
 

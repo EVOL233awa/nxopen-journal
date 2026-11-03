@@ -5,7 +5,7 @@
 ## 1. 决定性结论（先读这个）
 
 1. **全局偏好是字高/箭头的唯一正道**：`wp.Annotations.Preferences` 设好后 **UF DRF 尺寸自动继承**（字高 3.5 → `GetDimensionText().Size == 3.50`），不逐尺寸改。
-2. **线性尺寸 = `CreateHorizontalDim`/`CreateVerticalDim` + `AssocDwgPos` 显式图纸点**。`CreateParallelDim` 线性边端点歧义、测任意两点距，禁用（仅圆心-圆心）；缺 dwg 点界线会画到共享投影的错误视图（残影）。
+2. **线性尺寸 = `CreateHorizontalDim`/`CreateVerticalDim` + `AssocDwgPos` 显式图纸点**。`CreateParallelDim` 线性边端点歧义、测任意两点距，禁用（仅圆心-圆心）。
 3. **表格 = `ufs.Tabnot.*`**；`Create` 默认 **5×5**，先删。
 4. **直径写 `<O>`**，不传字面 `Ø`(U+00D8)：UF 报 `Locale data detected when UTF8 data was expected`（中文没事）。
 
@@ -37,7 +37,7 @@ def set_global_prefs(wp):
 - 继承审计：建完取 `d.GetLetteringPreferences().GetDimensionText().Size` = 设定值。
 - 逐尺寸设 `EdlineAndArrow` 冗余：全局 `LineAndArrowPreferences` 已被子尺寸继承，只设全局。
 - ⚠ **`SetLetteringPreferences` 不能省**：Get 返回副本，不 Set 等于没改。
-- ⚠ **期望非默认**：mm A4 默认尺寸 **3.5**、注释 **6.5**；改设非默认值（如 4.0）再断言（`scripts/tests/19`）。
+- ⚠ **期望非默认**：mm A4 默认尺寸 **3.5**、注释 **5.0**、公差 **2.0**；改设非默认值（如 4.0）再断言（`scripts/tests/19`）。
 - 兜底：遍历 `wp.Dimensions` 逐个 Get→改→Set。
 
 ## 3. 尺寸布局规范（GB/T 4458.4-2003 + 专业实践）
@@ -57,9 +57,9 @@ org：`Create*Dim` = 尺寸线名义位置（吸附 2~3mm）；`Tabnot.Create` o
 **摆位**：
 
 - `SetDrawingReferencePoint` 钉的是锚点模型点而非内容中心，偏差按视图恒定；不要手填常数，统一用 `gb_drawing.pin_view` 按内容包盒迭代（收敛 <0.05mm）。
-- 后续抛 `Cannot move view off of the drawing` 会**回滚已成功的移动**；保证视图不出图幅。
+- 后续越界移动**不报错、也不自动回滚**（越界 Set 全部正常返回）；摆位后必须自查内容包盒仍在图幅内。
 - `AskViewBorders` 含标签余量，只配粗估；真值用内容包盒 `model_bbox` + `ufs.View.MapModelToDrawing` 取 min/max（`content_bbox`/`pin_view`），收敛判据内容中心偏差 <0.05mm。
-- 剖视沿父视图对齐轴（同 x/y 中心）时方向正确、包盒精确；定位只用 placement origin（`SectionLineOnlyPlacementOrigin` = `ViewPlacement.Placement.Value`）。斜放会旋转且包盒失真；包盒 pin 仅普通视图。
+- 剖视沿父视图对齐轴（同 x/y 中心）时方向正确、包盒精确；定位只用 placement origin（`SectionLineOnlyPlacementOrigin` = `ViewPlacement.Placement.Value`）。斜放会旋转且包盒失真；包盒 pin 仅普通视图。**朝向本身**由 `svb.ViewOrientation.OrientationType` 决定（默认斜置，`UseParentOrientation` 才与父视图同向，见 `drafting.md` B.4）。
 - ⚠ **placement origin ≠ 内容中心**；沿对齐轴用包盒量偏移修正。
 - 剖视 placement 须在图幅内；建完断言可见对象数与 hatch ≥ 1（`view_kinds`）——出图幅时 Commit 成功、scale 1.0、零内容。
 - 改 `view_layout` 后标注坐标全部重算；道位从内容包盒推导（`LANE_FIRST`/`LANE_STEP`）。
@@ -87,7 +87,7 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 #   AssocType=ARC_CENTER）；ComputedSize 取半径（非直径）
 ```
 
-- **`AssocDwgPos` 必须显式给，且恰 2 个 double**；留 `[0,0]` 时长直边界线画到错误视图，长度 3 报 `Array length mismatch`。显式点渲染 ~1.5mm 关联符号，关不掉，接受。
+- **`AssocDwgPos` 必须显式给，且恰 2 个 double**；留 `[0,0]` 不会画到别的视图（按自身 origin 正常渲染，无残影），长度 3 报 `Array length mismatch`。显式点渲染 ~1.5mm 关联符号，关不掉，接受。
 - 字段名 PascalCase（`ObjectAssocType`）；枚举传成员（`getattr(NXOpen.UF.Drf.AssocType, "ARC_CENTER")`），传 int 报类型错；`NXOpen.UF.Drf` 是属性容器，不可 `import NXOpen.UF.Drf`。
 - **线性尺寸两关联对象挂两条不同的边**；同边两个 END_POINT → `ComputedSize=0.0`。
 - ⚠ **装配实例边 + 剖视图，异边也不保证真值**（偏差可达零点几毫米）：PDF 文本层逐值对账，不符则删尺寸、外形写进技术要求。
@@ -109,7 +109,7 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 
 - 直径引线就近引出、不穿越轮廓或视图边界。
 - **尺寸文字落在轮廓外的空白处**，不压轮廓、剖面线或其他文字；GB 布点见 §3。
-- `dim_diameter` 不支持附加文本（"4×Ø7"）：EQS/数量形态走 §5 的 label 注记。
+- `dim_diameter` **可以带数量前缀**：按 §5 的 tag 路线取 `GetAppendedText()`，`SetBeforeText(["4x"])` 成功且出图渲染 "4x" + 数值，不必退回 label；成组的数量引线仍可用 `gb_drawing.quantity_label`。
 
 ## 5. 注释文字（技术要求/标题栏/图名）
 
@@ -119,7 +119,7 @@ wp.Annotations.CreateNote([u"技术要求："],
 ```
 
 - ⚠ **origin 是文本块中心**：多行/左对齐按估宽右移半宽（CJK≈h、ASCII≈0.55h：`sum(h if ord(ch)>0x2E80 else h*0.55 for ch in s)`）。
-- ⚠ note 默认 6.5mm：`lp = note.GetLetteringPreferences(); g = lp.GetGeneralText(); g.Size = 3.5; lp.SetGeneralText(g); note.SetLetteringPreferences(lp)`。
+- ⚠ note 默认字高 **5.0mm**（不是 6.5）：`lp = note.GetLetteringPreferences(); g = lp.GetGeneralText(); g.Size = 3.5; lp.SetGeneralText(g); note.SetLetteringPreferences(lp)`。
 - **带引线标签（.NET）**：
   ```python
   bundle = wp.Annotations.NewLeaderBundle()
@@ -135,7 +135,7 @@ wp.Annotations.CreateNote([u"技术要求："],
   # 字高后置：GetLetteringPreferences→GetGeneralText→Size=3.5→SetGeneralText→Set
   ```
   assoc 须真实边（part → `Cannot extract the curve from edge`；None → `Expecting NXObject`）；view 须 drafting view（sheet → `Expecting NXOpen.View`）。
-- ⚠ **侧立圆（圆平面⊥纸面）作 assoc → 锚点飞出图框**；真圆/直线边正常，素线挂不上。**侧立圆直径**：换平行视图挂真圆（隐藏边也可）。
+- ⚠ **侧立圆（圆平面⊥纸面）作 assoc 时锚点不落在该圆上**：锚点落到相邻视图内（(120,138)）、引线横跨 125mm——不是"飞出图框"，但结果同样不可用；真圆/直线边正常，素线挂不上。**侧立圆直径**：换平行视图挂真圆（隐藏边也可）。
 - **公差带代号（H8/f7）**：按 tag 找 .NET 尺寸对象，Get→改→Set：
   ```python
   for d in part.Dimensions:
@@ -199,23 +199,23 @@ for ri in range(2):
         ufs.Tabnot.SetCellText(cell(ri, ci), vals[ri][ci])
 ufs.Tabnot.Update(tn)
 
-got = ufs.Tabnot.AskCellText(cell(1, 1))              # 回读：(rc, text)
-print(got[1] if isinstance(got, tuple) else got)      # -> <O>10
+got = ufs.Tabnot.AskCellText(cell(1, 1))              # 回读：裸 str（本版不返回元组）
+print(got)                                            # -> <O>10
 ```
 
 - 默认表是 5×5（`AskNmColumns/AskNmRows` 返回裸 int）；清空后建表并回读校验（中文与 `<O>` 均可）。
-- `Create`/`AskNthRow`/`AskNthColumn`/`AskCellAtRowCol` 在 Python 里可能返回元组，统一 `norm()` 解包。
+- `Create`/`AskNthRow`/`AskNthColumn`/`AskCellAtRowCol`/`AskCellText` 在本版**都返回裸 `int`/`str`**（单机单版本一轮探针，未观测到元组）；`norm()` 解包保留作防御，任何断言都不要依赖它。
 
 **完整表格/明细栏**：
 
 - **origin = 左上角**，向下生长，吸附 ~2mm。
 - `ufs.Drf.SetOrigin` **未打通**（第 1 参不收 tabular note tag）→ 定位走 UFTabnot。
-- 成员：`AddColumn`/`AddRow`/`SetColumnWidth`/`SetRowHeight` 可用；`AddHeaderRow` **3 参**；`EnableAutomaticUpdate` **0 参取用**；`SetCellPrefs` 需真 cell tag；`MergeCells` **2 参**；无 `Sort`。
+- 成员：`AddColumn`/`AddRow`/`SetColumnWidth`/`SetRowHeight` 可用；`AddHeaderRow` **3 参**；`EnableAutomaticUpdate` **1 参（bool）**；`SetCellPrefs` 需真 cell tag；`MergeCells` **2 参**；无 `Sort`。
 - **PascalCase + 枚举对象**：`SectionPrefs.UseDoubleWidthBorder=True` + `BorderWidth=0.7`；`AttachPoint=NXOpen.UF.Tabnot.AttachPoint.ATTACH_POINT_TOP_LEFT`；`CellPrefs.HorizJust=Just.JUST_CENTER`、`VertJust=Just.JUST_MIDDLE`。
-- **行高先关自适应**（uf_tabnot.h）：每 cell `AskCellPrefs` → `cp.NmFitMethods = 0` → `SetCellPrefs`，再 `SetRowHeight`；否则空行 ~5mm、超宽文字 `############`。
+- **行高先关自适应**（uf_tabnot.h）：每 cell `AskCellPrefs` → `cp.NmFitMethods = 0` → `SetCellPrefs`，再 `SetRowHeight`；否则请求的行高被自适应改写（请求 8.0 得到 10.0）、超宽文字 `############`。
 - **图框用单格表**：267×200（A4 25/5 边距）+ 双线宽边框，标题栏/明细栏贴右下角；`AskNthRow/Col` 回读校验。
-- **明细栏**（GB/T 10609.2）：行高 7mm、标题栏上方、**自下而上**（row0 在底部）；列序 序号/代号/名称/数量/材料/备注。
-- **BOM 垂直居中**：`cy = ROW0 + RH*ri + RH/2.0`；错写 `RH*(ri+1)+RH/2.0` 全表上浮一行。
+- **明细栏**（GB/T 10609.2）：行高 7mm、标题栏上方；表格行**自上而下增长、row0 在顶部**，要 GB 的"自下而上"须写入时倒序行；列序 序号/代号/名称/数量/材料/备注。
+- **BOM 垂直居中**：按行的实际生长方向推 `cy`（row0 在顶、索引向下 → `cy` 随 `ri` 递减）；旧式 `cy = ROW0 + RH*ri + RH/2.0` 假定行自下而上增长，与实际生长方向相反，未做像素级校验前不要照抄。
 - **成套图版式**：技术要求在图样右下、紧贴标题栏上方（总成图放明细表上方），全套统一；明细表 150mm 宽、行高 7mm；标题栏按 GB/T 10609.1 为 180×56，模块 `gb_drawing.title_block` 是 105×21 简化版（3 行 7mm），二者不混用；装配图三视图主视图大面左下、长条视图上方偏左、右视图上方偏右，铺满图框，球标随主视图。
 - **件号**：`CreateIdSymbol` 手动 + 手工明细表，不开自动件号。
 - `PartsListBuilder` NX12 **无创建入口** → UFTabnot 明细栏 + `CreateIdSymbol` 球标。
@@ -234,15 +234,15 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 
 - 第 7 参必须是 `NXOpen.UF.Drf.Object` 结构体，不是 Edge（`TypeError: Seventh parameter is invalid. Expecting NXOpen.UF.Drf.Object type.`）。
 - `NXOpen.UF.UFDrf` 运行期不存在；入口用 `NXOpen.UF.Drf`/`ufs.Drf`。
-- origin 只被图框钳位、无碰撞检查；圆圈落空白口袋，无口袋时换视图锚定。
+- origin **无钳位、无碰撞检查**：越界坐标被静默接受且该球标**根本不渲染**（(400,300)/(-60,100) 都不出图）；布点前自查在图框内，圆圈落空白口袋，无口袋时换视图锚定。
 
 ## 7. 中心线与中心标记
 
-- 圆心十字：`Centerlines.CreateCenterMarkBuilder(CenterMark.Null)`，`Locations.Add(圆边, view, Point3d(圆心))`。⚠ **一个 builder 一个 location**（多个报 1175303/1175305/1175307），批量循环建 builder（`scripts/tests/07_center_marks.py`）。
+- 圆心十字：`Centerlines.CreateCenterMarkBuilder(CenterMark.Null)`，`Locations.Add(圆边, view, Point3d(圆心))`。⚠ 一个 builder 的 location **上限是 2**，第 3 个起被拒（复测 n=3、n=4 → `Error number: 1175305`；`07_center_marks.py` 头注记同样 `n=3/n=4 → 1175305`、`n=8 → 1175307`；子代理台账记 `n=3 → 1175307` 与本地不符，以**"≥3 被拒"**为准，别断言具体码）；稳妥仍是一个 builder 一个 location、批量循环建（`scripts/tests/07_center_marks.py`）。
 - 通孔圆柱面两个等半径圆（近端可见、远端隐藏），`ARC_CENTER` 挂哪个都成功；按 `p1 == p2` 识别整圆、按半径筛孔壁、取 z 大者。
 - 轴线：`CreateCenterline2dBuilder(Centerline2d.Null)`，`Type = Types.ByPoints`，`Point1/Point2.SetValue(关联边, view, 模型点)`；两点取对称要素两心。
 - 回转体三视图都画对称轴（Front/Right 竖直 + Top 十字）。
-- ⚠ .NET 标注路线**不需要 `sheet.Open()`**（drafting.md B.2）。
+- ⚠ .NET 标注路线**不需要 `sheet.Open()`**；但 UF 尺寸（§4）在非当前图纸上会失败，须先 Open（drafting.md B.2）。
 
 ## 8. 出图验收清单（逐项过）
 
@@ -250,7 +250,7 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 2. 平行尺寸小内大外，界线不交叉。
 3. 同尺寸只标一次、不跨视图重复。
 4. 尺寸标在实线可见边上，不标虚线。
-5. 字高统一 3.5（公差 2.5），不混排 6.5/3.5。
+5. 字高统一 3.5（公差 2.5），不与默认 5.0/3.5 混排。
 6. 箭头实心、等长等宽。
 7. 回转体三视图都画中心线/中心标记。
 8. 直径写 `<O>`，不写字面 `Ø`。
@@ -259,8 +259,8 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 
 ## 9. 高发约束（跨域通用）
 
-- `CenterMarkBuilder` 一次一个 location（§7）；`CreateParallelDim` 线性边禁用，用 hdim/vdim（§4）。
-- `AssocDwgPos` 必须显式给，否则界线画到别的视图（§4）。
+- `CenterMarkBuilder` 一个 builder 最多 2 个 location、第 3 个起被拒（§7）；`CreateParallelDim` 线性边禁用，用 hdim/vdim（§4）。
+- `AssocDwgPos` 必须显式给（恰 2 个 double），关联点即图纸落点（§4）。
 - 直径写 `<O>`，不写字面 `Ø`（§1）。
 - `AppendedText` 走 `GetAppendedText()`→改→`SetAppendedText()`（§5）。
 - PDF 中文文本层零判别力，中文内容用渲染图目检（§10）。

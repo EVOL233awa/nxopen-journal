@@ -126,13 +126,21 @@ def _state_matches(a, b, rel_tol=1e-6):
 
 
 def _expr_map(part):
+    """命名表达式表 {lhs: expression}。
+
+    自动表达式（`p0`/`p1`…/`PI`）与 `measure.expression_survey` 用**同一个**
+    过滤器（`ms._is_auto_expression`）剔除，两处口径必须一致：把命名表达式
+    正确绑到 builder 后 NX 会生成 `p6 = L_PLATE` 这类别名，它不是设计参数，
+    也不该被包络/局部性当成可编辑量（否则默认调用会把正常件判成
+    `non-numeric rhs` → `stuck` → `pass=False`）。
+    """
     out = {}
     for x in part.Expressions:
         try:
             lhs = x.Equation.split("=")[0].strip()
         except Exception:
             continue
-        if lhs:
+        if lhs and not ms._is_auto_expression(lhs):
             out[lhs] = x
     return out
 
@@ -486,7 +494,17 @@ def budget(part, structures, feature_factor=4.0, feature_offset=12):
 
 # ------------------------------------------------------------------ 汇总
 
+def _stl_bbox(part):
+    """部件导出 STL 后的三角顶点包盒（G4 口径，与 `verify_parts` 同源）。"""
+    return [round(x, 6) for x in ms.mesh_bbox(_mesh(part))]
+
+
 def summary(part):
+    """部件概览。`bbox` 是**面表控制点盒**（`modeling.body_box` →
+    `AskFaceData` 的 box），环面/B 曲面的控制点会伸到真实曲面之外，**不得**
+    当 G4 的包盒读数——那一档要用 `envelope` 默认的 STL 顶点口径或
+    `verify_parts` 的 STL 顶点口径。这里的 `bbox_source` 如实标注来源。
+    """
     bs = list(part.Bodies)
     body = bs[0] if len(bs) == 1 else None
     box = mdl.body_box(part, body) if body is not None else None
@@ -499,6 +517,7 @@ def summary(part):
         "bodies": len(bs),
         "volume": (mdl.volume(part, body) if body is not None else None),
         "bbox": [round(x, 6) for x in box] if box else None,
+        "bbox_source": "face_control_box",
         "faces": (len(list(body.GetFaces())) if body is not None else 0),
         "features": len(list(part.Features)),
         "alerts": alerts,
@@ -506,17 +525,27 @@ def summary(part):
     }
 
 
-def envelope(part, ref_box, tol=0.05, source="brep_body_box"):
+def envelope(part, ref_box, tol=0.05, source=None, box=None):
     """G4 口径：包盒位置/尺寸偏差（对单实体）。
 
     阈值统一取 `tol`（默认 0.05 mm，与 references/reverse-engineering.md §4.1
-    的默认档一致），位置与尺寸同限。`source` 记录数据来源（这里是 NX 的
-    单实体包围盒），外部 QA 用导出 STL 顶点口径，两者不同源，报告里必须写清。
+    的默认档一致），位置与尺寸同限。
+
+    包盒默认取**导出 STL 的三角顶点包盒**（`ms.mesh_bbox` → `source=
+    "stl_triangle_bbox"`），与 G4 的判定口径（两侧 STL 顶点）同源。要传内核
+    精确盒就显式给 `box=` 并标 `source="kernel_exact_bbox"`；`face_table` 的
+    控制点盒（`AskFaceData` 的 box）会伸到真实曲面之外，只在调用方明确要求
+    时才用，且 `source` 必须写成 `"face_control_box"`——不许借默认值把它
+    冒充成内核精确盒。
     """
-    s = summary(part)
-    box = s["bbox"]
-    if not box:
-        return {"error": "no single body"}
+    if box is None:
+        if len(list(part.Bodies)) != 1:
+            return {"error": "no single body"}
+        box = _stl_bbox(part)
+        source = source or "stl_triangle_bbox"
+    else:
+        box = [float(x) for x in box]
+        source = source or "caller_supplied_bbox"
     pos = max(abs(box[i] - ref_box[i]) for i in (0, 1, 2, 3, 4, 5))
     size_ref = [ref_box[3] - ref_box[0], ref_box[4] - ref_box[1],
                 ref_box[5] - ref_box[2]]
@@ -659,6 +688,10 @@ def edit_envelope(part, names=None, factor_max=1.5, steps=None,
     传入时 `factor_max` 取 `max(steps)`，两者不再可能不一致。每步还原后
     校验体积/体数/面数/告警与基线一致，不一致直接抛错。
 
+    `names=None`（文档默认）时扫**命名表达式**（`_expr_map` 已剔除自动量
+    `p#`/`PI`）；绑定命名表达式后 NX 生成的别名 `p6 = L_PLATE` 不进来，
+    也就不会把正常件报成 `stuck`。
+
     返回每项 {name, value, max_ok_factor, failed_at, bounded, trials}：
     `failed_at` 是**第一次失败**的倍率（None = 到扫描上界都没崩），
     `max_ok_factor` 是最后一次成功的倍率——报告据此判"超出物理范围"还是
@@ -744,12 +777,27 @@ def edit_envelope_summary(env):
     """把 `edit_envelope` 的输出折成可判的三档。
 
     - `bounded`：到扫描上界都没崩，参数本身不脆；
-    - `narrow`：在上界以下崩了，给出倍率——这一档才是"结构脆弱"；
-    - `stuck`：连 ×1.10 都不过。
-    `narrow`/`stuck` 都要在报告里逐条写倍率与原文，不能用总数代替。
+    - `narrow`：在上界以下崩了，给出倍率**与失败原文**——这一档才是"结构脆弱"；
+    - `stuck`：数值入口连 ×1.10 都不过；
+    - `skipped`：RHS 非数值（公式/派生量，§7/§12.2 明说不是数值入口），与
+      `expression_survey` 的 `skipped` 同口径——公式不该被 `float()` 拒后算成
+      模型缺陷。名字不存在仍记 `stuck`（那不是口径问题，是调用方传错了名字）。
+    `narrow`/`stuck` 都要在报告里逐条写倍率与原文，不能用总数代替；narrow 的
+    `failure` 直接取首次失败 trial 的 `detail`/`errors`（原来只留倍率，报告
+    拿不到 `Update undo happened.` 这类原文）。
+
+    **空扫描不是通过**：没有命名表达式（`named=0`，全是自动 `p#`）时
+    `edit_envelope` 一行都不扫，旧口径会给出 `stuck=[] → pass=True`，看起来
+    和"全部有界"一模一样。此时 `measured=0` 且 `pass=False`（同
+    `expression_survey`/`g1full` 的口径：空分母不是通过），报告必须先补
+    命名表达式（§7/§11.3）。
     """
-    bounded, narrow, stuck = [], [], []
+    bounded, narrow, stuck, skipped = [], [], [], []
     for r in env.get("rows") or []:
+        if r.get("error") == "non-numeric rhs":
+            skipped.append({"name": r["name"],
+                            "why": "formula/derived rhs (not a numeric entry)"})
+            continue
         if r.get("error"):
             stuck.append({"name": r["name"], "why": r["error"]})
             continue
@@ -759,7 +807,18 @@ def edit_envelope_summary(env):
         elif r["failed_at"] is None:
             bounded.append(r["name"])
         else:
-            narrow.append({"name": r["name"], "max_ok_factor": top,
-                           "failed_at": r["failed_at"]})
+            entry = {"name": r["name"], "max_ok_factor": top,
+                     "failed_at": r["failed_at"]}
+            fail = None
+            for t in (r.get("trials") or []):
+                if t.get("factor") == r["failed_at"]:
+                    fail = t
+            if fail is not None:
+                entry["failure"] = (fail.get("detail")
+                                    if fail.get("detail") is not None
+                                    else fail.get("errors"))
+            narrow.append(entry)
+    measured = len(env.get("rows") or []) - len(skipped)
     return {"bounded": bounded, "narrow": narrow, "stuck": stuck,
-            "pass": not stuck}
+            "skipped": skipped, "measured": measured,
+            "pass": bool(measured) and not stuck}

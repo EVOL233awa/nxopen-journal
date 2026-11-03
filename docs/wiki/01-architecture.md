@@ -10,7 +10,7 @@
 graph TD
   A["入口层 SKILL.md<br>铁律/环境/骨架/路由"] --> B["域文档 references/*.md<br>8 个域，按任务选读"]
   B --> C["工具脚本 scripts/<br>check_journal / run_journal_batch / gb_drawing / render"]
-  B --> D["标准层 scripts/nxlib/<br>12 模块，import 复用"]
+  B --> D["标准层 scripts/nxlib/<br>14 模块，import 复用"]
   C --> E["回归套件 scripts/tests/<br>49 用例 = 46 门 + 3 探针"]
   D --> E
   E --> F["NX 12 批处理<br>run_journal.exe"]

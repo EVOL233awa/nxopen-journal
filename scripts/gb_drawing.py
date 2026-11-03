@@ -13,8 +13,8 @@ standard_views -> title_block/tech_note -> 标注 -> export_pdf" 的顺序调用
     默认版式 = 一张真实工程图纸实测（105x21，3 行 7mm，6 列），字段齐全
   * GB/T 4458.4   尺寸道位：第一道距轮廓约 10mm、相邻道约 7mm（通行做法）；
                 同向多道按数值升序外推（小尺寸在内道、大尺寸在外道）。
-                成组等径孔只标一条数量引线（2x<O>10，quantity_label），
-                不逐孔 dim_diameter（UF 直径尺寸写不进数量前缀）
+                成组等径孔只标一条数量引线（2x<O>10，quantity_label）；直径尺寸对象
+                也可加数量前缀（AppendedText.SetBeforeText）
   * 投影角        第一角（GB）
   * 字高          3.5 / 2.5（GB/T 14691 常用两档）
 
@@ -37,14 +37,17 @@ LANE_STEP = 7.0                           # 相邻尺寸线道距
 VIEW_GAP = 22.0                           # 三视图间距（内容区留白）
 VIEW_MARGIN = 18.0                        # 视图组离图框
 # 标题栏：105x21，3 行 7mm，列宽 [label,value]x3（总宽约 105mm、
-# 三行结构 = 图名/设计校核日期/图号比例材料）。14/21 列宽在 NX 表格
-# 字体下放不下 10 字符日期（2.5 字高时 ASCII 字宽约 2.1mm，21mm 只容
-# 10 字符，溢出画成 #），故用 10/25，总宽 105 不变。
+# 三行结构 = 图名/设计校核日期/图号比例材料）。14/21 列宽放不下 10 字符
+# 日期（2.5 字高 ASCII 步进实测 1.88-2.16 mm/字符，随字型变：默认
+# chinesef_fs 约 2.16mm→21mm 列溢出画 #，set_cjk_font 后 chinesef 约
+# 1.88mm），故用 10/25，总宽 105 不变。
 TB_W, TB_H = 105.0, 21.0
 TB_COLS = [10.0, 25.0, 10.0, 25.0, 10.0, 25.0]
 TB_ROWS = [7.0, 7.0, 7.0]
-# 局部放大边界圆半径约等于选框半对角的 0.83 倍（缩进 5-6mm）：
-# detail_rect() 据此自动放余量
+# detail_rect() 的选框放大系数。0.83 是早期启发式，来源已不可复现
+# （AskViewBorders 对 detail 返回选框本身、量不到边界圆，见
+# references/drafting.md B.4），保留只为不退化成 0；改前必须在实图上
+# 核对边界圆是否盖住目标区。
 DETAIL_CIRCLE_FACTOR = 0.83
 DEFAULT_NOTE_LINES = [
     u"技术要求：",
@@ -374,9 +377,10 @@ def pin_view(sheet, view, cx, cy, scale=1.0, tol=0.05, tries=3, bbox=None):
     is not the content centre, so each Set is followed by a measured
     content-centre delta and one compensating Set (constant per view ->
     converges; measured <0.05mm).  bbox = model_bbox() result, needed for
-    the content measurement.  Content moves are rolled back if a LATER call
-    on the same sheet raises "Cannot move view off of the drawing" (measured),
-    so the caller must keep every view in-sheet."""
+    the content measurement.  Out-of-sheet moves are NOT rejected and NOT
+    rolled back (measured: four out-of-sheet Sets all returned normally, no
+    "Cannot move view off of the drawing"), so the caller must verify each
+    view's content box stays in-sheet itself."""
     if bbox is None:
         raise RuntimeError("pin_view: bbox=model_bbox() is required")
     ufs = _ufs()
@@ -402,9 +406,15 @@ def save_model_view(part, name, rows):
     """Persist a named MODEL view with the given basis.
 
     rows = (screen X, screen Y, view Z) as 3-tuples in absolute coordinates.
-    The matrix is the only working way to get a non-axis-aligned drawing:
-    drafting views reject View.Rotate ("The view may not be rotated") and UF
-    transform is a silent no-op on solids in batch.
+    Drafting views reject View.Rotate ("The view may not be rotated"), so a
+    side route is needed; UF TransformEntities does work on solids in batch
+    (16-float matrix; the effect only shows after the next update, so reading
+    a bbox before that looks like a silent no-op), and this model-view route
+    is the alternative that leaves the solid itself untouched.
+
+    Must run BEFORE any sheet/view exists: once a drawing view exists,
+    Views.SaveAs below raises "Internal error" (measured), i.e. the route is
+    dead exactly when a drawing is already open.
     """
     m = NXOpen.Matrix3x3()
     m.Xx, m.Xy, m.Xz = [float(v) for v in rows[0]]
@@ -434,10 +444,14 @@ def base_view(part, sheet, model_view_name):
 def set_cjk_font(part):
     """Point all lettering classes at the 'chinesef' NX stroke font.
 
-    The default blockfont has no CJK glyphs: Chinese notes/tables plot as
-    empty boxes in the PDF.  Arial Unicode MS is loaded but NX's plotter does
-    not render its CJK glyphs either.  Lettering carries the font in
-    `Cfw.Font` (integer id); there is no `Lettering.Font`.
+    The template's general/appended lettering already defaults to
+    'chinesef_fs' (CJK glyphs), so notes/tables/title block plot Chinese
+    without this call; dimension/tolerance text defaults to 'blockfont'
+    (Latin only), which is why the four classes are pointed at 'chinesef'
+    here.  'Arial Unicode MS' is not in the NX font table at all
+    (AddFont reports "Font name was not found in the character font
+    directory").  Lettering carries the font in `Cfw.Font` (integer id);
+    there is no `Lettering.Font`.
     """
     fonts = part.Fonts
     fid = None
@@ -471,8 +485,11 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
     """Create the first-angle trio (FRONT above, TOP below, RIGHT beside),
     pinned by CONTENT centre into the free area above the title block.
     Call blank_datums() BEFORE this.  body defaults to the part's single
-    body.  size must match the sheet created by new_sheet (A4/A3); the
-    sheet exposes no Width/Height in NX 12, so it cannot be inferred.
+    body.  size must match the sheet created by new_sheet (A4/A3).
+
+    NX 12's DrawingSheet DOES expose `Height` (measured 210 on the A4 sheet
+    in 20_drafting_views.py) and `Length`; there is no `Width`.  The size is
+    still an argument so the layout never depends on reading sheet state back.
     Returns {"FRONT": view, "TOP": view, "RIGHT": view}."""
     ufs = _ufs()
     if size is None:
@@ -505,8 +522,8 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
     missing = [k for k in keep if k not in views]
     if missing:
         raise RuntimeError("standard views missing: %s" % (missing,))
-    # DraftingDrawingSheet exposes no Width/Height attribute in NX 12;
-    # the size is known from new_sheet instead
+    # NX 12 DrawingSheet exposes Height/Length (no Width); the size is taken
+    # from the size= argument (matching new_sheet) instead of read back here
     w, h = SHEET[size]
     # measure each view's content size at the target scale
     sizes = {}
@@ -557,11 +574,17 @@ def parent_ref(view):
 
 
 def detail_rect(bx, by, half_w, half_h):
-    """Selection rectangle for AddDetailView around (bx,by): NX draws the
-    boundary circle at ~0.83x the rectangle's half-diagonal (measured), so
-    the rectangle is inflated until the circle covers the requested box."""
-    # inflate uniformly so the half-diagonal covers the boundary circle
-    # (circle radius ~= 0.83 x selection-rect half-diagonal)
+    """Selection rectangle for AddDetailView around (bx,by).
+
+    The "circle radius ~= 0.83 x half-diagonal" relation this inflation was
+    derived from is NOT reproducible: AskViewBorders returns the selection
+    rectangle itself for a detail view (it never exposes the boundary circle),
+    so DETAIL_CIRCLE_FACTOR is an unverified heuristic kept only to avoid a
+    zero margin.  Confirm on the plotted sheet that the circle covers the
+    target area (references/drafting.md B.4).
+    """
+    # inflate uniformly with the heuristic factor; the margin must be
+    # confirmed on the sheet, not computed here
     k = 1.0 / DETAIL_CIRCLE_FACTOR
     return (bx - half_w * k, by - half_h * k,
             bx + half_w * k, by + half_h * k)
@@ -733,13 +756,15 @@ def dim_diameter(part, view, edge, center_model, org_xy, text=None):
 def quantity_label(part, view, edge, center_model, org_xy, text):
     """Quantity callout for a group of identical features (GB/T 4458.4-2003
     group elements): one leader label "2x<O>10" instead of one dim_diameter
-    per hole — UF diameter dims cannot carry a count prefix
-    (drafting-annotation.md §4b, measured dead end).
+    per hole.  A diameter dim CAN also carry a count prefix (AppendedText
+    SetBeforeText, drafting-annotation.md §4b); the label route is used here
+    for the GB group-element style.
 
     edge = the real circle edge in `view`, center_model = its centre in
     model mm (the leader lands there, mapped to sheet mm), org_xy = text
-    position in sheet mm.  Lettering forced to TEXT_DIM (UF CreateLabel is
-    6.5 uncontrolled).  Returns the label object."""
+    position in sheet mm.  Lettering forced to TEXT_DIM (UF CreateLabel
+    inherits the global general-text height, default 5.0, uncontrolled).
+    Returns the label object."""
     _o, xy = _assoc_obj(edge, view, "ARC_CENTER", center_model)
     bundle = part.Annotations.NewLeaderBundle()
     try:
@@ -790,8 +815,19 @@ def centerline_by_points(part, view, edge_a, pt_a, edge_b, pt_b):
 
 # -------------------------------------------------------------------- export
 def export_pdf(part, sheet, path):
-    """Plot one sheet to PDF (PrintPDFBuilder; measured)."""
+    """Plot one sheet to PDF (PrintPDFBuilder; measured).
+
+    SetSheets accepts a sheet that does not belong to `part` without complaint
+    and then plots a BLANK page (measured), so the owner is checked here.  One
+    SetSheets call produces ONE PDF (possibly multi-page), not one file per
+    sheet."""
     import os
+    owner = sheet.OwningPart
+    if owner is None or int(owner.Tag) != int(part.Tag):
+        raise RuntimeError(
+            "export_pdf: sheet %r does not belong to the display part; "
+            "SetSheets accepts it silently and plots a blank page"
+            % (getattr(sheet, "Name", "?"),))
     if os.path.exists(path):
         os.remove(path)
     pdfb = part.PlotManager.CreatePrintPdfbuilder()

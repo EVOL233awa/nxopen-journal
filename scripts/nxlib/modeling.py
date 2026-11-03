@@ -54,7 +54,12 @@ def bodies(wp):
 
 
 def body_box(wp, body):
-    """面遍历包盒 [xmin,ymin,zmin,xmax,ymax,zmax]（01 号口径）。"""
+    """面遍历包盒 [xmin,ymin,zmin,xmax,ymax,zmax]（01 号口径）。
+
+    这是 `AskFaceData` 的**控制点盒**：环面/B 曲面的控制点会伸到真实曲面
+    之外，不能当精确包盒或 G4 包盒读数（那一档用 `audit.envelope` 的默认
+    STL 三角顶点口径，底层是 `measure.mesh_bbox`）。
+    """
     u = ufs()
     box = [1e18, 1e18, 1e18, -1e18, -1e18, -1e18]
     for f in body.GetFaces():
@@ -374,7 +379,9 @@ def face_blend(wp, face_a, face_b, radius, reverse_a=False, reverse_b=False):
     """两支撑面 FaceBlend（BlendTwoFace）。
 
     支撑面可以是平面、圆柱、圆锥、环面或 B 曲面，但必须是完整解析面且
-    非相切；相切缝或宽度小于 2R 的窄条会报 `Radius is too large/small`。
+    非相切；相切缝，或**支撑面宽 < R** 的窄条，会报
+    `Radius is too large/small`（实测支撑宽 1.6 / R=1.6 可倒、1.5 / R=1.6
+    报错，没有 0.5 mm 余量；`structures.fillet_feasible` 同判据）。
     凸缘/凹口的两面法向组合不固定，未知时用 `face_blend_edge` 自动试。
     """
     builder = wp.Features.CreateFaceBlendBuilder(NXOpen.Features.Feature.Null)
@@ -511,14 +518,15 @@ def edge_is_concave(edge, trace=None):
 def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
     """开放链圆角刀：截面 = 角区 − 切圆，沿边拉伸（凸边减、凹边加）。
 
-    `EdgeBlend` 在开放链上提交会留下清不掉的诊断
-    （`Unable to terminate the blend faces`），开放边只能用刀：每条边生成
-    一把截面垂直于边的刀，拉伸到终点外 `ee`（起点与边端点平齐，穿出起点
-    会切掉顶点邻边该留的料）。`add=True` 生成凹边一侧的刀、
-    `False` 凸边；缺省按 `edge_is_concave` 自动判。两面不是平面、夹角不在
-    30°–150°、边长不足 `4*radius`、切点退化时返回 None，原因写进 `trace`
-    （若给）。返回 `(feature, 预期体积 mm3)`，调用方对
-    `feature.GetBodies()[0]` 做一次布尔（凸 Subtract / 凹 Unite）。
+    `EdgeBlend` 在开放链上不必然失败（实测 `Unable to terminate the blend
+    faces` 由半径大于支撑面宽触发，与"边不闭合"无因果）；用刀的理由是**每
+    段独立提交、失败即可回滚**，且能按几何重找下一条边：每条边生成一把截面
+    垂直于边的刀，拉伸到终点外 `ee`（起点与边端点平齐，穿出起点会切掉顶点
+    邻边该留的料）。`add=True` 生成凹边一侧的刀、`False` 凸边；缺省按
+    `edge_is_concave` 自动判。两面不是平面、夹角不在 30°–150°、边长不足
+    `4*radius`、切点退化时返回 None，原因写进 `trace`（若给）。返回
+    `(feature, 预期体积 mm3)`，调用方对 `feature.GetBodies()[0]` 做一次布尔
+    （凸 Subtract / 凹 Unite）。
     """
     u = ufs()
     vs = edge.GetVertices()
@@ -790,8 +798,13 @@ def create_plane(wp, origin, normal_vec):
 
 
 def boolean(wp, target, tool, op_type):
-    """通用布尔（02/03 号口径；注意 BlockFeatureBuilder.BooleanOption 静默失效，
-    体素级求差要走 14 号验证的 SetBooleanOperationAndTarget，不在此函数范围）。"""
+    """通用布尔：`Target`/`Tool`/`Operation`（02/03 号口径）。
+
+    `BooleanBuilder` **没有** `SetBooleanOperationAndTarget`（那是
+    BlockFeatureBuilder 的方法，14 号验证），照写报 AttributeError；两条路
+    分工见 modeling.md §2.5。`BlockFeatureBuilder.BooleanOption` 静默失效，
+    方块布尔要走 `SetBooleanOperationAndTarget`。
+    """
     bb = wp.Features.CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)
     bb.Target = target
     bb.Tool = tool
@@ -808,8 +821,9 @@ def unite_all(wp):
 
 
 def revolve_rect_uf(wp, x0, x1, r0, r1):
-    """矩形截面绕 X 轴 360° 旋转（UF Modl.CreateRevolved，02 号口径；
-    只吃凸轮廓，凹轮廓在 NX12 批处理下失败——见用例 02 文档）。"""
+    """矩形截面绕 X 轴 360° 旋转（UF Modl.CreateRevolved，02 号口径）。
+    360° 可用（含落在轴上的边）；自交或越过旋转轴的剖面才报
+    `Cannot create Swept geometry`（见建模文档 §1.14/§3.3）。"""
     u = ufs()
     curves = [
         wp.Curves.CreateLine(NXOpen.Point3d(x0, r0, 0.0), NXOpen.Point3d(x0, r1, 0.0)),
@@ -853,7 +867,8 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
     hub_d/hub_len > 0 时在齿宽中央加轮毂（减速器常用口径）；
     z_offset 平移整个齿轮的 Z 起点（默认 0）。
     返回 dict: body / volume / tip_tags / root_tags（供用例断言）。
-    口径：T8 逐字平移；体积对 z 敏感 ~5%/齿，验收带 ±2%。
+    口径：T8 逐字平移；体积对齿数敏感约 14%/齿（z=20→21 实测 +14.013%），
+    验收是扣孔体积对解析值的 ±2% 带宽。
     """
     u = ufs()
     rp = m * z / 2.0
