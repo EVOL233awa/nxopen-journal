@@ -11,7 +11,7 @@ agent 会话需要的是 `SKILL.md` 与 `references/`，本 wiki 不进 agent �
 | 宿主 | Siemens NX 12（12.0.0.27），Windows 11；NX 安装根由环境变量 `NX_HOME` 指定 |
 | journal 解释器 | NX 内嵌 Python 3.6.1，固定不可替换；宿主 Python 3.11+ 只跑检查与工具 |
 | 产物 | `.prt` 模型、装配、Drafting PDF、Nastran 结果、STL 渲染图 |
-| 验收 | 46 个批处理用例看输出 token；静态侧由 `check_repo.py` 与 `check_journal.py` 兜住 |
+| 验收 | 50 个批处理用例看输出 token；静态侧由 `check_repo.py` 与 `check_journal.py` 兜住 |
 
 ## 页面
 
@@ -19,7 +19,7 @@ agent 会话需要的是 `SKILL.md` 与 `references/`，本 wiki 不进 agent �
 |---|---|
 | [架构](01-architecture.md) | 五层结构与依赖方向：入口层 → 域文档 → 工具脚本 → nxlib 标准层 → 回归套件 |
 | [主执行流](02-execution-flow.md) | 一次请求从路由到 NX 回放的全链路，两套门（静态/动态）各自判什么 |
-| [模块](03-modules.md) | nxlib 14 个模块、`scripts/` 工具、8 个域文档的职责与入口函数 |
+| [模块](03-modules.md) | nxlib 15 个模块、`scripts/` 工具、9 个域文档的职责与入口函数 |
 | [数据流](04-data-flow.md) | 逆向测量编译链、FEA 链、出图链、离线渲染链、参数化模板链 |
 | [边界与风险](05-boundaries.md) | Python 3.6.1、批处理能力上限、平台绑定、判据判别力 |
 

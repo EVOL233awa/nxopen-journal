@@ -3,6 +3,29 @@
 本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- `scripts/nxlib/exchange.py`：STEP 导出/导入/回读/B-rep 事实表；`export_step` 固定 `InputFile + ObjectTypes.Solids=True + ProcessHoldFlag`，AP214 自动取 `ugstep214.def`，AP242 不设 242 def；`import_step` 的 WorkPart 路线补 `OutputFile`，NewPart 路线等 8 s 落盘后再由调用方重开。
+- `scripts/deliverable.py`：离线 STEP 实体普查（solid/face/edge、NAUO、PMI 子类型、悬空引用）、STL 拓扑（水密/绕向/有符号体积/χ=2C−2g/分量）、DXF 布局感知审计（实体分 `Model`/`SHT1`）；错误码 `DELIV_E_*`，三态 PASS/FAIL/NO_SIGNAL。
+- `scripts/occupancy.py`：Z/X/Y 三轴切片 + 体积差 + 连通分量占用门；站距粗于最小特征一半且无差异时给 NO_SIGNAL。
+- `scripts/check_deliverables.py`：宿主侧交付件门 CLI，汇总 STEP/STL/DXF/PMI/占用/PDF 判决。
+- `scripts/api_index.py`：pyi / 运行期反射 / hxx 三源索引；修正 `class NX_DEPRECATED(...) EXPORT Name` 的括号转义与嵌套命名空间解析，头文件 deprecated 类 72 个全部入索引。
+- `scripts/run_journal_checked.py`：批处理输出标记包装器；`--token` 必现，`FATAL`/`_FAIL`/`STAGE_FAIL`/`Traceback`/内存访问违例必拒。
+- `scripts/render/pdf_audit.py`：PDF 文本层审计；词数不足判 NO_SIGNAL，标题栏与中文技术要求留在 NX 模型侧回读。
+- `references/verification.md`：交付件验证域文件（STEP/STL/DXF/PMI/占用/PDF/离线索引）。
+- `scripts/tests/50_deliverable_gates.py`、`51_exchange_matrix.py`、`52_occupancy_gate.py`、`53_pmi_census.py`：交付件门、导入矩阵、占用门、PMI 子类型的正负控。
+- `scripts/tests/verify_runner_markers.py`：输出标记判定自检，接入 `RUN_TESTS.bat` 的 `:runnermarkers`。
+
+### Changed
+
+- `scripts/tests/RUN_TESTS.bat`：gate 数 46 → 50；`:gate` 增加非 `TESTxx_FATAL` 的 `FATAL` 扫描；末尾增加标记自检。
+- `scripts/tests/08_editability_probe.py`：草图检查从 `GetStatus` 门改为“草图存在”；`GetStatus` 只打印（Update 后自由草图也报 Well/0）。
+- `SKILL.md` §3 STEP 导出改为 `InputFile + Solids=True + AP214 def` 配方；§5 增加交付件验证路由；§6/§8 同步 53 用例/50 gate/15 模块。
+- `scripts/check_repo.py`：`EXPECTED_CASES/GATES/API_COUNT` 同步为 53/50/227。
+- `docs/wiki/`、`README.md`、`README.en.md`、`scripts/tests/README.md`：模块名册、用例名册与计数同步。
+
 ## [1.4.0] - 2026-11-03
 
 ### Added

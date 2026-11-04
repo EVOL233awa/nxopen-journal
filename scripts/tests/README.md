@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：49 个用例（46 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表与可编辑性。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：53 个用例（50 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表、可编辑性与交付件验证。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -20,9 +20,11 @@ workdir 一律用 parts 目录；传相对路径会 File open failed。逐例清
 
 成功标志：出现该用例的判决 token，且输出中没有任何 `_FAIL`（实现见 `:gate` 子过程）。退出码不可作判据：未捕获异常才返回非零，journal 按 SKILL.md §3 每步 try/except 后继续，失败被吞时退出码仍为 0；26 号原生崩溃反而把退出码变成 1。
 
-⚠ 22-30、38-49 二十一个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，其余失败打 `TESTxx_FAIL failed=[...]`（46 例外，打 `TEST46_STOP failed=[...]`：token 里没有 `_FAIL`，只落“缺 token”这条路径）并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）；同类收尾的 34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`）——整个 token 含 `_FAIL`，走的是 `:gate` 的 `_FAIL` 这条路径（与 46 的 `TEST46_STOP` 相反）。
+⚠ 22-30、38-53 二十五个用例是“逐项 `check()` 累加 + 末尾统一判”：单条失败打 `REG_xxx=FAIL <值>`（不含 `_FAIL`，不触发 `:gate` 扫描），全部通过才打 `TESTxx_DONE`，其余失败打 `TESTxx_FAIL failed=[...]`（46 例外，打 `TEST46_STOP failed=[...]`：token 里没有 `_FAIL`，只落“缺 token”这条路径）并抛异常——两条独立失败路径（缺 token + `_FAIL` 行）；同类收尾的 34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`）——整个 token 含 `_FAIL`，走的是 `:gate` 的 `_FAIL` 这条路径（与 46 的 `TEST46_STOP` 相反）。
 
 NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的每个反例必须命中对应规则、干净样本必须通过，判定出口 `PASS check_journal rule selftest - ...`。
+
+再做标记自检：`verify_runner_markers.py` 要求带 token 的干净日志通过，`FATAL`/`_FAIL`/`STAGE_FAIL`/`Traceback`/缺 token 全部拒绝；判定出口 `PASS runner marker selftest`。`:gate` 同时扫 `_FAIL` 与非 `TESTxx_FATAL` 的 `FATAL` 行。
 
 19 值级复核（host 端）：NX 内嵌 Python 3.6 无 PDF 库，数值由 `verify_anno_pdf.py` 用 PDF 文本层核对（需 pymupdf）：
 
@@ -34,7 +36,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 
 ## 用例、文件与判决 token
 
-判决口径：日志必须出现本行 token，且没有任何 `_FAIL`。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（06/07/17/19/20/21/31/32/33），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-49；46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓），走 `nxlib.testing.check_finish` 的 34/35/37 打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15；06/07 另在收尾处打 `stages=`）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
+判决口径：日志必须出现本行 token，没有任何 `_FAIL`，且没有非 `TESTxx_FATAL` 的 `FATAL` 行。失败路径：有阶段的用例打 `TESTxx_FAIL stages=...`（06/07/17/19/20/21/31/32/33），逐项 `check()` 累加的打 `TESTxx_FAIL failed=[...]`（22-30、38-53；46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓），走 `nxlib.testing.check_finish` 的 34/35/37 打 `TESTxx_FAIL checks=...`（`scripts/nxlib/testing.py:65`），编号用例打 `TESTxx_FAIL <项名>`（06-08、14/15；06/07 另在收尾处打 `stages=`）。配方细节与已验证约束以 `references/*.md` 为准；本表只记判定出口与决定性判据（括号数字为值），用例源码头部注释记本用例的实现依据。除探针/死路用例（08/11-13/17/28/32）自包含外，其余用例一律 import `scripts/nxlib/` 标准层，不得复制配方——`check_repo.py` 会拦截同名顶层函数；写法见 `nxlib/__init__.py` docstring 与 SKILL.md §6。
 
 | 用例 | 文件 | 判决 token | 决定性判据（验收什么；数字为值） |
 | --- | --- | --- | --- |
@@ -45,7 +47,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 05 | `05_modify_existing.py` | `TEST05_DONE` | 打开已有部件改属性保存（依赖 04 的 asm_plate.prt） |
 | 06 | `06_drafting.py` | `TEST06_DONE` | 消隐自带基准后三视图内容各 ≥8 可见（21/20/31）；只断个数会放过全空视图 |
 | 07 | `07_center_marks.py` | `TEST07_DONE` | 一标记一 builder（4/4）+`Centerline2d` ByPoints；单 builder ≥3 location 报 1175305，变则打 `CENTERMARK_MULTI_CHANGED` |
-| 08 | `08_editability_probe.py` | `TEST08_DONE` | 读回 01 的 prt：特征树非空、表达式可读、草图 `fully=True`、单实体；不满足打 `TEST08_FAIL <项名>` |
+| 08 | `08_editability_probe.py` | `TEST08_DONE` | 读回 01 的 prt：特征树非空、表达式可读、草图存在、单实体；`GetStatus` 只打印作诊断（Update 后自由草图也报 Well/0，不作约束证据）；不满足打 `TEST08_FAIL <项名>` |
 | 09 | `09_fea_static.py` | `BENCH_PASS` | 悬臂梁 SOL101 与手算比 0.9~1.4 |
 | 10 | `10_assembly_constraints.py` | `CONSTRAINT_PASS` | `Touch` 把销钉解到 z=10 |
 | 11-13 | `11…13_api_probe*.py` | （无） | 一次性 API 探针，不纳入令牌校验，留作历史证据 |
@@ -85,6 +87,10 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 47 | `47_structure_builders.py` | `TEST47_DONE` | 63 项结构级 builder：`plate_2p5d` 直壁板 32000.0000 且恰 6 个面（一条轮廓一个特征，不是 z 带堆叠）；带拔模板 29282.0083 = h/3(A₀+A₁+√A₀A₁) 且显著小于直壁（只设角度不设 `DraftOption` 会提交成功、无告警、体积与直壁逐位相同，只有体积能揭穿）；`revolved_profile` 阶梯轴 21614.1575 = 分段锥台解析和、台阶段各自不跳过、合并后单体；同一轴用 64 边形 z 带堆叠 得 131 面、回转得 5 面（26.2×）而两者体积一致——面数爆炸是构造选择不是网格化偶然；`drafted_bore` 斜轴锥切除 7023.9729 = 块内那一段锥台；`hole_set` 两位两特征 4712.3890 = 两圆柱且特征名带结构 id；`pocket_intersect` 侧视∩俯视腔 16000.0000 = 20×40×20；`fillet_run` 逐边一行账本，成功行带半径、失败行带原文 `Unable to terminate the blend faces... reduce the radius.`；`hole_chain` 阶梯同轴孔逐段切除 7087.4330 = D10/D14 两段工具并集（一条等径直孔只算 2356.1945）、每刀回读新增面半径与声明值对账（故意报错声明值即失败）、锥口段半角 36.87° 按量值对账；`eye_2lobe` 相切双瓣 3882.7433 = 平台 + 两个半圆瓣，不相切时报 `tangency_gap_mm` 而不静默建出台阶；`clevis` 槽宽 8.0000 = 声明值、槽底 u 取传入值；`trim_planes` 两刀半空间剪 24000.0000，保留侧选反时原文 `Target body completely inside tool body.` 记进账本；`fillet_feasible` 在尝试前给原因（R60 超支撑面宽 30）并与 NX 原文合并；`section_loft` 双环放样 17083.2680 对圆台解析 17132.1519（48 边形内接占比）且恰 1 特征 50 面、段数不一致在提交前被拒；`_resample_ring` 等角重采样 48 点：方环落在内切/外接半径之间、两次逐位一致、参考点在料外与环非星形分别报不同原因（前者 `outside the ring`，后者 `boundary crossings`），凸环保留；`window_cut` 直壁窗口 4000.0000 = 20×10×20 且只新增平面，拔模窗口 1531.2116 与四面墙偏离 uv 面 4.0000°（直边轮廓拔模出的是直纹面不是锥面，所以判据是法向倾角不是面型），窗口落空时布尔原文 `Tool body completely outside target body.` 记进 checks 且 undo mark 回滚，体数不变；`sweep_trim` 45° 斜切端壁只留一侧料（12000 = 450×20×40 或 24000）且只多平面，带弧端壁传 `profile_segs` 时只新增一个 type16 柱面（用折线剖面会得到 24 个平面——面型对不上就是弧退化的指纹） |
 | 48 | `48_audit_gates.py` | `TEST48_DONE` | 34 项审计门“失败要关门”负例（纯逻辑，合成网格/假部件，不依赖真件）：两侧截面皆空记 `N/A` 且不判 pass（旧口径报 IoU 1.0 直接过门），并按 `na_reason` 分开 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线 → `instrument_errors`，判定口径不通过）与 `no_material`（原件在该站确实没材料 → `plan_noise`，从“该量到的站”里剔除并单列，否则任何自建件都过不去）；STL 报告的 `pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性看 `plan_measured_complete`/`unmeasured`，判定口径 `station_report_hybrid` 对仪器误差判失败、对站位空档剔除并报告；`g1full` 空 primary 分母 `gate_pass=False`、`plan_complete=False`，主站分母剔除 `plan_noise`、`instrument_errors` 让门不通过、`ratio` 用“有材料的站”作分母而 `ratio_all_stations` 保留全站表口径；STL 回退路径的平面站带 `coplanar/offset_mm/offset_dir`；结构表里没有任何结构解释的面是 error 而非 warning（可显式 `allow_unassigned` 豁免）；空特征名与“结构 id 无对应特征”都是 error；G9 对全套 NX 默认名（`Extrude(n)`）与空名判 FAIL 且结构数来源必须是结构表；`station_plan_full` 用面归属判覆盖、`missing` 非空即 `complete=False`、每站带 `primary_fillet_class`；`budget` 绑定结构表与特征名映射；`validate_schema` 拦重复 id/未定模板/缺 `build_order`/同名既 design 又 data；`param_table` 不把 data/derived 行当独立参数 |
 | 49 | `49_structure_inference.py` | `TEST49_DONE` | 34 项结构推断（纯逻辑，合成面表，不依赖真件）：面图覆盖每张面、环面按类型判圆角；平面族按法向聚合（反向平行同族）、偏置按族法向取有符号距离，z 族保留 3 个偏置、相邻偏置配对给出 12 mm 板厚；板 80×50×12 + 凸台 + 两级同轴孔 + 锥口 → 板行（厚度方向取宽面，另两个“带”是外轮廓范围、不出板行）、凸台成筒行、孔链按**同轴线**归组（两级孔壁 + 锥口 = 1 条链 3 段，凸台外圆（凸面）绝不入链，每段保留自己的半径与轴向长度——R24 的失败模式就是把它并成一段直孔）；需要面采样的结构（眼/耳瓣、纵剖面孔）在没有 `part` 时进 `unresolved` 并给 `next_probe`，绝不猜模板；负例：9 个同法向平行面的“层号表指纹”被拒（不出板行、给证据面与下一步）；同一测量两次写报告字节一致；站表按结构 id 归组、缺站的结构进 `missing` 且 `complete=False`；同一轴上的两个半径必须并成**一条** `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成两行 cylinder，而多行同轴 cylinder 正是 z 带堆叠在构建阶段的入场券），同轴的凹面组不并入凸面行；拔模与变截面的区分靠**截面相似度**——拔模体的两张截面是同一条轮廓按比例缩放（归一化后逐点重合），变截面臂的端面长宽比不同；平行面堆叠的判据是**相邻层面积一致**（同一轮廓逐层复制），不是"同法向面数"——多结构组合件有大量同法向面但分属不同轮廓，按面数拒收会把正确的多结构件判成 z 带堆叠 |
+| 50 | `50_deliverable_gates.py` | `TEST50_DONE` | 交付件门正负控：AP242 导出 `MANIFOLD_SOLID_BREP/ADVANCED_FACE/EDGE_CURVE = 1/7/14`；关 `ObjectTypes.Solids` 或 AP214 不给 def 均写出空骨架并被 `DELIV_E_STEP_EMPTY` 拦住；STL `196 tris` 水密/χ=0/g=1 通过，去掉一面后 `DELIV_E_STL_OPEN`；PMI 开时 `FLATNESS_TOLERANCE=1`，关时归零并被 `DELIV_E_PMI_MISSING` 拦住 |
+| 51 | `51_exchange_matrix.py` | `TEST51_DONE` | 导入矩阵：242 `WorkPart` 必须设 `OutputFile` 才出 1 solid/6 面/4000（漏设时 0 bodies）；242/214 `NewPart` 均等约 8 s 落盘后重开 1 solid/6 面/4000；判定一律另起进程 `OpenBaseDisplay` 读 `Bodies` |
+| 52 | `52_occupancy_gate.py` | `TEST52_DONE` | 100×60×10 平板 vs 同尺寸挖 20×20×1 浅腔：`FAIL`、Z 轴 ≥1 站命中、体积差 0.667%；同件自比 `PASS`；站距 1.18 > `min_feature/2` 且无差异时 `NO_SIGNAL`（不是 PASS） |
+| 53 | `53_pmi_census.py` | `TEST53_DONE` | PMI 子类型：`FLATNESS_TOLERANCE=1`、`GEOMETRIC_ITEM_SPECIFIC_USAGE=2`、`LENGTH_MEASURE(0.05)` 落盘；关 `PmiData`/`Annotations` 后子类型归零并被 `DELIV_E_PMI_MISSING` 拦住 |
 
 ## 反向验证记录
 

@@ -127,6 +127,7 @@ sc.Commit(); sc.Destroy()
 2. 每步 try/except 记完整 traceback 后继续；只有致命错误才退出。
 3. 阶段边界保存并 `assert os.path.exists(path) and os.path.getsize(path) > 0`；Commit 成功 ≠ 落盘。
 4. 昂贵/易崩步骤前存 checkpoint 副本；每次布尔后断言体数（NX 布尔会静默不生效）。
+5. 长任务遥测走 JSONL + host 每连接一线程；发送端超时不要取 5 s：0.3 MB 内可全吸收，1.08 MB 背压 6.9 s、3.25 MB 27.1 s，单次 `sendall` 峰值 1.27 s，按整体 300 s 或后台发送线程设计。
 
 ### Undo mark 与失败回滚
 
@@ -166,19 +167,31 @@ for n in dir(s.DexManager):
 
 ```python
 sc = session.DexManager.CreateStepCreator()
-sc.ExportAs = NXOpen.StepCreator.ExportAsOption.Ap214      # Ap203 / Ap214 / Ap242
-sc.ObjectTypes.Solids = True
+sc.ExportAs = NXOpen.StepCreator.ExportAsOption.Ap242      # Ap203 / Ap214 / Ap242
+sc.ObjectTypes.Solids = True                               # 默认 False，必须显式开
 sc.ExportSelectionBlock.SelectionScope = NXOpen.ObjectSelector.Scope.SelectedObjects
 sc.ExportSelectionBlock.SelectionComp.Add(body)
-sc.InputFile  = wp.FullPath
+sc.InputFile  = wp.FullPath                                # 先保存；只给 OutputFile 会写空件
 sc.OutputFile = r"C:\path\out.stp"
 sc.ProcessHoldFlag = True                                  # 必设，否则 Commit 返回时文件还没写盘（约 5 秒后才出现）
+# AP214 才需要下一行；不给 def 也是空骨架：
+# sc.SettingsFile = r"D:\UG-NX12\STEP214UG\ugstep214.def"
 sc.Commit(); sc.Destroy()
 ```
 
 `DexManager` 在 NX12 没有 Parasolid 导出方法。
 
-⚠ **批处理下 STEP 可能写出 0 个实体**：Commit 成功、文件 2–3 KB、零 `ADVANCED_FACE`。落盘后必须开文件数实体；不可用时改用 Parasolid：
+⚠ **STEP 的“成功空件”有两个开关**：`ObjectTypes.Solids` 默认 False，AP214 默认设置也
+不写 B-rep；两者都会给出合法文件、成功日志和 0 退出码，但零 `ADVANCED_FACE`。导出后
+按 `MANIFOLD_SOLID_BREP == 体数`、`ADVANCED_FACE == 面数`、`EDGE_CURVE == 边数` 逐项
+相等普查；`nxlib.exchange.export_step` 已封装上述开关与 AP214 def。AP242 不要设
+`step242ug.def`，它会把协议覆盖成 AUTOMOTIVE_DESIGN 并丢掉 PMI 子类型。
+
+回读：`ImportTo=WorkPart` 也必须设 `OutputFile`（任意可写 `.prt`），否则 Commit 不报错、
+工作件仍 0 bodies；`ImportTo=NewPart` 的产物约 8 s 后才落盘，判定要另起进程
+`Parts.OpenBaseDisplay` 重开读 `Bodies`。
+
+普查不可用时才回退 Parasolid：
 
 ```python
 ufs = NXOpen.UF.UFSession.GetUFSession()
@@ -212,6 +225,7 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 | 有限元（CAD→FEM→SIM→求解→后处理；实体 CTETRA 与 2D 壳/PSHELL、模态 SOL103） | `references/fea.md` |
 | 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md` |
 | 可编辑性验证 | `references/modeling.md` §6 + `scripts/tests/08_editability_probe.py` |
+| 交付件验证（STEP/STL/DXF/PMI/占用/PDF/离线索引） | `references/verification.md` + `scripts/deliverable.py`、`scripts/occupancy.py`、`scripts/check_deliverables.py` |
 
 - 纯修改已有部件通常只读本文件。
 - 跨域复合任务按依赖顺序读多个域文件；域文件之间不互相依赖，少量通用事实允许域内重复。
@@ -228,7 +242,7 @@ python scripts/check_journal.py path/to/journal.py
 # 批处理试跑（journal 用绝对路径；workdir 可选）
 scripts\run_journal_batch.bat C:\abs\path\journal.py [workdir]
 
-# 全量回归（49 例 = 46 个批处理令牌校验 + 11-13 三个一次性探针）
+# 全量回归（53 例 = 50 个批处理令牌校验 + 11-13 三个一次性探针）
 # 逐例覆盖内容与令牌名只维护在 tests/README.md
 # 09 含 Nastran 求解较慢；跑完默认清理 parts\，KEEP_PARTS=1 保留
 # 末尾先跑 check_journal 规则自检（宿主 python），再用 pymupdf 复核 19 号 PDF 文本层
@@ -240,7 +254,7 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。46 个 gate 必须出现期望 token 且不得出现 `_FAIL`。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`，见 `scripts/nxlib/testing.py:65`）。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现非 `TESTxx_FATAL` 的 `FATAL` 行。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`，见 `scripts/nxlib/testing.py:65`）。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
@@ -274,18 +288,24 @@ nxopen-journal/
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.4.0）
 ├── docs/wiki/                      ← 维护者导览（架构/主执行流/模块/数据流/边界与风险；不进 agent 必读路径，与 SKILL.md 冲突以 SKILL.md 为准）
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
-├── references/*.md                 ← 八个域文件；各自的域与覆盖范围见 §5 路由表
+├── references/*.md                 ← 九个域文件；各自的域与覆盖范围见 §5 路由表
 ├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/标题栏/技术要求/尺寸道位/PDF；验收=33 号用例，用法=references/gb-drawing.md）
-├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting/measure/rolling/template/reverse/skeleton/structures/transitions/audit/structure_inference；新用例 import 它、不复制配方）
-├── scripts/render/                 ← 离线出图链（STL→着色渲染、PDF→PNG；用法=scripts/render/README.md）
+├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting/measure/rolling/template/reverse/skeleton/structures/transitions/audit/structure_inference/exchange；新用例 import 它、不复制配方）
+├── scripts/deliverable.py          ← 离线交付件普查/门（STEP/STL/DXF/PMI；三态 PASS/FAIL/NO_SIGNAL）
+├── scripts/occupancy.py            ← 三轴切片 + 体积差 + 连通分量占用门
+├── scripts/check_deliverables.py   ← 宿主侧交付件门 CLI
+├── scripts/api_index.py            ← pyi/运行期/hxx 三源索引（本地 oracle，数据不入库）
+├── scripts/run_journal_checked.py  ← 输出标记包装器（token + FATAL/_FAIL）
+├── scripts/render/                 ← 离线出图链（STL→着色渲染、PDF→PNG、PDF 文本层审计；用法=scripts/render/README.md）
 ├── scripts/check_journal.py        ← 静态检查（语法/占位符/已固化约束，含 NX12 专属名与 Py3.6 API）
 ├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 + check id 禁含 _FAIL / 文档精简 / 路线优先 / wiki 同步）
 ├── scripts/run_journal_batch.bat   ← 批处理试跑（ugiicmd + run_journal.exe；NX 安装根走 NX_HOME）
 ├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、配方归属
-│   ├── 01…49_*.py                  ← 46 个并入令牌校验的用例（RUN_TESTS.bat 全量跑；11–13 探针除外）
+│   ├── 01…53_*.py                  ← 50 个并入令牌校验的用例（RUN_TESTS.bat 全量跑；11–13 探针除外）
 │   ├── 11…13_api_probe*.py         ← 一次性 API 探针，不纳入检查
 │   ├── verify_check_rules.py       ← check_journal 规则自检（宿主解释器，反例必须命中）
+│   ├── verify_runner_markers.py    ← run_journal_checked 标记自检（FATAL/_FAIL/缺 token 必须拒）
 │   ├── verify_anno_pdf.py          ← 19 号用例的 PDF 文本层数值复核（宿主解释器 + pymupdf）
-│   └── RUN_TESTS.bat               ← 全量回归 + 规则自检 + 19 号用例的 PDF 值级复核
+│   └── RUN_TESTS.bat               ← 全量回归 + 规则自检 + 标记自检 + 19 号用例的 PDF 值级复核
 └── agents/openai.yaml              ← Codex/OpenAI 端界面配置（跨端迁移用）
 ```

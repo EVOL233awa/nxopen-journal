@@ -29,6 +29,7 @@
   skeleton —— 骨架层：局部坐标系/二维轮廓曲线/基准轴与面（data 层字面值）
   structures —— 构造层：参数(表达式)与数据(实测)分离的通用 builder
   audit    —— 审计层：活性/局部性/特征预算/全集站表 G1full/包络偏差
+  exchange —— STEP 交换：导出（AP214 def/PMI 开关）/导入/回读/B-rep 事实表
 """
 from . import testing
 from . import session
@@ -44,12 +45,13 @@ from . import structures
 from . import audit
 from . import structure_inference
 from . import transitions
+from . import exchange
 
 NXLIB_VERSION = "0.1.0"
 
 __all__ = [
     "testing", "session", "modeling", "assembly", "drafting", "measure",
     "rolling", "template", "reverse", "skeleton", "structures", "audit",
-    "structure_inference", "transitions",
+    "structure_inference", "transitions", "exchange",
     "NXLIB_VERSION",
 ]

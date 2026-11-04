@@ -54,11 +54,12 @@ def main():
         print("EDIT_PROBE expressions=ERR " + str(exc))
         checks["expressions"] = False
 
-    # 3) sketch status: must be WellConstrained (fully constrained)
+    # 3) sketches exist. GetStatus is printed for diagnosis only: after any
+    #    Update/Deactivate a free sketch also reports WellConstrained/0 DOF,
+    #    so it cannot be used as "fully constrained" evidence here.
     try:
         skts = [s for s in part.Sketches]
         print("EDIT_PROBE sketches=" + str(len(skts)))
-        well = 0
         for s in skts:
             try:
                 res = s.GetStatus()
@@ -66,17 +67,14 @@ def main():
                     status, dof = res[0], res[1]
                 else:
                     status, dof = res, -1
-                is_well = (status == NXOpen.Sketch.Status.WellConstrained)
-                if is_well:
-                    well += 1
                 print("  SKETCH name=" + str(s.Name) + " status=" + str(status) +
-                      " dof=" + str(dof) + " fully=" + str(is_well))
+                      " dof=" + str(dof) + " (post-update, not evidence)")
             except Exception as exc:
                 print("  SKETCH name=" + str(s.Name) + " status=ERR " + str(exc))
-        checks["sketches_well_constrained"] = len(skts) > 0 and well == len(skts)
+        checks["sketches_present"] = len(skts) > 0
     except Exception as exc:
         print("EDIT_PROBE sketches=ERR " + str(exc))
-        checks["sketches_well_constrained"] = False
+        checks["sketches_present"] = False
 
     # 4) bodies
     try:

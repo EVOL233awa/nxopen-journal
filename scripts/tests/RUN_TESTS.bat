@@ -2,7 +2,7 @@
 rem ============================================================
 rem nxopen-journal regression suite (ASCII only - cmd parses GBK)
 rem
-rem Runs the 46 gated journals in dependency order. 11_api_probe.py,
+rem Runs the 50 gated journals in dependency order. 11_api_probe.py,
 rem 12_api_probe2.py and 13_api_probe3.py are one-shot API probes: they are
 rem kept as evidence of how an API behaves and are not part of the gate.
 rem 09 runs NX Nastran and is the slowest case, so it runs last.
@@ -130,12 +130,23 @@ call :gate 48_audit_gates.py TEST48_DONE
 if errorlevel 1 exit /b 1
 call :gate 49_structure_inference.py TEST49_DONE
 if errorlevel 1 exit /b 1
+call :gate 50_deliverable_gates.py TEST50_DONE
+if errorlevel 1 exit /b 1
+call :gate 51_exchange_matrix.py TEST51_DONE
+if errorlevel 1 exit /b 1
+call :gate 52_occupancy_gate.py TEST52_DONE
+if errorlevel 1 exit /b 1
+call :gate 53_pmi_census.py TEST53_DONE
+if errorlevel 1 exit /b 1
 call :gate 09_fea_static.py BENCH_PASS
 if errorlevel 1 exit /b 1
 
 rem host-side selftest of the check_journal rules:
 rem counter-examples must HIT, the clean sample must pass
 call :ruleselftest
+if errorlevel 1 exit /b 1
+
+call :runnermarkers
 if errorlevel 1 exit /b 1
 
 call :pdfverify
@@ -158,6 +169,10 @@ set "GATE_TOKEN=%~2"
 set "GATE_LOG=%TESTS%_gate_%GATE_FILE%.log"
 call "%SKILL%\scripts\run_journal_batch.bat" "%TESTS%%GATE_FILE%" "%PARTS%" > "%GATE_LOG%" 2>&1
 findstr /C:"_FAIL" "%GATE_LOG%" >nul
+if not errorlevel 1 goto :gate_fail_flag
+rem FATAL without a TESTxx_FATAL prefix means the journal died mid-way but
+rem may still have printed its success token later; that is not a pass.
+findstr /C:"FATAL" "%GATE_LOG%" | findstr /V /R "TEST[0-9][0-9]_FATAL" >nul
 if not errorlevel 1 goto :gate_fail_flag
 findstr /C:"%GATE_TOKEN%" "%GATE_LOG%" >nul
 if errorlevel 1 goto :gate_missing_token
@@ -213,6 +228,32 @@ exit /b 0
 
 :ruleselftest_fail
 echo FAIL check_journal rule selftest - verify_check_rules.py did not pass
+exit /b 1
+
+rem ------------------------------------------------------------
+rem :runnermarkers - host-side selftest of run_journal_checked.py.
+rem A clean log with the token must pass; FATAL/_FAIL/missing token must fail.
+rem ------------------------------------------------------------
+:runnermarkers
+set "PY=%PYTHON%"
+if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
+if not defined PY goto :runnermarkers_no_python
+echo runner marker selftest interpreter: %PY%
+"%PY%" "%TESTS%verify_runner_markers.py" > "%TESTS%_gate_runner.log" 2>&1
+set "RUNNER_RC=%ERRORLEVEL%"
+type "%TESTS%_gate_runner.log"
+del "%TESTS%_gate_runner.log" >nul 2>&1
+echo runner marker selftest rc=%RUNNER_RC%
+if not "%RUNNER_RC%"=="0" goto :runnermarkers_fail
+echo PASS runner marker selftest
+exit /b 0
+
+:runnermarkers_no_python
+echo SKIP runner marker selftest - no python on PATH; set PYTHON
+exit /b 0
+
+:runnermarkers_fail
+echo FAIL runner marker selftest - verify_runner_markers.py did not pass
 exit /b 1
 
 :pdfverify

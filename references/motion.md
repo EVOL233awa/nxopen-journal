@@ -325,3 +325,4 @@ scripts\run_journal_batch.bat C:\abs\...\scripts\tests\36_motion_slider.py C:\ab
 - `MassCenter` 传 `NXOpen.Point`，不是 `Point3d`；被 try/except 吞掉会让质心落原点。
 - `AskVelocity/AccelerationResults` 对 Link/Joint 都返回逐帧值（接地件与驱动关节为 0 属物理正确）；4 参签名缺 `MotionType` 会 `AttributeError`（§M.7）。
 - 平面转动副静不定，反力不做强度判据；用静定解算器（§M.8）。
+- 步长扫描（0.5/1/2°）：摇杆摆角 60.0234/60.0282/60.0186°，极差 0.0096°，按 `60.02±0.05°` 判；反力 max 相对极差 J_A 60.7%、J_B 89.8%，跨步长不可比，只做 `NSTEP=360` 的同一步数快照（同一步数复跑 6 位小数一致）。
