@@ -30,7 +30,7 @@ jobs:
         run: |
           set -e
           n=0
-          for f in scripts/tests/[0-9][0-9]_*.py; do
+          for f in scripts/tests/[0-9][0-9]_*.py scripts/render/export_stl.py; do
             python scripts/check_journal.py "$f"
             n=$((n + 1))
           done

@@ -11,19 +11,27 @@ rem GATE: run_journal.exe propagates only UNCAUGHT
 rem exceptions as a non-zero exit code, and these journals
 rem deliberately catch per-stage failures and continue
 rem (SKILL.md section 3). So every case is gated on a verdict
-rem TOKEN in its output, not on errorlevel:
-rem   PASS = expected token present AND no line contains _FAIL
-rem   FAIL = token missing, or any _FAIL line present
-rem NOTE: test 26 deliberately reproduces the ThreadedHole crash, which
-rem makes run_journal exit 1 even though its log says "Execution was
-rem successful" - that is exactly why the gate reads tokens, not codes.
+rem TOKEN in its output, not on errorlevel.
+rem   :gate runs scripts\run_journal_checked.py when a host python is
+rem   available. PASS = expected token present AND no _FAIL / STAGE_FAIL /
+rem   FATAL / Traceback line. "memory access violation" passes only for the
+rem   journals named in GATE_ALLOW_CRASH.
+rem   Without a host python :gate falls back to the findstr triple (token,
+rem   _FAIL, FATAL without a TESTxx_FATAL prefix) and still executes the
+rem   journal - the fallback gates, it does not SKIP.
+rem NOTE: tests 26 (ThreadedHole) and 28 (Axis factory) deliberately
+rem reproduce a native crash, so a passing log contains "memory access
+rem violation" and run_journal exits 1 even though the log says "Execution
+rem was successful". Both are declared in GATE_ALLOW_CRASH; that is why the
+rem gate reads tokens, not exit codes.
 rem
 rem Environment:
 rem   NX_HOME  NX 12 install root, used by run_journal_batch.bat.
 rem            Default D:\UG-NX12 (the machine this suite was verified on);
 rem            set it before calling this script on any other install.
-rem   PYTHON   interpreter for the test 19 PDF value check; must have
-rem            pymupdf. Defaults to the first python.exe on PATH.
+rem   PYTHON   host interpreter for :gate (run_journal_checked.py) and the
+rem            test 19 PDF value check; the PDF check needs pymupdf.
+rem            Defaults to the first python.exe on PATH.
 rem   KEEP_PARTS=1  keep the generated artifacts under .\parts.
 rem
 rem After the NX cases, test 19's PDF is checked at value level by
@@ -37,6 +45,7 @@ setlocal
 set "SKILL=%~dp0..\.."
 set "TESTS=%~dp0"
 set "PARTS=%TESTS%parts"
+set "GATE_ALLOW_CRASH=26_hole_package.py 28_pattern_helix.py"
 if exist "%PARTS%" rmdir /s /q "%PARTS%"
 if not exist "%PARTS%" mkdir "%PARTS%"
 
@@ -161,12 +170,26 @@ exit /b 0
 
 rem ------------------------------------------------------------
 rem :gate <journal file> <required token>
-rem Runs one journal, then requires the token and rejects _FAIL.
+rem Runs one journal through run_journal_checked.py when a host python is
+rem available; without one, runs the journal directly and applies the
+rem findstr fallback described in the file header.
 rem ------------------------------------------------------------
 :gate
 set "GATE_FILE=%~1"
 set "GATE_TOKEN=%~2"
 set "GATE_LOG=%TESTS%_gate_%GATE_FILE%.log"
+set "PY=%PYTHON%"
+if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
+if not defined PY goto :gate_fallback
+set "GATE_CRASH="
+for %%A in (%GATE_ALLOW_CRASH%) do if /I "%%A"=="%GATE_FILE%" set "GATE_CRASH=--allow-crash"
+"%PY%" "%SKILL%\scripts\run_journal_checked.py" "%TESTS%%GATE_FILE%" "%PARTS%" --token "%GATE_TOKEN%" %GATE_CRASH% > "%GATE_LOG%" 2>&1
+if errorlevel 1 goto :gate_fail_wrapper
+del "%GATE_LOG%" >nul 2>&1
+echo PASS %GATE_FILE%
+exit /b 0
+
+:gate_fallback
 call "%SKILL%\scripts\run_journal_batch.bat" "%TESTS%%GATE_FILE%" "%PARTS%" > "%GATE_LOG%" 2>&1
 findstr /C:"_FAIL" "%GATE_LOG%" >nul
 if not errorlevel 1 goto :gate_fail_flag
@@ -189,6 +212,13 @@ exit /b 1
 
 :gate_fail_flag
 echo FAIL %GATE_FILE% - a _FAIL verdict was printed
+echo ---- output ----
+type "%GATE_LOG%"
+del "%GATE_LOG%" >nul 2>&1
+exit /b 1
+
+:gate_fail_wrapper
+echo FAIL %GATE_FILE% - run_journal_checked verdict failed
 echo ---- output ----
 type "%GATE_LOG%"
 del "%GATE_LOG%" >nul 2>&1
