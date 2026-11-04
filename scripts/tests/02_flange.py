@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Test B: flange (revolve: two convex sections + boolean unite, circular pattern, edge blend)
-# Covers: UF Modl.CreateRevolved (convex sections only; concave profile fails in NX12 batch),
+# Covers: UF Modl.CreateRevolved (segmented convex sections; a monotone stepped profile also revolves whole),
 #         boolean unite, hole, circular pattern, edge blend
 # 配方走 nxlib 标准层（原实现平移自本文件的已验收版本）。
 import os
