@@ -48,8 +48,9 @@
   `Parts` 集合看不到新件、`GetCommittedObjects()` 为空，只能另起进程
   `Parts.OpenBaseDisplay` 重开读 `Bodies`。
 - 242 与 214 的 NewPart 对“纯实体 AP242/AP214”都能重开 1 solid；带 PMI 的
-  242 文件按 §6 的 PMI 普查另行判定。AP214 导出丢 PMI（装配件 1→0），
-  期望 PMI 时不要选 214。
+  242 文件同样能重开（1 solid/6 面/10000），再导出仍保留 `FLATNESS_TOLERANCE=1`，
+  但 `GEOMETRIC_ITEM_SPECIFIC_USAGE` 会从 2 变 3，判据只认最小存在性。
+  AP214 导出丢 PMI（装配件 1→0），期望 PMI 时不要选 214。
 - 导入设置文件分方向：`ugstep214.def` 是 UG→STEP（导出），`step214ug.def`
   是 STEP→UG（导入）；214 用反方向打印 “No parts in current input file”，
   静默不产文件。242 的导入向在 `TRANSLATORS\step242\step242ug.def`，导出向

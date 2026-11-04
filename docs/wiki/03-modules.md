@@ -62,7 +62,7 @@
 | `fea.md` | 有限元：CAD→FEM §1、材料与 PSOLID §2、壳 §3a、CTETRA §4、SIM 与解算方案 §5-6a、求解 §7 | 314 行 | 09 24 25 30 |
 | `motion.md` | 运动仿真：Link §M.2、运动副 §M.3、驱动 §M.4、连接件 §M.5a、求解 §M.6、结果 §M.7、静不定 §M.8 | 328 行 | 18 23 36 |
 | `reverse-engineering.md` | 逆向：流程 §1、结构表 §1.1、草图-拉伸 §2、分层基线 §3、验收门 §4、过渡 §9、测量链 §10、参数化模板 §11、测量编译 §12 | 670 行 | 38 39 40 41 42 43 44 45 46 47 48 49 |
-| `verification.md` | 交付件：STEP 导出/普查/回读 §1-3、STL 拓扑 §4、DXF 布局 §5、PMI 子类型 §6、占用门 §7、PDF §8、离线索引 §9、使用顺序 §10 | 133 行 | 50 51 52 53 |
+| `verification.md` | 交付件：STEP 导出/普查/回读 §1-3、STL 拓扑 §4、DXF 布局 §5、PMI 子类型 §6、占用门 §7、PDF §8、离线索引 §9、使用顺序 §10 | 134 行 | 50 51 52 53 |
 
 域文档之间不互相引用成链：`reverse-engineering.md` 把构造配方推给 `modeling.md`，自己不重复 API；`drafting.md` 把标注规则推给 `drafting-annotation.md`（`references/drafting.md` 抬头）。这种"只指路不复制"的写法让每个域的配方只有一处权威，代价是读跨域任务要读多个文件。
 
