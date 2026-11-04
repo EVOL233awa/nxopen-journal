@@ -142,7 +142,6 @@ def main():
     check("T46_RESTORE_EXACT", abs(env["v0"] - env["v1"]) < 1e-6,
           "volume before=%.6f after=%.6f" % (env["v0"], env["v1"]))
 
-    failed = [n for n, ok in RESULTS if not ok]
     # ---- locality: coverage declaration and the whole-part screen
     # A partial run must say so: "locality passed" when 3 of 40 parameters were
     # measured reads identically to a full sweep in a report.
@@ -261,6 +260,7 @@ def main():
              {k: pre.get(k) for k in ("iou", "area_union", "area_inter")}))
 
     say("TEST46_CASES=%d" % len(RESULTS))
+    failed = [n for n, ok in RESULTS if not ok]
     if failed:
         say("TEST46_STOP failed=%s" % failed)
         return

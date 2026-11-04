@@ -9,9 +9,8 @@
 同时核验 Point3d/Vector3d 的 float 参数要求。
 成功标志：BLOCK_BOOL_OK / POINT_TYPE_OK / VEC_TYPE_OK / TEST14_DONE，退出码 0；
 失败打印 TEST14_FAIL 并抛异常（令牌与退出码同时失败）。
-
-# check_journal: allow-probes  （本文件故意写错以演示坑位，静态检查豁免）
 """
+# check_journal: allow-probes  （本文件故意写错以演示坑位，静态检查豁免）
 import os
 import sys
 import traceback

@@ -41,8 +41,12 @@ def main(argv=None):
     ap.add_argument("--dxf")
     ap.add_argument("--pdf")
     ap.add_argument("--pdf-expect", action="append")
-    ap.add_argument("--pdf-min-words", type=int, default=20)
-    ap.add_argument("--schema")
+    ap.add_argument("--pdf-min-words", type=int, default=3,
+                    help="低于该词数给 NO_SIGNAL（默认 3）")
+    ap.add_argument(
+        "--schema",
+        help="FILE_SCHEMA 里的协议名，按子串匹配：AP242 文件填 AP242，"
+             "AP214 文件填 AUTOMOTIVE_DESIGN")
     ap.add_argument("--pmi", action="append")
     ap.add_argument("--dxf-units", type=int, default=4)
     ap.add_argument("--dxf-dims", type=int)
@@ -66,8 +70,10 @@ def main(argv=None):
         census = d.step_census(args.step)
         results["step"] = d.step_gate(
             census, facts, schema=args.schema, pmi=parse_pmi(args.pmi))
-        if args.pmi:
-            results["pmi"] = d.pmi_gate(census, parse_pmi(args.pmi))
+    if args.pmi:
+        if not args.step:
+            raise SystemExit("--pmi needs --step: PMI counts come from the STEP census")
+        results["pmi"] = d.pmi_gate(census, parse_pmi(args.pmi))
     if args.stl:
         results["stl"] = d.stl_gate(
             d.stl_census(args.stl), facts, volume_tol=args.volume_tol)

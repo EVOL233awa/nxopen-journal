@@ -12,9 +12,11 @@ import os
 import NXOpen
 import NXOpen.UF
 
+from .session import _ufs
+
 
 def ufs():
-    return NXOpen.UF.UFSession.GetUFSession()
+    return _ufs()
 
 
 def norm_tag(r):
@@ -71,10 +73,10 @@ def cell_text(tn, row, col):
 
 
 def read_cell(tn, ri, ci):
-    """读单元格文本（20 号口径）。"""
+    """读单元格文本（20 号口径；解包口径同 norm_tag，取元组首项）。"""
     u = ufs()
     got = u.Tabnot.AskCellText(cell_text(tn, ri, ci))
-    return got[1] if isinstance(got, tuple) else got
+    return got[0] if isinstance(got, tuple) else got
 
 
 def drain_table(tn):
@@ -133,7 +135,17 @@ def pin_table_geometry(tn, row_heights, ncols=1, center_first_row=False):
 # ---------------------------------------------------------------- 导出
 
 def export_pdf(part, sheet, path):
-    """导出单页 PDF，返回文件字节数（不存在返回 -1；20/31 号口径）。"""
+    """导出单页 PDF，返回文件字节数（不存在返回 -1；20/31 号口径）。
+
+    sheet 必须属于 part：NX12 在 Commit 时对外来图纸抛
+    NXException "One or more sheets are not in the displayed part."（实测），
+    这里提前用 OwningPart 校验，让错误在 builder 创建前出现。
+    """
+    owner = sheet.OwningPart
+    if owner is None or int(owner.Tag) != int(part.Tag):
+        raise RuntimeError(
+            "export_pdf: sheet %r does not belong to part %r"
+            % (getattr(sheet, "Name", "?"), getattr(part, "Name", "?")))
     if os.path.exists(path):
         os.remove(path)
     b = part.PlotManager.CreatePrintPdfbuilder()

@@ -219,7 +219,7 @@ def main():
         # larger one's dimension line
         holes_sorted = sorted(holes, key=lambda h: h[1][0])
         pitch_tag = gb.dim_between(
-            part, top,
+            top,
             (holes_sorted[0][0], "ARC_CENTER", holes_sorted[0][1]),
             (holes_sorted[1][0], "ARC_CENTER", holes_sorted[1][1]),
             lane_y=tb_bottom - gb.LANE_FIRST)
@@ -227,14 +227,14 @@ def main():
         e_left = gb.extreme_edge(edges, along="y", key="x", side="min")
         e_right = gb.extreme_edge(edges, along="y", key="x", side="max")
         overall_tag = gb.dim_between(
-            part, top,
+            top,
             (e_left[0], "END_POINT", endpoint_at(e_left[0])),
             (e_right[0], "END_POINT", endpoint_at(e_right[0])),
             lane_y=tb_bottom - gb.LANE_FIRST - gb.LANE_STEP)
         # 60 height: right of the TOP view
         e_low = gb.extreme_edge(edges, along="x", key="y", side="min")
         e_high = gb.extreme_edge(edges, along="x", key="y", side="max")
-        gb.dim_between(part, top,
+        gb.dim_between(top,
                        (e_low[0], "END_POINT",
                         endpoint_at(e_low[0], pick_x=1e9)),
                        (e_high[0], "END_POINT",
@@ -243,7 +243,7 @@ def main():
         # 10 thickness: left of the FRONT view
         e_bot = gb.extreme_edge(edges, along="x", key="z", side="min")
         e_top = gb.extreme_edge(edges, along="x", key="z", side="max")
-        gb.dim_between(part, front,
+        gb.dim_between(front,
                        (e_bot[0], "END_POINT",
                         endpoint_at(e_bot[0], pick_x=-1e9)),
                        (e_top[0], "END_POINT",

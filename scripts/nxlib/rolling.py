@@ -8,12 +8,12 @@
                      的直纹）。凸边 Subtract、凹边 Unite；刀面是 type16/17
                      圆柱/圆锥，能被 G7 认成建出的圆角面。
   roll_rim           圆边（凸台口、孔口、环面角）：同一截面绕边圆心轴旋转。
-                     环面半径 R、主半径等于边长圆心半径，刀面是精确 type19，
-                     rad_data = R；喇叭环面（主半径 = R）同样可建，但只对
-                     部分弧旋转，整圈会自交。
-  classify_corner    B 类角面：沿 ±法向偏置 R，薄的一侧坍缩成脊线；圆拟合
-                     残差 ≤0.005 判精确圆脊线管道，0.005–0.05 判近似角片，
-                     点云仍是一团判球/未知。
+                     环面半径 R、主半径 = 滚球中心圆半径（≠ 边圆半径），刀面是
+                     精确 type19，rad_data = R；喇叭环面（主半径 = R）同样可建，
+                     但只对部分弧旋转，整圈会自交。
+  classify_corner    B 类角面：沿 ±法向偏置 R，薄的一侧坍缩成脊线；判类取点云
+                     第三主成分 thickness：≤0.005·R 且圆残差 ≤1e-9 判精确管道，
+                     0.005–0.05·R 判近似角片，>0.05·R 判未知，s[0]/s[1]≤0.01 判球。
 
 坐标与符号约定：
   - 截面的 2D 原点在边上，e1/e2 由两支撑法向和边切向构造（与 roll_edge 同）。
@@ -26,17 +26,12 @@ import math
 import NXOpen
 import NXOpen.UF
 
-
-def _ufs():
-    return NXOpen.UF.UFSession.GetUFSession()
-
-
-def _dot(a, b):
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+import nxlib.modeling as mdl
+from .session import _cross as _session_cross, _dot, _sub as _session_sub, _ufs, _unit as _session_unit
 
 
 def _sub(a, b):
-    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    return tuple(_session_sub(a, b))
 
 
 def _add(a, b):
@@ -52,14 +47,12 @@ def _norm(a):
 
 
 def _unit(a):
-    n = _norm(a)
-    return None if n < 1e-12 else (a[0] / n, a[1] / n, a[2] / n)
+    v = _session_unit(a, zero="none")
+    return tuple(v) if v is not None else None
 
 
 def _cross(a, b):
-    return (a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0])
+    return tuple(_session_cross(a, b))
 
 
 def _as_tuple(p):
@@ -292,81 +285,7 @@ def edge_mid(pts):
     return tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
 
 
-def edge_tangent(pts):
-    d = _unit(_sub(pts[-1], pts[0]))
-    return d
-
-
 # ------------------------------------------------------------------ 截面
-def section_profile(n0, n1, tangent, radius, add):
-    """两支撑法向 + 边切向 → 2D 截面（角区 − 切圆）。
-
-    与 modeling.roll_edge 同一套解析：返回 dict(points2d, e1, e2, ox, oy,
-    arc_a0, arc_a1, area, width_leg, tangent_pts)。两面近共面或切点退化时
-    返回 {"ok": False, "reason": ...}。
-    """
-    ang = math.degrees(math.acos(max(-1.0, min(1.0, _dot(n0, n1)))))
-    if not (20.0 < ang < 160.0):
-        return {"ok": False, "reason": "dihedral %.1f deg" % ang}
-    sgn = 1.0 if add else -1.0
-    e1 = _unit(_mul(n0, sgn))
-    if e1 is None:
-        return {"ok": False, "reason": "degenerate normal"}
-    e2 = _unit(_cross(tangent, e1))
-    if e2 is None:
-        return {"ok": False, "reason": "normal along edge"}
-    uu = []
-    for nv in (n0, n1):
-        wi = _mul(nv, sgn)
-        uu.append((_dot(wi, e1), _dot(wi, e2)))
-    det = uu[0][0] * uu[1][1] - uu[0][1] * uu[1][0]
-    if abs(det) < 0.2:
-        return {"ok": False, "reason": "det %.2f" % det}
-    ox = (radius * uu[1][1] - radius * uu[0][1]) / det
-    oy = (uu[0][0] * radius - uu[1][0] * radius) / det
-    tt = [(ox - radius * uu[0][0], oy - radius * uu[0][1]),
-          (ox - radius * uu[1][0], oy - radius * uu[1][1])]
-    near = min(math.hypot(*q) for q in tt)
-    far = max(math.hypot(*q) for q in tt)
-    if near < 0.3 * radius or far > 6.0 * radius:
-        return {"ok": False, "reason": "tangent near %.2f far %.2f" %
-                (near, far)}
-    r0 = ((tt[0][0] - ox) / radius, (tt[0][1] - oy) / radius)
-    a0 = math.atan2(r0[1], r0[0])
-    r1 = ((tt[1][0] - ox) / radius, (tt[1][1] - oy) / radius)
-    a1 = math.atan2(r1[1], r1[0])
-    da = (a1 - a0 + math.pi) % (2.0 * math.pi) - math.pi
-    bis = (-(uu[0][0] + uu[1][0]), -(uu[0][1] + uu[1][1]))
-    mid = (ox + radius * math.cos(a0 + 0.5 * da),
-           oy + radius * math.sin(a0 + 0.5 * da))
-    if mid[0] * bis[0] + mid[1] * bis[1] <= ox * bis[0] + oy * bis[1]:
-        da -= 2.0 * math.pi if da > 0 else -2.0 * math.pi
-    bd = _unit((-bis[0], -bis[1], 0.0))
-    skirt = 0.1
-    c_out = (-skirt * bd[0], -skirt * bd[1])
-    if da < 0.0:
-        arc_a0, arc_a1 = a1, a1 - da
-    else:
-        arc_a0, arc_a1 = a0, a0 + da
-    pts2 = [c_out,
-            (ox + radius * math.cos(arc_a0), oy + radius * math.sin(arc_a0))]
-    for j in range(1, 16):
-        a = arc_a0 + (arc_a1 - arc_a0) * j / 16.0
-        pts2.append((ox + radius * math.cos(a),
-                     oy + radius * math.sin(a)))
-    pts2.append((ox + radius * math.cos(arc_a1),
-                 oy + radius * math.sin(arc_a1)))
-    area = 0.0
-    for i in range(len(pts2)):
-        x0, y0 = pts2[i]
-        x1, y1 = pts2[(i + 1) % len(pts2)]
-        area += x0 * y1 - x1 * y0
-    return {"ok": True, "e1": e1, "e2": e2, "ox": ox, "oy": oy,
-            "arc_a0": arc_a0, "arc_a1": arc_a1,
-            "area": abs(0.5 * area), "tangent_pts": tt,
-            "c_out": c_out, "radius": radius}
-
-
 def _to3(base, e1, e2, xy):
     return NXOpen.Point3d(base[0] + xy[0] * e1[0] + xy[1] * e2[0],
                           base[1] + xy[0] * e1[1] + xy[1] * e2[1],
@@ -390,25 +309,6 @@ def _profile_curves(wp, sec, base):
     line1 = wp.Curves.CreateLine(_to3(base, e1, e2, p_arc1),
                                  _to3(base, e1, e2, c_out))
     return [line0, arc, line1], _to3(base, e1, e2, (ox, oy))
-
-
-def _extrude_along(wp, curves, direction, distance, start, help_pt):
-    section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
-    rule = wp.ScRuleFactory.CreateRuleCurveDumb(curves)
-    section.AddToSection([rule], NXOpen.NXObject.Null, NXOpen.NXObject.Null,
-                         NXOpen.NXObject.Null, help_pt,
-                         NXOpen.Section.Mode.Create, False)
-    builder = wp.Features.CreateExtrudeBuilder(NXOpen.Features.Feature.Null)
-    builder.Section = section
-    builder.Direction = wp.Directions.CreateDirection(
-        NXOpen.Point3d(0.0, 0.0, 0.0),
-        NXOpen.Vector3d(*[float(v) for v in direction]),
-        NXOpen.SmartObject.UpdateOption.WithinModeling)
-    builder.Limits.StartExtend.Value.RightHandSide = start
-    builder.Limits.EndExtend.Value.RightHandSide = distance
-    feat = builder.CommitFeature()
-    builder.Destroy()
-    return feat
 
 
 def _revolve_uf(wp, curves, center, axis, a0, a1):
@@ -455,15 +355,15 @@ def roll_edge_general(wp, edge, radius, add=None, min_len=None):
         nrm.append(n)
     if add is None:
         return None
-    sec = section_profile(nrm[0], nrm[1], dv, radius, add)
+    sec = mdl.section_profile(nrm[0], nrm[1], dv, radius, add)
     if not sec["ok"]:
         return None
     ee = min(0.8, 0.25 * ln_len)
     base = _sub(p0, _mul(dv, ee))
     curves, help_pt = _profile_curves(wp, sec, base)
     try:
-        feat = _extrude_along(wp, curves, dv, repr(ln_len + 2.0 * ee),
-                              repr(ee), help_pt)
+        feat = mdl.extrude_along(wp, curves, dv, repr(ln_len + 2.0 * ee),
+                                 repr(ee), help_pt)
     except Exception:
         return None
     return feat, sec["area"], sec["area"] * ln_len
@@ -509,7 +409,7 @@ def roll_rim(wp, edge, radius, add=None, span_override=None,
         nrm.append(n)
     if add is None:
         return None
-    sec = section_profile(nrm[0], nrm[1], tangent, radius, add)
+    sec = mdl.section_profile(nrm[0], nrm[1], tangent, radius, add)
     if not sec["ok"]:
         return None
     # 喇叭环（滚球中心主半径 = R）：截面绕边轴整圈会跨轴自交，必须走
@@ -581,16 +481,16 @@ def apply_roll_general(wp, body, edge, radius, add=None):
             continue
         tool, area, exp = res
         tool_body = tool if kind == "circle" else tool.GetBodies()[0]
-        v0 = _volume(wp, body)
+        v0 = mdl.volume(wp, body)
         op = (NXOpen.Features.Feature.BooleanType.Unite if wants_add
               else NXOpen.Features.Feature.BooleanType.Subtract)
         try:
-            _boolean(wp, body, tool_body, op)
+            mdl.boolean(wp, body, tool_body, op)
         except Exception:
             session.UndoToMark(mark, None)
             session.DeleteUndoMark(mark, None)
             continue
-        v1 = _volume(wp, body)
+        v1 = mdl.volume(wp, body)
         dv = v1 - v0
         if wants_add:
             good = 0.65 * exp <= dv <= 1.35 * exp
@@ -610,33 +510,15 @@ def apply_roll_general(wp, body, edge, radius, add=None):
     return {"ok": False, "reason": "both signs rejected"}
 
 
-def _volume(wp, body):
-    uc = wp.UnitCollection
-    units = [uc.FindObject(n) for n in
-             ("SquareMilliMeter", "CubicMilliMeter", "Kilogram",
-              "MilliMeter", "Newton")]
-    return wp.MeasureManager.NewMassProperties(units, [0.99], [body]).Volume
-
-
-def _boolean(wp, target, tool, op):
-    bb = wp.Features.CreateBooleanBuilder(NXOpen.Features.BooleanFeature.Null)
-    bb.Target = target
-    bb.Tool = tool
-    bb.Operation = op
-    feat = bb.CommitFeature()
-    bb.Destroy()
-    return feat
-
-
 # ------------------------------------------------------------------ B 类角面
 def classify_corner(part, face_tag, radius, grid=7):
     """±R 偏置坍缩判类：canal_circle / canal_line / canal_approx / sphere。
 
     返回 dict：sign、locus（偏置点）、pca、circle（中心/轴/半径/角度）、
     sphere（球拟合）、thickness（第三主成分 RMS）。判据：
-      thickness ≤ 0.005·R         → 精确管道
-      0.005·R < thickness ≤ 0.05  → 近似角片
-      thickness ≤ 0.005 且 span1 ≤ 0.01 → 球
+      thickness ≤ 0.005·R：s[0]、s[1] 均 ≤ 0.01 → 球；否则圆拟合 rms ≤ 1e-9 →
+      canal_circle，再否则 → canal_approx；0.005·R < thickness ≤ 0.05·R →
+      canal_approx；thickness > 0.05·R → unknown。
     """
     samples = face_samples(part, face_tag, grid)
     if len(samples) < 9:
@@ -798,7 +680,7 @@ def torus_ring_outer(wp, center, axis, major, radius, eps=0.02):
     return None
 
 
-def _band_faces(part, body, radius, major, tol=0.05):
+def _band_faces(part, body, radius, tol=0.05):
     u = _ufs()
     out = []
     for f in body.GetFaces():
@@ -831,7 +713,7 @@ def split_by_face(wp, body, face):
 def rim_roll_center(part, edge, radius, add=False):
     """锐边 + 滚球半径 → 滚球中心圆与截面量（Pappus 体积基准）。
 
-    滚球中心由两面法向在边起点处解析求得（与 `section_profile` 同一套
+    滚球中心由两面法向在边起点处解析求得（与 `modeling.section_profile` 同一套
     截面）；直纹支撑上截面恒定，中心绕边轴成一圆，主半径 = 中心到边轴的
     垂距，不是锐边半径。返回 center/axis/major/area/r_centroid。
     """
@@ -862,7 +744,7 @@ def rim_roll_center(part, edge, radius, add=False):
         if n is None or abs(_dot(n, tangent)) > 0.5:
             return None
         nrm.append(n)
-    sec = section_profile(nrm[0], nrm[1], tangent, radius, add)
+    sec = mdl.section_profile(nrm[0], nrm[1], tangent, radius, add)
     if not sec.get("ok"):
         return None
     c3 = _as_tuple(_to3(station, sec["e1"], sec["e2"],
@@ -940,7 +822,7 @@ def roll_rim_analytic(wp, body, edge, radius, eps=0.02):
         ring = torus_ring(wp, info["center"], info["axis"], maj, radius, eps)
         if ring is None:
             return {"ok": False, "reason": "torus ring failed"}
-    bands = _band_faces(wp, ring, radius, maj)
+    bands = _band_faces(wp, ring, radius)
     if not bands:
         try:
             ring.Feature.Delete()
@@ -964,7 +846,7 @@ def roll_rim_analytic(wp, body, edge, radius, eps=0.02):
     exp = info["area"] * 2.0 * math.pi * info["r_centroid"]
     session = NXOpen.Session.GetSession()
     ring_tag = ring.Tag
-    v0 = _volume(wp, body)
+    v0 = mdl.volume(wp, body)
     for pick in order:
         mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
                                    "rim_analytic_split")
@@ -976,8 +858,8 @@ def roll_rim_analytic(wp, body, edge, radius, eps=0.02):
             continue
         solids = [b for b in wp.Bodies
                   if not b.IsSheetBody and b.Tag != ring_tag]
-        keep = max(solids, key=lambda b: _volume(wp, b))
-        removed = v0 - _volume(wp, keep)
+        keep = max(solids, key=lambda b: mdl.volume(wp, b))
+        removed = v0 - mdl.volume(wp, keep)
         if not (0.2 * exp < removed < 1.5 * exp):
             session.UndoToMark(mark, None)
             session.DeleteUndoMark(mark, None)

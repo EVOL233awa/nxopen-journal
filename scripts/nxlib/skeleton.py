@@ -14,6 +14,8 @@ import math
 
 import NXOpen
 
+from .session import _cross as _session_cross, _dot, _unit as _session_unit
+
 
 class Frame(object):
     """右手局部系 (u, v, z)，world = origin + u*U + v*V + z*Z。"""
@@ -62,20 +64,12 @@ class Frame(object):
                 "Z": [round(x, 9) for x in self.Z]}
 
 
-def _dot(a, b):
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-
-
 def _cross(a, b):
-    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0])
+    return tuple(_session_cross(a, b))
 
 
 def _unit(a):
-    n = math.sqrt(_dot(a, a))
-    if n <= 1e-12:
-        raise ValueError("zero-length vector")
-    return (a[0] / n, a[1] / n, a[2] / n)
+    return tuple(_session_unit(a, zero="raise"))
 
 
 def normalize(a):

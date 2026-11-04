@@ -12,8 +12,9 @@
   3) DOCS       .md 的围栏配平、表格块必须有表头与分隔行、列数一致；README 与
                 README.en.md 里提到的本仓库文件必须存在；两个 README 要互相链接。
   4) TREE       SKILL.md 的文件清单要覆盖磁盘上的每个顶层条目（隐藏项除外），
-                避免新增目录后清单过期。
-  5) NOLIB      标准层独占：非探针用例的顶层函数不得与 nxlib 公开 API 同名
+                清单里写出的 scripts/references/docs 路径必须在磁盘上存在，
+                避免新增目录或删文件后清单过期。
+  5) NOLIB      标准层独占：非探针用例的函数（含嵌套）不得与 nxlib 公开 API 同名
                 （同名=配方被复制进用例，正是"越滚越大的史山"的形态；应 import）。
                 探针/死路用例的自包含是设计决策，名单在 SELF_CONTAINED，新增同类
                 必须显式登记。nxlib/*.py 与 scripts/gb_drawing.py 同样过 PY36 语法。
@@ -46,9 +47,9 @@ KEEP_DIRS = ("parts", "__pycache__", ".git")
 # 探针/死路类用例：自包含（不复用标准层）是设计决策——它们的价值在原样记录
 # 原样调用方式，改写成库调用反而失真。新增同类用例必须显式登记进来。
 SELF_CONTAINED = {
-    "08_editability_probe.py", "11_api_probe.py", "12_api_probe2.py",
-    "13_api_probe3.py", "17_motion_deadends.py", "28_pattern_helix.py",
-    "32_pattern_enums.py",
+    "05_modify_existing.py", "08_editability_probe.py", "11_api_probe.py",
+    "12_api_probe2.py", "13_api_probe3.py", "17_motion_deadends.py",
+    "28_pattern_helix.py", "32_pattern_enums.py",
 }
 # 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
 PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
@@ -58,8 +59,11 @@ EXPECTED_GATES = 50
 EXPECTED_PROBES = 3
 # 标准层规模：模块数与公开 API 数在 wiki 里有散文计数，一并钉住（同名函数跨模块
 # 只算一次，与 check_nolib 的 nxlib_apis() 同口径）。
-EXPECTED_API_COUNT = 227
-CASE_RE = re.compile(r"^\d\d_[a-z_0-9]+\.py$")
+EXPECTED_API_COUNT = 231
+# 用例文件名的实名规则：PY36/COVERAGE/NOLIB/_FAIL 四组共用同一份。编号不限位数、
+# 大小写不敏感，否则 `54_Bad_Case.py` 这类名字对整道门隐形（连用例计数都不动）。
+CASE_NAME = r"\d\d+_[A-Za-z0-9_]+\.py"
+CASE_RE = re.compile(r"^" + CASE_NAME + r"$")
 # 文档里提到的文件名：带扩展名的反引号串；NX 安装目录自带的文件不算本仓库文件
 PATH_RE = re.compile(r"`([A-Za-z0-9_./\\-]+\.(?:md|py|bat|yaml|png|prt|sim|fem))`")
 # 图的两条引用途径：README 里既用 Markdown 图片也用 <img src=...>（表格里靠 width 控宽）
@@ -69,7 +73,7 @@ DELIM = re.compile(r"^\|[\s:|\-]+\|$")
 # CONCISE：只扫 agent 文档。README/CHANGELOG 是人类文档，允许日期与"实测"表述。
 # 词表只收过程叙述标记；"验证/复测"这类动作词是配方的一部分，不拦。
 CONCISE_PATTERNS = (
-    (r"20\d\d-\d\d-\d\d", "日期"),
+    (r"(19|20)\d\d[-年/.]\d{1,2}[-月/.]\d{1,2}", "日期"),
     (r"实测", "实测"),
     (r"冷启动", "冷启动"),
     (r"复验", "复验"),
@@ -85,7 +89,7 @@ CONCISE_PATTERNS = (
     (r"沉淀", "沉淀"),
     (r"复证", "复证"),
     (r"审计实证", "审计实证"),
-    (r"踩到|踩过", "踩坑"),
+    (r"踩到", "踩坑"),
     (r"上轮|旧版|曾经|当时|最初|后来", "历史指代"),
 )
 # ROUTE：负面断言必须同时给出做法；坑位式标题/表格一律不再新增。
@@ -96,7 +100,11 @@ ROUTE_VERBS = ("用", "改", "走", "传", "设", "先", "必须", "直接", "�
 NEG_RE = re.compile(r"(不可用|不存在|只读|死路|不生效|必报|必抛|报错|失败|不能)")
 PITFALL_HEAD_RE = re.compile(r"^#+.*(坑位|反模式|不可用项|死路|陷阱)")
 ALLOWED_TRAP_HEAD_RE = re.compile(r"^#+.*高发")
-PITFALL_TABLE_RE = re.compile(r"^\|\s*(遇到|症状|问题|现象)\s*\|")
+# 高发清单只按显式标记认定：标题是否含「高发」由作者措辞决定，改个标题就能让
+# ≤8 约束失效，反向也会误伤同名的普通清单。
+TRAP_MARK_RE = re.compile(r"<!--\s*trap-list\s*-->")
+TRAP_MAX = 8
+PITFALL_TABLE_RE = re.compile(r"^\|\s*(遇到|症状|问题|现象|坑位|反模式|不可用项|死路|陷阱)\s*\|")
 
 problems = []
 
@@ -118,7 +126,10 @@ def rel(path):
 def md_files():
     out = []
     for base, dirs, names in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in KEEP_DIRS]
+        # 隐藏目录（.git/.zcode 会话草稿）不在版本控制里，扫进来会让门的结论依赖
+        # 别人本机的工作副本；KEEP_DIRS 按前缀匹配，覆盖 parts38/parts46 这类产物目录。
+        dirs[:] = [d for d in dirs if not d.startswith(".")
+                   and not any(d == p or d.startswith(p) for p in KEEP_DIRS)]
         for n in names:
             if n.lower().endswith(".md"):
                 out.append(os.path.join(base, n))
@@ -131,13 +142,18 @@ def check_py36():
     for name in sorted(os.listdir(TESTS)):
         if CASE_RE.match(name):
             py_files.append(os.path.join(TESTS, name))
-    # NX 解释器下运行的模块代码与用例同权：一处语法错 = 批处理全链路挂
-    shipped = os.path.join(ROOT, "scripts", "gb_drawing.py")
-    if os.path.exists(shipped):
-        py_files.append(shipped)
-    render_export = os.path.join(ROOT, "scripts", "render", "export_stl.py")
-    if os.path.exists(render_export):
-        py_files.append(render_export)
+    # NX 解释器下运行的模块代码与用例同权：一处语法错 = 批处理全链路挂。
+    # occupancy/deliverable 被 50/52/53 号 gated 用例 import，同样跑在 3.6.1 里。
+    shipped = ("scripts/gb_drawing.py", "scripts/occupancy.py",
+               "scripts/deliverable.py", "scripts/render/export_stl.py",
+               "scripts/stl_math.py")
+    for r in shipped:
+        p = os.path.join(ROOT, r)
+        if not os.path.exists(p):
+            problems.append("PY36 随包文件不存在 %s" % r)
+            print("  FAIL 随包文件不存在 %s" % r)
+            continue
+        py_files.append(p)
     if os.path.isdir(NXLIB):
         py_files += [os.path.join(NXLIB, f)
                      for f in sorted(os.listdir(NXLIB))
@@ -166,8 +182,8 @@ def check_coverage():
     # :gate 必须是行首的 call（允许前导空白）。正则不锚行首时，
     # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行会被算作
     # "已覆盖"，套件实际跳过 34 号却报全绿。
-    gated = set(re.findall(r"(?m)^[ \t]*call[ \t]+:gate[ \t]+(\d\d_[a-z_0-9]+\.py)", batch))
-    mentioned = set(re.findall(r"(\d\d_[a-z_0-9]+\.py)", batch))
+    gated = set(re.findall(r"(?m)^[ \t]*call[ \t]+:gate[ \t]+(" + CASE_NAME + r")", batch))
+    mentioned = set(re.findall(r"(" + CASE_NAME + r")", batch))
     expected = files - PROBES
     for n in sorted(files):
         if n not in mentioned:
@@ -197,7 +213,7 @@ def check_coverage():
     blines = batch.splitlines()
     unchecked = []
     for i, line in enumerate(blines):
-        m = re.match(r"^[ \t]*call[ \t]+:gate[ \t]+(\d\d_[a-z_0-9]+\.py)", line)
+        m = re.match(r"^[ \t]*call[ \t]+:gate[ \t]+(" + CASE_NAME + r")", line)
         if not m:
             continue
         nxt = blines[i + 1] if i + 1 < len(blines) else ""
@@ -248,6 +264,8 @@ def check_docs():
     for name in ("README.md", "README.en.md"):
         p = os.path.join(ROOT, name)
         if not os.path.exists(p):
+            problems.append("DOCS %s 不存在" % name)
+            print("  FAIL %s 不存在" % name)
             continue
         text = read(p)
         refs = [(m.group(1), None) for m in PATH_RE.finditer(text)]
@@ -258,9 +276,12 @@ def check_docs():
                 continue
             if base in EXTERNAL:
                 continue
-            cands = [raw.replace("\\", "/"), base, "scripts/" + base,
-                     "scripts/tests/" + base, "references/" + base,
-                     "images/" + base]
+            # 写出了目录的引用必须按写出的路径存在：折成 basename 到候选目录里找
+            # 同名文件，会让 `docs/nope/modeling.md` 命中 `references/modeling.md`。
+            cands = ([raw.replace("\\", "/")] if "/" in raw.replace("\\", "/") else
+                     [raw.replace("\\", "/"), base, "scripts/" + base,
+                      "scripts/tests/" + base, "references/" + base,
+                      "images/" + base])
             if not any(os.path.exists(os.path.join(ROOT, c)) for c in cands):
                 missing.append("%s -> %s%s" % (name, raw, " (图片)" if kind else ""))
     for x in sorted(set(missing)):
@@ -277,8 +298,66 @@ def check_docs():
         if "](README.md)" not in read(en):
             problems.append("DOCS README.en.md 未链接回 README.md")
             print("  FAIL README.en.md 未链接回 README.md")
+    # 面类型号必须与 nxlib.measure 的常量一致；只扫 references/，CHANGELOG 是历史记录不改写。
+    msrc = read(os.path.join(NXLIB, "measure.py"))
+    ftypes = {}
+    for name in ("SPHERE", "BLEND", "B_SURFACE", "TORUS"):
+        m = re.search(r"^%s\s*=\s*(\d+)" % name, msrc, re.M)
+        if m:
+            ftypes[name] = int(m.group(1))
+    pairs = (("球面", ftypes.get("SPHERE")),
+             ("blend 面", ftypes.get("BLEND")),
+             ("B 曲面", ftypes.get("B_SURFACE")),
+             ("环面圆角", ftypes.get("TORUS")))
+    refdir = os.path.join(ROOT, "references")
+    bad_types = []
+    for n in (sorted(os.listdir(refdir)) if os.path.isdir(refdir) else []):
+        if not n.endswith(".md"):
+            continue
+        for i, line in enumerate(read(os.path.join(refdir, n)).splitlines(), 1):
+            for name, num in pairs:
+                if num is None:
+                    continue
+                for m in re.finditer(re.escape(name) + r"\s*[（(]?\s*(\d{2})\b", line):
+                    if int(m.group(1)) != num:
+                        bad_types.append("%s:%d %s(%s) 应为 %d"
+                                         % (n, i, name, m.group(1), num))
+            for m in re.finditer(r"圆角\s*[（(]\s*(23|43)\b", line):
+                bad_types.append("%s:%d 圆角(%s) 未区分环面圆角(19) 与 blend 面(23)/B 曲面(43)"
+                                 % (n, i, m.group(1)))
+    for x in bad_types:
+        problems.append("DOCS 面类型号 " + x)
+        print("  FAIL 面类型号 %s" % x)
+    print("  面类型号对账：%d 处" % len(bad_types))
     print("  扫描 %d 个 .md：围栏/表格问题 %d 处，缺失路径 %d 个"
           % (len(docs), len(fence_bad) + len(tbl_bad), len(set(missing))))
+
+
+def _tree_paths(tree):
+    """从 SKILL.md §8 的树形清单提取 scripts/、references/、docs/ 下的文件路径。"""
+    stack = []
+    out = []
+    for line in tree.splitlines():
+        m = re.search(r"(?:├──|└──)\s*(.*)$", line)
+        if not m:
+            continue
+        depth = len(line[:m.start()]) // 4
+        del stack[depth:]
+        entry = m.group(1).split("←", 1)[0].strip()
+        if not entry or "*" in entry or "…" in entry:
+            continue
+        if entry.endswith("/"):
+            stack.append(entry.rstrip("/"))
+            continue
+        path = "/".join(stack + [entry])
+        if path.startswith(("scripts/", "references/", "docs/")):
+            out.append(path)
+    return out
+
+
+def _tree_missing(tree):
+    return [p for p in _tree_paths(tree)
+            if not os.path.exists(os.path.join(ROOT, p))]
 
 
 def check_tree():
@@ -300,10 +379,24 @@ def check_tree():
             problems.append("TREE 清单缺 %s" % must)
             print("  FAIL 清单缺 %s" % must)
     tops = sorted(n for n in os.listdir(ROOT) if not n.startswith("."))
+    # 清单条目的首段路径要与顶层条目全名相等：整块子串判据会把新增的 render/
+    # 判成已登记（清单里现成写着 `scripts/render/`）。
+    listing = set()
+    for line in tree.splitlines():
+        m = re.match(r"^[│├└─\s]*([^\s/]+)", line)
+        if m:
+            listing.add(m.group(1))
     for n in tops:
-        if n not in tree:
+        if n not in listing:
             problems.append("TREE 清单未覆盖顶层条目 %s" % n)
             print("  FAIL 清单未覆盖顶层条目 %s" % n)
+    for p in _tree_missing(tree):
+        problems.append("TREE 清单路径不存在 %s" % p)
+        print("  FAIL 清单路径不存在 %s" % p)
+    probe = "├── scripts/\n│   └── __tree_selftest_missing__.py\n"
+    if _tree_missing(probe) != ["scripts/__tree_selftest_missing__.py"]:
+        problems.append("TREE 自检失败：清单里的不存在路径未被识别")
+        print("  FAIL 清单路径自检失败")
     print("  顶层条目 %d 个：%s" % (len(tops), " ".join(tops)))
 
 
@@ -327,12 +420,17 @@ def check_nolib():
         print("  FAIL scripts/nxlib 不存在")
         return
     apis = nxlib_apis()
+    if len(apis) != EXPECTED_API_COUNT:
+        problems.append("NOLIB nxlib 公开 API %d 个，期望 %d 个；同步 EXPECTED_API_COUNT 与 wiki"
+                        % (len(apis), EXPECTED_API_COUNT))
+        print("  FAIL nxlib 公开 API %d 个，期望 %d 个"
+              % (len(apis), EXPECTED_API_COUNT))
     dup = 0
     for name in sorted(os.listdir(TESTS)):
         if not CASE_RE.match(name) or name in SELF_CONTAINED:
             continue
         tree = ast.parse(read(os.path.join(TESTS, name)))
-        for node in tree.body:
+        for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name in apis:
                 dup += 1
                 problems.append("NOLIB %s 重新定义 nxlib.%s（应 import，不是复制）"
@@ -364,13 +462,17 @@ def check_nolib():
             if fname != "check":
                 continue
             a0 = node.args[0]
-            if (isinstance(a0, ast.Constant) and isinstance(a0.value, str)
-                    and "_FAIL" in a0.value):
+            # id 可能是拼出来的（`"47_A" + "_FAIL"` / `"47_B{0}".format("_FAIL")`）：
+            # 折不动就查首参整棵子树里的字符串常量，按约定 id 里不允许出现该 token。
+            bad = [p.value for p in ast.walk(a0)
+                   if isinstance(p, ast.Constant) and isinstance(p.value, str)
+                   and "_FAIL" in p.value]
+            if bad:
                 bad_ids += 1
                 problems.append("NOLIB %s:%d check id %r 含 _FAIL（通过时会误触 gate）"
-                                % (name, node.lineno, a0.value))
+                                % (name, node.lineno, bad[0]))
                 print("  FAIL %s:%d check id 含 _FAIL：%r"
-                      % (name, node.lineno, a0.value))
+                      % (name, node.lineno, bad[0]))
     print("  nxlib 公开 API %d 个；豁免自包含用例 %d 个；非探针用例撞名 %d 处；"
           "check id 含 _FAIL %d 处"
           % (len(apis), len(SELF_CONTAINED), dup, bad_ids))
@@ -405,16 +507,50 @@ def check_concise():
     print("  扫描 %d 个 agent 文档：过程词 %d 处" % (len(paths), hits))
 
 
+def _trap_lists(lines):
+    """带 `<!-- trap-list -->` 标记的清单：返回 [(标题行号, 条目数)]。"""
+    out = []
+    cur = None
+    count = 0
+    in_fence = False
+    for i, line in enumerate(lines, 1):
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if s.startswith("#"):
+            if cur is not None:
+                out.append((cur, count))
+            cur = i if TRAP_MARK_RE.search(s) else None
+            count = 0
+            continue
+        if cur is not None and (re.match(r"[-*+]\s|\d+[.)]", s) or s.startswith("|")):
+            count += 1
+    if cur is not None:
+        out.append((cur, count))
+    return out
+
+
+def _trap_selftest():
+    """自检：无标记的 9 条清单返回 []，带标记的 9 条清单返回 [(1, 9)]。"""
+    bare = ["## 高发清单"] + ["- 条目%d" % i for i in range(1, 10)]
+    marked = ["## 高发清单 <!-- trap-list -->"] + ["- 条目%d" % i for i in range(1, 10)]
+    return _trap_lists(bare), _trap_lists(marked)
+
+
 def check_routes():
     print("== 7. 路线优先（负面事实内联，不新开坑位清单）==")
+    if _trap_selftest() != ([], [(1, 9)]):
+        problems.append("ROUTE 自检失败：无标记的 9 条清单应不报、带标记的 9 条清单应报")
+        print("  FAIL 高发清单标记自检失败")
     paths = agent_docs()
     bad_head = bad_tbl = bad_line = bad_long = 0
     for path in paths:
         r = rel(path)
         lines = read(path).splitlines()
         in_fence = False
-        trap_heading = None
-        trap_items = 0
         for i, line in enumerate(lines, 1):
             s = line.strip()
             if s.startswith("```"):
@@ -427,16 +563,6 @@ def check_routes():
                 bad_head += 1
                 problems.append("ROUTE %s:%d 坑位式标题，改为成功路线" % (r, i))
                 print("  FAIL %s:%d 坑位式标题" % (r, i))
-            if s.startswith("#"):
-                if trap_heading is not None and trap_items > 8:
-                    bad_long += 1
-                    problems.append("ROUTE %s:%d 高发清单 %d 条，超过 8 条"
-                                    % (r, trap_heading, trap_items))
-                    print("  FAIL %s:%d 高发清单超过 8 条" % (r, trap_heading))
-                trap_heading = i if ALLOWED_TRAP_HEAD_RE.match(s) else None
-                trap_items = 0
-            elif trap_heading is not None and (s.startswith("- ") or re.match(r"\d+\.", s)):
-                trap_items += 1
             if PITFALL_TABLE_RE.match(s):
                 bad_tbl += 1
                 problems.append("ROUTE %s:%d 坑位表，并入对应路线" % (r, i))
@@ -446,11 +572,11 @@ def check_routes():
                 bad_line += 1
                 problems.append("ROUTE %s:%d 只有负面断言，没有做法" % (r, i))
                 print("  FAIL %s:%d 只有负面断言" % (r, i))
-        if trap_heading is not None and trap_items > 8:
-            bad_long += 1
-            problems.append("ROUTE %s:%d 高发清单 %d 条，超过 8 条"
-                            % (r, trap_heading, trap_items))
-            print("  FAIL %s:%d 高发清单超过 8 条" % (r, trap_heading))
+        for h, n in _trap_lists(lines):
+            if n > TRAP_MAX:
+                bad_long += 1
+                problems.append("ROUTE %s:%d 高发清单 %d 条，超过 8 条" % (r, h, n))
+                print("  FAIL %s:%d 高发清单超过 8 条" % (r, h))
     print("  扫描 %d 个 agent 文档：坑位标题 %d、坑位表 %d、无做法负面行 %d、超长高发清单 %d"
           % (len(paths), bad_head, bad_tbl, bad_line, bad_long))
 
@@ -466,16 +592,32 @@ def wiki_text():
     return "\n".join(parts)
 
 
+def resolve_ref(ref):
+    """把文档里写的文件引用解析到磁盘路径：先按写出的相对路径，再按 basename 在
+    候选目录里找（文档常省掉目录前缀，如 `check_repo.py`）；找不到返回 None。"""
+    raw = ref.replace("\\", "/")
+    base = os.path.basename(raw)
+    cands = [raw, "scripts/" + raw, "scripts/tests/" + raw, "references/" + raw,
+             "docs/wiki/" + raw, base, "scripts/" + base, "scripts/tests/" + base,
+             "references/" + base, "docs/wiki/" + base]
+    for c in cands:
+        p = os.path.join(ROOT, c)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def wiki_heading_has(text, token):
-    """token 是章节号（4.1 / B.4 / 0a）时要求存在对应标题；否则要求全文出现。
+    """token 是章节号（4.1 / B.4 / 0a）或章节名（运行方式）时，都要求存在对应标题。
 
     章节号后面通常是 `.`/`、` 或空格，所以只排除"更长数字"与"字母"：
-    §1 不能命中 `## 11.`，但能命中 `## 1. 铁律`。
+    §1 不能命中 `## 11.`，但能命中 `## 1. 铁律`。章节名按标题开头匹配——标题被
+    改名而正文还留着同一个词，正是最难发现的过期形态。
     """
     if re.match(r"^[0-9]+(?:\.[0-9]+)*[a-z]?$", token) or re.match(r"^[A-Z]\.[0-9]+$", token):
         pat = r"(?m)^#{2,6}\s*" + re.escape(token) + r"(?![0-9A-Za-z])(?!\.\d)"
         return re.search(pat, text) is not None
-    return token in text
+    return re.search(r"(?m)^#{2,6}\s*" + re.escape(token), text) is not None
 
 
 def wiki_anchor_token(anchor):
@@ -567,24 +709,27 @@ def check_wiki():
                 continue
             if cur is None:
                 continue
-            if not s or not s.startswith("|"):
-                cur = None
+            if not s.startswith("|"):
+                # 空行不清标记：与 1) 同一口径，标记后隔一个空行的表照样要核对。
+                if s:
+                    cur = None
                 continue
             if cur != "nxlib":
                 continue
             cells = [c.strip() for c in s.strip("|").split("|")]
             mm = re.match(r"`([A-Za-z0-9_]+)`", cells[0]) if cells else None
-            if not mm or not cells[-1].isdigit():
+            num = re.match(r"^(\d+)\s*行?$", cells[-1]) if cells else None
+            if not mm or not num:
                 continue
             path = os.path.join(NXLIB, mm.group(1) + ".py")
             if not os.path.isfile(path):
                 continue
             real = len(read(path).splitlines())
-            if int(cells[-1]) != real:
+            if int(num.group(1)) != real:
                 problems.append("WIKI 行数过期 %s：wiki %s / 实际 %d"
-                                % (mm.group(1), cells[-1], real))
+                                % (mm.group(1), num.group(1), real))
                 print("  FAIL 行数过期 %s：wiki %s / 实际 %d"
-                      % (mm.group(1), cells[-1], real))
+                      % (mm.group(1), num.group(1), real))
 
     # 1c) 散文里的"`xxx.py` 是最大的模块（NNNN 行）"这类行数也会漂：名册表
     #     由 1b 拦，正文里写的行数没人管，实测漂了 16 行仍全绿。凡正文里
@@ -626,7 +771,7 @@ def check_wiki():
             problems.append("WIKI 的%s数应为 %d（与 check_repo.py 常量同步）" % (label, value))
             print("  FAIL %s数应为 %d" % (label, value))
 
-    # 2b) 标准层规模：wiki 散文里的"14 模块 / 221 个公开 API"没有名册背书（名册只保证
+    # 2b) 标准层规模：wiki 散文里的"15 模块 / 231 个公开 API"没有名册背书（名册只保证
     #     每个模块有一行，改错数字照样绿），按常量核对。
     modules_now = len([n for n in os.listdir(NXLIB)
                        if n.endswith(".py") and n != "__init__.py"]) if os.path.isdir(NXLIB) else 0
@@ -656,20 +801,34 @@ def check_wiki():
         s = read(os.path.join(WIKI, n))
         for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.(?:py|bat|md))`\s*的\s*`([^`]+)`", s):
             target, anchor = m.group(1), m.group(2)
-            path = target if os.path.exists(target) else os.path.join(ROOT, target)
-            if not os.path.exists(path):
+            path = resolve_ref(target)
+            if path is None:
+                bad_anchor += 1
+                problems.append("WIKI %s 引用 %s 但文件不存在" % (n, target))
+                print("  FAIL %s 引用不存在的文件 %s" % (n, target))
                 continue
             tok = wiki_anchor_token(anchor)
             checked += 1
-            if tok and tok not in read(path):
+            if tok is None:
+                bad_anchor += 1
+                problems.append("WIKI %s 引用 %s 的 %s，但锚点里没有可校验的标识符"
+                                % (n, target, anchor))
+                print("  FAIL %s 锚点无法校验 %s -> %s" % (n, target, anchor))
+            elif tok not in read(path):
                 bad_anchor += 1
                 problems.append("WIKI %s 引用 %s 的 %s，但目标文件里已无 %s"
                                 % (n, target, anchor, tok))
                 print("  FAIL %s 锚点失效 %s -> %s" % (n, target, tok))
-        for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.md)`\s*§\s*([^\s，。；：、（）]+)", s):
-            target, token = m.group(1), m.group(2).rstrip("）")
-            path = target if os.path.exists(target) else os.path.join(ROOT, target)
-            if not os.path.exists(path):
+        for m in re.finditer(
+                r"`([A-Za-z0-9_./\-]+\.md)`\s*§\s*([^\s，。；：、（）]+)"
+                r"|(?<![\w`/\\.-])([A-Za-z0-9_./\-]+\.md)\s*§\s*([^\s，。；：、（）]+)", s):
+            target = m.group(1) or m.group(3)
+            token = m.group(2) or m.group(4)
+            path = resolve_ref(target)
+            if path is None:
+                bad_anchor += 1
+                problems.append("WIKI %s 引用 %s 但文件不存在" % (n, target))
+                print("  FAIL %s 引用不存在的文件 %s" % (n, target))
                 continue
             checked += 1
             if not wiki_heading_has(read(path), token):

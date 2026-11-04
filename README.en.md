@@ -150,14 +150,27 @@ against the local NX installation, and use the same embedding model for the inde
 | `get_class` / `get_member` | local index | works |
 | `search_api` / `find_builder` | local index + embedding service | fails; there is no keyword-search fallback |
 
-Any OpenAI-compatible `/v1/embeddings` endpoint works (`llama-server --embedding`, Ollama,
-LM Studio) as long as it serves `bge-m3` (1024 dimensions). Point the MCP at it:
+Any OpenAI-compatible `/v1/embeddings` endpoint works. llama.cpp's `llama-server --embedding`,
+Ollama, and LM Studio can all load `bge-m3` (1024 dimensions). This machine runs llama-server;
+the parameters below are an example only:
+
+```
+llama-server --model <bge-m3.gguf> --embedding --pooling cls --embd-normalize 2 --host 0.0.0.0 --port 11436 --ctx-size 8196
+```
+
+Fill in the three environment variables on the MCP side for the service you actually use; set
+`NXOPEN_MCP_EMBEDDER` to `llama` (llama.cpp, LM Studio and similar OpenAI-compatible endpoints)
+or `ollama`:
 
 ```
 NXOPEN_MCP_EMBEDDER=llama
 NXOPEN_MCP_OLLAMA_URL=<embedding service endpoint, e.g. http://127.0.0.1:11436>
 NXOPEN_MCP_OLLAMA_MODEL=bge-m3
 ```
+
+The service is ready when `bge-m3` shows up in the model list: llama.cpp answers
+`GET {url}/v1/models`, Ollama answers `GET {url}/api/tags`. The `llama` channel against LM Studio
+is unverified.
 
 ## Install
 

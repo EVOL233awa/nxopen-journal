@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.4.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
+当前版本 1.4.0，另有未发布变更（见 [CHANGELOG.md](CHANGELOG.md) 的 Unreleased 段）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran
@@ -39,8 +39,10 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
 `scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
 标题栏、技术要求、尺寸道位，journal 中 `import gb_drawing` 后可直接使用）、用例标准层
-`scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀、参数化模板、逆向测量编译/骨架/结构库/审计等十四模块配方，回归用例直接 import，不各自复制），以及
+`scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀、参数化模板、逆向测量编译/骨架/结构库/结构推断/转换/交换/审计等十五模块配方，回归用例直接 import，不各自复制），以及
 `scripts/render/` 的离线出图链（批处理截不了图，三维图由 STL 在 NX 外渲染，工程图 PDF 转成图片）。
+宿主侧另有交付件门 `scripts/deliverable.py`、`scripts/check_deliverables.py`、占用门
+`scripts/occupancy.py`、离线 API 索引 `scripts/api_index.py` 与标记包装器 `scripts/run_journal_checked.py`。
 
 ## 示例产物
 
@@ -216,8 +218,10 @@ PASS 37_sketch_autodim_param.py
 PASS 38_measure.py
 PASS 39_reverse_route.py
 PASS 40_rolling_network.py
+（中间省略 PASS 41_template.py 至 PASS 53_pmi_census.py）
 PASS 09_fea_static.py
 PASS check_journal rule selftest - counter-examples hit, clean passes
+PASS runner marker selftest
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
@@ -271,9 +275,11 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 ```
 nxopen-journal/
 ├── SKILL.md                        ← 入口层：铁律 / 环境 / 脚本骨架 / 通用部件操作 / 日志导出 / 工作流 / 域路由
+├── LICENSE                         ← MIT 许可证
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog）
+├── .github/workflows/ci.yml        ← 云端 CI（check_repo.py / check_journal 规则自测 / journal 静态检查，不需要 NX）
 ├── docs/wiki/                      ← 维护者导览：架构 / 主执行流 / 模块 / 数据流 / 边界与风险（入口 [docs/wiki/README.md](docs/wiki/README.md)）
-├── references/                     ← 八个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
+├── references/                     ← 九个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / verification
 ├── images/                         ← 实际运行产物图（上面九张）
 ├── scripts/
 │   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）

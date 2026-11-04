@@ -314,7 +314,7 @@ def main():
     # be BLOCKED when a per-runway topological reason exists, so the planner
     # must produce `evidence` for exactly those runways and nothing for the
     # rest.
-    wide = plane_face(30, [0.0, 0.0, 10.0], [0.0, 0.0, 1.0], area=400.0)
+    wide = plane_face(30, [0.0, 0.0, 10.0], [1.0, 0.0, 0.0], area=400.0)
     wide["box"] = [-20.0, -20.0, 10.0, 20.0, 20.0, 10.0]
     wide2 = plane_face(31, [0.0, 20.0, 5.0], [0.0, 1.0, 0.0], area=400.0)
     wide2["box"] = [-20.0, 20.0, 0.0, 20.0, 20.0, 10.0]
@@ -344,7 +344,7 @@ def main():
           "a reachable runway must not carry BLOCKED evidence: %r"
           % (plan_ok["evidence"],))
 
-    # a support narrower than 2R+0.5 cannot hold the blend.  The two supports
+    # a support narrower than R cannot hold the blend.  The two supports
     # must be a legitimate pair (parallel walls): with perpendicular supports
     # the dihedral check fires first and the width reason never appears --
     # which is the right behaviour, so the fixture has to isolate one cause.
@@ -354,10 +354,14 @@ def main():
              "supports": [("22/R0.000/A0.000", 3)], "closed": False}
     ta = cyl(50, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
     # slot walls 2 mm apart, normals antiparallel -> dihedral 180 deg would
-    # fail the range check, so give them a slight included angle instead
-    wall_a = plane_face(34, [0.0, 1.0, 5.0], [0.0, 0.866, -0.5], area=20.0)
+    # fail the range check.  Tilt each normal 20 deg off the runway normal:
+    # the dihedral lands at 140 deg (inside the range) and the tilt stays
+    # under 30 deg, so both walls still count as supports of the runway axis.
+    wall_a = plane_face(34, [0.0, 1.0, 5.0], [0.0, 0.939693, -0.342020],
+                        area=20.0)
     wall_a["box"] = [-40.0, 0.0, 0.0, 40.0, 2.0, 60.0]
-    wall_b = plane_face(35, [0.0, -1.0, 5.0], [0.0, -0.866, -0.5], area=20.0)
+    wall_b = plane_face(35, [0.0, -1.0, 5.0], [0.0, -0.939693, -0.342020],
+                        area=20.0)
     wall_b["box"] = [-40.0, -1.0, 0.0, 40.0, -1.0, 60.0]
     ta["edges"] = [{"tag": 910, "faces": [50, 34]}, {"tag": 911,
                                                     "faces": [50, 35]}]
@@ -379,17 +383,17 @@ def main():
     need = plan_tight.get("support_need")
     adequate = [w for w in widths if need is not None and w >= need]
     check("T49_TRANSITION_WIDTH_RULE",
-          need is not None and abs(need - (3.0 + 0.5)) < 1e-9 and
+          need is not None and abs(need - 3.0) < 1e-9 and
           len(adequate) == len([w for w in widths if w >= need]) and
           (len(adequate) >= 2) == (plan_tight["reachable"] is True),
-          "reachability must follow 'two supports >= R+0.5 each': need=%r "
+          "reachability must follow 'two supports >= R each': need=%r "
           "widths=%r reachable=%r"
           % (need, widths, plan_tight["reachable"]))
     single = dict(tight)
     single["faces"] = [52, 53]
     tc = cyl(52, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
     td = cyl(53, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
-    narrow_wall = plane_face(36, [0.0, 1.0, 5.0], [0.0, 0.866, -0.5],
+    narrow_wall = plane_face(36, [0.0, 1.0, 5.0], [0.0, 0.939693, -0.342020],
                              area=2.0)
     narrow_wall["box"] = [-1.0, 0.0, 0.0, 1.0, 1.0, 2.0]
     tc["edges"] = [{"tag": 920, "faces": [52, 36]}]

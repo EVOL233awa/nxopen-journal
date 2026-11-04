@@ -27,7 +27,7 @@ graph TD
 | 层 | 位置 | 职责 | 不变式 |
 |---|---|---|---|
 | 入口层 | `SKILL.md` | 会话/部件层：铁律、环境事实、journal 骨架、通用部件操作、工作流、域路由 | 唯一保留跨域高发陷阱清单的地方（`SKILL.md` §1 铁律） |
-| 域文档 | `references/*.md` | 9 个域的成功路线与域内约束 | 域之间不互相依赖；负面事实写成路线里的一句约束，不新开坑位表（`SKILL.md` §7 第 6 条） |
+| 域文档 | `references/*.md` | 9 个域的成功路线与域内约束 | 域之间按各文件抬头的前置声明单向依赖（`drafting-annotation.md` 前置 `drafting.md`，`reverse-engineering.md` 前置 `modeling.md` 与 `fea.md`），按前置图读；负面事实写成路线里的一句约束，不新开坑位表（`SKILL.md` §7 第 6 条） |
 | 工具脚本 | `scripts/*.py`、`*.bat` | 静态检查、批处理执行、国标出图、离线渲染 | 不依赖 NX 也能跑的部分放宿主 Python（`check_journal.py`、`check_repo.py`） |
 | 标准层 | `scripts/nxlib/` | 被用例复用的配方：测试框架、部件生命周期、建模、装配、制图、测量、滚球圆角、模板、逆向五表、骨架、结构库、审计 | 配方只在 nxlib 里有一份，用例复制同名函数会被 `check_repo.py` 拦（`scripts/check_repo.py` 的 `check_nolib()`） |
 | 回归套件 | `scripts/tests/` | 53 个用例，其中 50 个有判决 token | 判据看输出 token 不看退出码（`scripts/tests/RUN_TESTS.bat` 文件头的令牌判定说明） |

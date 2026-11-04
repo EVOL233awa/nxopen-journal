@@ -13,9 +13,11 @@ import NXOpen
 import NXOpen.Positioning
 import NXOpen.UF
 
+from .session import _ufs
+
 
 def ufs():
-    return NXOpen.UF.UFSession.GetUFSession()
+    return _ufs()
 
 
 def identity_matrix():
@@ -46,20 +48,32 @@ def preload_components(session, assy):
 
     组件体惰性加载：重开装配后 component.Prototype 下的实例体不自动进入
     上下文，干涉检查/约束读回前不预载则 SimpleInterference 空跑
-    （实测 inst_bodies=0）。返回子件 .prt 路径列表。
+    （实测 inst_bodies=0）。返回子件 .prt 路径列表；已加载的子件再 Open 抛
+    "File already exists"，按幂等跳过。载入成功与否只能看 Parts.Open 的
+    loadStatus.NumberUnloadedParts（component.Prototype 对未加载组件也返回
+    占位对象且不抛异常），非 0 即抛错，不让调用方在空跑上继续。
     """
     opened = []
     children = assy.ComponentAssembly.RootComponent.GetChildren()
     for c in children:
+        proto = c.Prototype
+        fp = getattr(proto, "FullPath", None) if proto is not None else None
+        if not (fp and fp.lower().endswith(".prt")
+                and fp.lower() != assy.FullPath.lower()):
+            continue
         try:
-            proto = c.Prototype
-            fp = getattr(proto, "FullPath", None) if proto is not None else None
-            if (fp and fp.lower().endswith(".prt")
-                    and fp.lower() != assy.FullPath.lower()):
-                session.Parts.Open(fp)
-                opened.append(fp)
-        except Exception:
-            pass  # 已加载的子件 Open 会抛 "File already exists"，属正常
+            _, load_status = session.Parts.Open(fp)   # 1 参数，返回 (part, loadStatus)
+        except Exception as exc:
+            # 已加载的子件再 Open 抛 "File already exists"，属幂等，跳过；其余异常
+            # 是预载真失败，冒泡——吞掉会让后续干涉检查空跑
+            if "file already exists" not in str(exc).lower():
+                raise
+            continue
+        if load_status.NumberUnloadedParts:
+            raise RuntimeError(
+                "preload_components: %s 未完全载入（NumberUnloadedParts=%d）"
+                % (fp, load_status.NumberUnloadedParts))
+        opened.append(fp)
     return opened
 
 
@@ -81,11 +95,13 @@ def touch_pair(session, assy, comp_movable, face_movable, comp_base, face_base, 
     """Touch 约束对 + 网络求解（10 号 s3 决定性配方）。
 
     约束必须先 DoUpdate 提交再进网络求解，否则 solve 返回 OK 但组件不动。
+    Invisible 标记在 finally 内删除，与 SKILL.md §3 的配对要求一致。
     """
     occ_movable = comp_movable.FindOccurrence(face_movable)
     occ_base = comp_base.FindOccurrence(face_base)
     pos = assy.ComponentAssembly.Positioner
     pos.BeginAssemblyConstraints()
+    mark = None
     try:
         mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, "nxlib_touch")
         con = pos.CreateConstraint(True)
@@ -100,5 +116,9 @@ def touch_pair(session, assy, comp_movable, face_movable, comp_base, face_base, 
         con.SetName(name)
         pos.ClearNetwork()
     finally:
-        pos.EndAssemblyConstraints()
+        try:
+            pos.EndAssemblyConstraints()
+        finally:
+            if mark is not None:
+                session.DeleteUndoMark(mark, "nxlib_touch")
     return err

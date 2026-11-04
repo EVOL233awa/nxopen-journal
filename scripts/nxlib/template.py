@@ -32,10 +32,12 @@ import json
 
 import NXOpen
 
+from .session import _ufs
+
 
 def load_json(path):
     """读 schema / 参数表 JSON（UTF-8）。"""
-    with open(path, "r") as fh:
+    with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -230,10 +232,6 @@ def validate_schema(schema, templates=None, param_table_doc=None):
             "complete": not errors}
 
 
-def structure_template(schema, sid):
-    return structure(schema, sid).get("template")
-
-
 def alerts(part):
     """全部带告警特征：`[{"tag","type","msg"}]`，msg 是原始告警文本。"""
     out = []
@@ -273,7 +271,7 @@ def snapshot(part):
     lo = [1e18, 1e18, 1e18]
     hi = [-1e18, -1e18, -1e18]
     bodies = list(part.Bodies)
-    ufs = NXOpen.UF.UFSession.GetUFSession()
+    ufs = _ufs()
     for b in bodies:
         vol += float(part.MeasureManager.NewMassProperties(
             units, [0.99], [b]).Volume)

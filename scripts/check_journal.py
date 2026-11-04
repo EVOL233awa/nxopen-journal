@@ -7,44 +7,53 @@
   3. main() 入口与 NXOpen import（提示性）
   4. 裸 except（提示性）
   5. 已固化坑位（NX 12 批处理验证）:
-     - 创建 builder 传 None -> 必须用 NXOpen.Features.Feature.Null / BooleanFeature.Null
-     - FileNew 未设 Units 或 NewFileName 不带 .prt -> Commit 必然报错
-       (Units 按 FileNew builder 变量作用域判, 同文件里别的对象的 .Units 不算)
-     - BasePart.SaveComponents/CloseAfterSave -> 成员是 TrueValue/FalseValue,
-       裸 True/False 是 Python 关键字 -> 在语法层拦并给定点提示 (规则 5.3)
-     - PartCollection.Open 参数个数 -> 只传 1 个参数, 返回 (part, loadStatus) 元组
-     - BodyCollection.ToArray() / len(集合) -> 都不存在, 直接迭代
-     - ScCollector.ReplaceRules -> 2 参重载第二参是 createRulesWoUpdate, 与选择集无关;
-       排除实体走 3 参 negatedEntities([DisplayableObject])
-     - Parts.Open 与 Parts.SetWork 同时出现 -> 批处理中会报 No Displayed Part
-     - BlockFeatureBuilder.Length/Width/Height 只读 -> 用 SetLength/SetOriginAndLengths
-       (AST 变量级判定: 只在该 builder 变量本身被赋值时报错,
-        同文件里别的对象同名属性不再误报)
-     - CreateRevolveBuilder 批处理 CommitFeature 内存违例 -> 用 UF Modl.CreateRevolved
-     - NXOpen.UF.FeatureSigns 不存在 -> 用 NXOpen.UF.ModlFeatureSigns
-       (AST 判定: 注释/字符串里出现该名不算, 也不会被别处的 ModlFeatureSigns 静音)
-     - ComponentAssembly.Components 不存在 -> 用 RootComponent.GetChildren()
-     - DrawingSheets/DraftingViews 无 ToArray() -> 直接迭代
-     - BlockFeatureBuilder.BooleanOption 被静默忽略 -> 用 SetBooleanOperationAndTarget
-     - Point3d/Vector3d 传 int -> TypeError, 必须传 float (含 from NXOpen import Point3d 的短形式)
-     - SetOriginAndLengths 长度传数字 -> TypeError, 必须传 str
-     - NX12 无 Features.Thread / CreateThreadBuilder -> 用 HolePackage 螺纹选项
-     - StepCreator 未设 ProcessHoldFlag -> Commit 返回时文件尚未落盘(约 5 秒后才有)
-     - RemoveParametersBuilder -> 销毁特征树, 违背历史模式铁律
-     - DraftBuilder.Method 只读 -> 用 DraftIsoclineOrTruedraft
-     - DraftBuilder.AngleTolerance / ShellBuilder.Tolerance 默认 0.0 -> 必须显式设
-       (同样按 builder 变量作用域判, 别的对象的 .Tolerance = 顶不掉)
-     - NXOpen.UF.UFMotion / NXOpen.UF.UFDraw 不可导入 -> 会话对象 ufs.Motion / ufs.Draw
-       (UF struct 按所属组查: NXOpen.UF.<组>.<名>, 如 Curve.SectionGeneralData;
-        运动模块部分为顶层 NXOpen.UF.<名>_Struct, 如 MotionInterference_Struct)
+     5.1a 创建 builder 传 None -> 必须用 NXOpen.Features.Feature.Null / BooleanFeature.Null
+     5.1b PartCollection.Open 参数个数 -> 只传 1 个参数, 返回 (part, loadStatus) 元组
+     5.1c BodyCollection/DrawingSheets/DraftingViews 无 ToArray(), len(集合) 也不存在
+          -> 直接迭代
+     5.1d ScCollector.ReplaceRules -> 2 参重载第二参是 createRulesWoUpdate, 与选择集无关;
+          排除实体走 3 参 negatedEntities([DisplayableObject]);
+          1 参报 TypeError: No overload matches these arguments
+     5.1e Point3d/Vector3d 传 int -> TypeError, 必须传 float (含 from NXOpen import Point3d 的短形式)
+     5.1f SetOriginAndLengths 长度传数字 -> TypeError, 必须传 str
+     5.2  FileNew 未设 Units 或 NewFileName 不带 .prt -> Commit 必然报错
+          (Units 按 FileNew builder 变量作用域判, 同文件里别的对象的 .Units 不算;
+           NewFileName 非字面量时只提示, 不拦)
+     5.3  BasePart.SaveComponents/CloseAfterSave -> 成员是 TrueValue/FalseValue,
+          裸 True/False 是 Python 关键字 -> 在语法层拦并给定点提示
+     5.4  Parts.Open 与 Parts.SetWork 同时出现 -> 批处理中会报 No Displayed Part
+     5.5  BlockFeatureBuilder.Length/Width/Height 只读 -> 用 SetLength/SetOriginAndLengths
+          (AST 变量级判定: 只在该 builder 变量本身被赋值时报错,
+           同文件里别的对象同名属性不再误报)
+     5.6  CreateRevolveBuilder 批处理 CommitFeature 内存违例 -> 用 UF Modl.CreateRevolved
+     5.7  NXOpen.UF.FeatureSigns 不存在 -> 用 NXOpen.UF.ModlFeatureSigns
+          (AST 判定: 注释/字符串里出现该名不算, 也不会被别处的 ModlFeatureSigns 静音);
+          NXOpen.UF.UFMotion / NXOpen.UF.UFDraw 不可导入 -> 会话对象 ufs.Motion / ufs.Draw
+          (UF struct 按所属组查: NXOpen.UF.<组>.<名>, 如 Curve.SectionGeneralData;
+           运动模块部分为顶层 NXOpen.UF.<名>_Struct, 如 MotionInterference_Struct)
+     5.8  ComponentAssembly.Components 不存在 -> 用 RootComponent.GetChildren()
+     5.9  BlockFeatureBuilder.BooleanOption 被静默忽略 -> 用 SetBooleanOperationAndTarget
+     5.10 NX12 无 Features.Thread / CreateThreadBuilder -> 用 HolePackage 螺纹选项
+     5.11 StepCreator 未设 ProcessHoldFlag -> Commit 返回时文件尚未落盘(约 5 秒后才有)
+     5.12 RemoveParametersBuilder -> 销毁特征树, 违背历史模式铁律
+     5.13 有 Save/SaveAs 但保存后无落盘校验 -> 用 nxlib.session.save_checked(path),
+          或 assert os.path.exists(path) and os.path.getsize(path) > 0
+     5.14a DraftBuilder.Method 只读 -> 用 DraftIsoclineOrTruedraft
+     5.14b DraftBuilder.AngleTolerance 默认 0.0 -> 必须显式设
+     5.15 ShellBuilder.Tolerance 默认 0.0 -> 必须显式设
+          (5.14b/5.15 同样按 builder 变量作用域判, 别的对象的 .Tolerance = 顶不掉)
+     5.16 journal 解释器是 Python 3.6.1 -> 不用 math.dist/prod/isqrt/comb/perm/nextafter、
+          functools.cache/cached_property、itertools.pairwise、str.removeprefix/removesuffix
+     5.17 Types / HoleDepthOptions / AttachmentType 是枚举属性, 带 () 调用会崩 -> 直接读属性
+     5.18 CylinderBuilder.Types 无 AxisAndHeight (.NET 文档名) -> 用 AxisDiameterAndHeight
+     5.19 NXOpen.UF 没有 UFDrf 容器 -> 用 ufs.Drf (UFSession.GetUFSession().Drf)
+     5.20 Expression 属性 (.RightHandSide) 必须给字符串; 需要 Point 的属性给 Point3d 报类型不符
 
 豁免标记:
-  `# check_journal: allow-probes` 整文件豁免;
-  `# check_journal: expected-raise` 单行豁免, 只对按行定位的 AST 规则生效
-  (5.1 系列 / 5.5 / 5.9 / 5.14a / 5.17 / 5.20); 判据不带行号的规则只能整文件
-  豁免: 5.7 / 5.13 / 5.19 是 AST 判定 (5.2 / 5.14b / 5.15 同为变量级 AST 判定,
-  5.11 是文本匹配); 其中 5.2 与 5.7 实测不读 allow-probes, 整文件豁免对这两条
-  不生效 (5.11 / 5.13 / 5.14b / 5.15 / 5.19 的分支带 `not allow_probes` 闸)。
+  `# check_journal: allow-probes` 跳过 5.1e/5.1f、5.5、5.9、5.10、5.11、5.12、5.13、
+  5.14a/5.14b、5.15、5.17、5.18、5.19、5.20；
+  `# check_journal: expected-raise` 覆盖 5.1a-5.1f、5.5、5.9、5.14a、5.17、5.20；
+  两种标记都不放行：5.2、5.3（语法层）、5.7、5.8、5.16（5.1a-5.1d 只认 expected-raise）。
 
 用法:
   python check_journal.py path/to/journal.py
@@ -88,21 +97,78 @@ READONLY_BUILDER_PROPS = {
 }
 
 
+def _target_names(target: ast.AST) -> list[str]:
+    """展开赋值目标里的名字 (含元组/列表解包): (blk,) = ... -> ['blk']."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        names: list[str] = []
+        for elt in target.elts:
+            names.extend(_target_names(elt))
+        return names
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return []
+
+
+def _is_create_call(node: ast.AST, create_method: str) -> bool:
+    """`X.<create_method>(...)` 形式的 builder 创建调用."""
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == create_method)
+
+
+def _iter_payloads(node: ast.AST) -> list[ast.AST]:
+    """for/推导式 iterable 里可能绑定到目标的取值表达式 (展开元组/列表/集合字面量)."""
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        out: list[ast.AST] = []
+        for elt in node.elts:
+            out.extend(_iter_payloads(elt))
+        return out
+    return [node]
+
+
+def _bound_names(value: ast.AST, target: ast.AST, create_method: str) -> list[str]:
+    """值 -> 目标的一对绑定: 值是创建调用时返回目标里的名字.
+
+    解包按位置配对: `blk, rest = CreateBlockFeatureBuilder(...), other()` 只收 blk;
+    `(blk,) = CreateBlockFeatureBuilder(...),` 是同一个坑位的另一种写法。
+    """
+    if _is_create_call(value, create_method):
+        return _target_names(target)
+    if not isinstance(value, (ast.Tuple, ast.List)):
+        return []
+    if isinstance(target, (ast.Tuple, ast.List)) and len(target.elts) == len(value.elts):
+        names: list[str] = []
+        for tgt, val in zip(target.elts, value.elts):
+            names.extend(_bound_names(val, tgt, create_method))
+        return names
+    return []
+
+
 def _builder_vars(tree: ast.AST, create_method: str) -> set[str]:
-    """收集由某 builder 创建方法赋值得到的变量名 (如 blk = ...CreateBlockFeatureBuilder(...)).
+    """收集由某 builder 创建方法绑定得到的变量名 (如 blk = ...CreateBlockFeatureBuilder(...)).
 
     规则 5.5/5.9/5.14 都只在该 builder 变量本身被误用时报警——按变量作用域判定,
     不做文件级文本匹配, 否则同文件里别的对象的同名属性会误报。
+    绑定形式不限 `名 = 调用(...)`: 带注解的赋值、with-as、for/推导式目标、元组解包
+    是同一个坑位, 少收一种写法就整条规则静默漏判。
     """
     names: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
-            continue
-        fn = node.value.func
-        if isinstance(fn, ast.Attribute) and fn.attr == create_method:
-            for t in node.targets:
-                if isinstance(t, ast.Name):
-                    names.add(t.id)
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            if node.value is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                names.update(_bound_names(node.value, t, create_method))
+        elif isinstance(node, ast.withitem):
+            if node.optional_vars is not None:
+                names.update(_bound_names(node.context_expr, node.optional_vars,
+                                          create_method))
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            if any(_is_create_call(v, create_method)
+                   for v in _iter_payloads(node.iter)):
+                names.update(_target_names(node.target))
     return names
 
 
@@ -131,19 +197,38 @@ def _is_none_literal(node: ast.AST) -> bool:
     return isinstance(node, ast.Constant) and node.value is None
 
 
+def _unwrap_sign(node: ast.AST) -> ast.AST:
+    """剥掉一元 +/-: AST 里 -1 是 UnaryOp(USub, Constant(1)), 不是 Constant."""
+    while isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        node = node.operand
+    return node
+
+
 def _is_int_literal(node: ast.AST) -> bool:
     """是否为 int 字面量 (排除 bool, Python 中 bool 是 int 子类)."""
+    node = _unwrap_sign(node)
     return (isinstance(node, ast.Constant)
             and isinstance(node.value, int)
             and not isinstance(node.value, bool))
 
 
 def _is_float_literal(node: ast.AST) -> bool:
+    node = _unwrap_sign(node)
     return isinstance(node, ast.Constant) and isinstance(node.value, float)
 
 
 def _is_number_literal(node: ast.AST) -> bool:
     return _is_int_literal(node) or _is_float_literal(node)
+
+
+def _number_text(node: ast.AST) -> str:
+    """数字字面量的写法, 用于提示 (-20 在 AST 里是 UnaryOp, 没有 .value 可读)."""
+    negatives = 0
+    while isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        if isinstance(node.op, ast.USub):
+            negatives += 1
+        node = node.operand
+    return ("-" if negatives % 2 else "") + str(getattr(node, "value", node))
 
 
 # 规则 5.3: `.True` / `.False` 不是合法 Python 属性名, 带它的文件解析不过 ——
@@ -173,6 +258,41 @@ def _var_attr_assigned(tree: ast.AST, var_names: set[str], attr: str) -> bool:
     return False
 
 
+def _attr_assign_targets(tree: ast.AST) -> list[tuple[int, ast.Attribute]]:
+    """收集 `X.attr = ...` / `X.attr: t = ...` 的目标, 产出 (行号, 属性节点)。
+
+    链式赋值 (a = b.c = ...) 的每个目标都收: 只看 targets[0] 会漏掉后一个。
+    """
+    out: list[tuple[int, ast.Attribute]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        for tgt in targets:
+            if isinstance(tgt, ast.Attribute):
+                out.append((node.lineno, tgt))
+    return out
+
+
+def _attr_assigned_true(tree: ast.AST, attr: str) -> bool:
+    """是否存在 `X.<attr> = True` 赋值 (5.11 要求显式设 True, 赋别的值不算)。"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            value, targets = node.value, node.targets
+        elif isinstance(node, ast.AnnAssign):
+            value, targets = node.value, [node.target]
+        else:
+            continue
+        if not (isinstance(value, ast.Constant) and value.value is True):
+            continue
+        if any(isinstance(t, ast.Attribute) and t.attr == attr for t in targets):
+            return True
+    return False
+
+
 COLLECTION_PROPS = ("Bodies", "Features", "DrawingSheets", "DraftingViews",
                     "Components", "Expressions")
 
@@ -186,11 +306,14 @@ def _is_collection_len(node: ast.AST) -> bool:
             and node.args[0].attr in COLLECTION_PROPS)
 
 
-def _waived(lines: list[str], lineno: int) -> bool:
-    """该行行尾或上一行是否有 '# check_journal: expected-raise' 豁免标记."""
+def _waived(comments: dict[int, str], lineno: int) -> bool:
+    """该行行尾或上一行是否有 '# check_journal: expected-raise' 豁免标记.
+
+    只认注释 token: 字符串/docstring 里出现同样文字不算豁免。
+    """
     marker = "check_journal: expected-raise"
-    for idx in (lineno - 1, lineno - 2):
-        if 0 <= idx < len(lines) and marker in lines[idx]:
+    for line in (lineno, lineno - 1):
+        if marker in comments.get(line, ""):
             return True
     return False
 
@@ -235,9 +358,8 @@ def check(path: Path) -> int:
         return 1
 
     src_lower = text.lower()
-    # 探针类文件（故意演示坑位）可在文件内声明豁免：
-    #   # check_journal: allow-probes
-    allow_probes = "check_journal: allow-probes" in src_lower
+    # 豁免标记只认注释 token：字符串里出现同样文字不是豁免声明。
+    comments: dict[int, str] = {}
     # 占位符只看注释 token 与真正的 raise NotImplementedError；字符串常量里
     # 出现 TODO 是测试反例/文档，不是待办。也不再把合法的 `pass  # ...` 当占位。
     try:
@@ -245,12 +367,16 @@ def check(path: Path) -> int:
             if tok.type != tokenize.COMMENT:
                 continue
             low = tok.string.lower()
+            comments[tok.start[0]] = comments.get(tok.start[0], "") + low
             for marker in ("todo", "fixme", "placeholder"):
                 if marker in low:
                     issues.append(
                         f"第 {tok.start[0]} 行: 发现占位符/待办标记: {marker}")
     except (tokenize.TokenError, IndentationError):
         pass
+    # 探针类文件（故意演示坑位）可在注释中声明豁免：
+    #   # check_journal: allow-probes
+    allow_probes = any("check_journal: allow-probes" in c for c in comments.values())
     for node in ast.walk(tree):
         if not isinstance(node, ast.Raise) or node.exc is None:
             continue
@@ -274,14 +400,12 @@ def check(path: Path) -> int:
 
     # ---- 已固化坑位检查 ----
 
-    src_lines = text.splitlines()
-
     # 5.1 builder 创建传 None 等按行定位的 AST 规则。
     # 行尾 `# check_journal: expected-raise` 对这一组同样生效（负向对照用例常写在
     # 5.1 系列的反例行上，见 SKILL.md §4）。
     for node in ast.walk(tree):
         lineno = getattr(node, "lineno", None)
-        if lineno is not None and _waived(src_lines, lineno):
+        if lineno is not None and _waived(comments, lineno):
             continue
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             attr = node.func.attr
@@ -306,7 +430,14 @@ def check(path: Path) -> int:
                 )
             elif attr == "ReplaceRules":
                 # 2 参重载 (rules, createRulesWoUpdate) 的 bool 与选择集无关, 两侧都合法;
+                # 1 参缺 createRulesWoUpdate, 报 No overload matches these arguments;
                 # 3 参重载第 2 位是 negatedEntities, 要对象列表, 传 bool 报 TypeError。
+                if len(node.args) + len(node.keywords) < 2:
+                    issues.append(
+                        f"第 {node.lineno} 行: ReplaceRules 至少需要 2 个参数 "
+                        f"(rules, createRulesWoUpdate); 1 参报 TypeError: "
+                        f"No overload matches these arguments"
+                    )
                 if len(node.args) >= 3 and isinstance(node.args[1], ast.Constant) \
                         and isinstance(node.args[1].value, bool):
                     issues.append(
@@ -373,12 +504,12 @@ def check(path: Path) -> int:
             for tgt in node.targets:
                 if not isinstance(tgt, ast.Attribute):
                     continue
-                if _waived(src_lines, node.lineno):
+                if _waived(comments, node.lineno):
                     continue
                 if tgt.attr == "RightHandSide" and _is_number_literal(node.value):
                     issues.append(
                         f"第 {node.lineno} 行: {tgt.attr} 是 Expression, 必须给字符串 "
-                        f'(如 "{node.value.value}"), 给数字报 '
+                        f'(如 "{_number_text(node.value)}"), 给数字报 '
                         f"'Expecting Unicode str type, found int/float'"
                     )
                 elif (tgt.attr in POINT_OBJECT_PROPS
@@ -390,26 +521,36 @@ def check(path: Path) -> int:
                     )
 
     # 5.2 FileNew: 只在实际调用时检查 Units 与 .prt
-    filenew_vars: set[str] = set()
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Attribute)
-                and node.value.func.attr == "FileNew"):
-            for t in node.targets:
-                if isinstance(t, ast.Name):
-                    filenew_vars.add(t.id)
+    filenew_vars = _builder_vars(tree, "FileNew")
     if filenew_vars:
         # 判据挂在 FileNew 得到的 builder 变量上：同文件里别的对象的 .Units = 顶不掉它
         if not _var_attr_assigned(tree, filenew_vars, "Units"):
             issues.append("FileNew 未设置 .Units (如 NXOpen.Part.Units.Millimeters) -> Commit 报模板不存在")
-        for m in re.finditer(r"\.NewFileName\s*=\s*[\"']([^\"']*)[\"']", text):
-            name = m.group(1)
-            # CAE 模板产物是 .fem/.sim (FemNxNastranMetric/SimNxNastranMetric)
-            if not name.lower().endswith((".prt", ".fem", ".sim")):
-                issues.append(
-                    f"第 {text[:m.start()].count(chr(10)) + 1} 行: "
-                    f"NewFileName 必须带 .prt/.fem/.sim 后缀 (当前: {name})"
-                )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                value, targets = node.value, node.targets
+            elif isinstance(node, ast.AnnAssign):
+                value, targets = node.value, [node.target]
+            else:
+                continue
+            if value is None:
+                continue
+            for tgt in targets:
+                if not (isinstance(tgt, ast.Attribute) and tgt.attr == "NewFileName"):
+                    continue
+                # CAE 模板产物是 .fem/.sim (FemNxNastranMetric/SimNxNastranMetric)
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    name = value.value
+                    if not name.lower().endswith((".prt", ".fem", ".sim")):
+                        issues.append(
+                            f"第 {node.lineno} 行: NewFileName 必须带 .prt/.fem/.sim 后缀 "
+                            f"(当前: {name})"
+                        )
+                else:
+                    warnings.append(
+                        f"第 {node.lineno} 行: NewFileName 不是字面量后缀，无法静态确认；"
+                        f"运行时必须以 .prt/.fem/.sim 结尾"
+                    )
 
     # 5.3 BasePart.SaveComponents / CloseAfterSave: 成员名是 TrueValue / FalseValue。
     #     裸 `.True` / `.False` 是 Python 关键字，文件根本解析不过 —— 这条在语法层
@@ -433,7 +574,7 @@ def check(path: Path) -> int:
             readonly_vars[var] = create_method
     if not allow_probes:
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign) or _waived(src_lines, node.lineno):
+            if not isinstance(node, ast.Assign) or _waived(comments, node.lineno):
                 continue
             for tgt in node.targets:
                 if not isinstance(tgt, ast.Attribute):
@@ -509,34 +650,30 @@ def check(path: Path) -> int:
     # 5.9  BlockFeatureBuilder 的 BooleanOption 被静默忽略（AST 精确判定：
     #     只在该 builder 的变量本身被赋 .BooleanOption 时报错，避免与 Boolean 特征误报）
     block_vars = _builder_vars(tree, "CreateBlockFeatureBuilder")
-    for node in ast.walk(tree):
-        if allow_probes:
-            break
-        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Attribute):
-            if _waived(src_lines, node.lineno):
+    if not allow_probes:
+        for lineno, tgt in _attr_assign_targets(tree):
+            if _waived(comments, lineno):
                 continue
-            tgt = node.targets[0]
             if tgt.attr in ("BooleanOption", "Type", "SetTargetBodies"):
                 root_id = _root_name(tgt)
                 if root_id and root_id in block_vars:
                     issues.append(
-                        f"第 {node.lineno} 行: BlockFeatureBuilder({root_id}) 设置 "
-                        f"BooleanOption 在 NX12 会被静默忽略 (求差不生效且无异常, 体数 +1); "
+                        f"第 {lineno} 行: BlockFeatureBuilder({root_id}) 设置 "
+                        f"{tgt.attr} 在 NX12 会被静默忽略 (求差不生效且无异常, 体数 +1); "
                         f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
                     )
                     break
-    for node in ast.walk(tree):
-        if allow_probes:
-            break
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "SetTargetBodies" and not _waived(src_lines, node.lineno):
-                root_id = _root_name(node.func.value)
-                if root_id and root_id in block_vars:
-                    issues.append(
-                        f"第 {node.lineno} 行: BlockFeatureBuilder({root_id}) 的 BooleanOption."
-                        f"SetTargetBodies 在 NX12 不生效; 改用 SetBooleanOperationAndTarget"
-                    )
-                    break
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "SetTargetBodies" and not _waived(comments, node.lineno):
+                    root_id = _root_name(node.func.value)
+                    if root_id and root_id in block_vars:
+                        issues.append(
+                            f"第 {node.lineno} 行: BlockFeatureBuilder({root_id})."
+                            f"SetTargetBodies 在 NX12 不生效 (求差不生效且无异常, 体数 +1); "
+                            f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
+                        )
+                        break
 
     # 5.10  NX12 无螺纹特征 builder
     if not allow_probes and ("createthreadbuilder" in src_lower or "features.thread.null" in src_lower):
@@ -546,7 +683,9 @@ def check(path: Path) -> int:
         )
 
     # 5.11  STEP 导出未设同步标志
-    if not allow_probes and "createstepcreator" in src_lower and "processholdflag" not in src_lower:
+    #      判据走 AST：文案要求"显式设 True"，写 False、只在注释/字符串里提该名都不算。
+    if not allow_probes and "createstepcreator" in src_lower \
+            and not _attr_assigned_true(tree, "ProcessHoldFlag"):
         issues.append(
             "使用 StepCreator 但未设 ProcessHoldFlag=True: Commit() 返回时 .stp 尚未落盘 "
             "(逐秒轮询: T+0.1s~T+4s 都不存在, T+5s 才出现), 随即校验存在性会误判失败; "
@@ -560,47 +699,70 @@ def check(path: Path) -> int:
             "仅用户明确要求哑实体时才可用"
         )
 
-    # 5.13  Save/SaveAs 必须有落盘校验（save_checked 已内含存在性+大小断言）。
-    #     判据走 AST：注释或字符串里写个 "getsize(" 顶不掉它。
+    # 5.13  Save/SaveAs 之后必须有落盘校验（save_checked 已内含存在性+大小断言）。
+    #     判据走 AST：注释或字符串里写个 "getsize(" 顶不掉它；校验必须晚于最后一次
+    #     保存，SaveAs 写死路径时校验的也必须是同一路径（校别的是"保存到哪个文件"）。
     if not allow_probes:
-        save_lines = []
-        checked = False
+        saves: list[tuple[int, int, str | None]] = []
+        checks: list[tuple[int, int, str | None]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             fn = node.func
+            call_path = None
             if isinstance(fn, ast.Attribute) and fn.attr in ("Save", "SaveAs"):
-                save_lines.append(node.lineno)
+                if fn.attr == "SaveAs" and node.args:
+                    arg = node.args[0]
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        call_path = arg.value
+                saves.append((node.lineno, node.col_offset, call_path))
             elif isinstance(fn, ast.Attribute) and fn.attr in ("getsize", "exists") \
                     and "path" in _attr_chain(fn):
-                checked = True
+                if node.args:
+                    arg = node.args[0]
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        call_path = arg.value
+                checks.append((node.lineno, node.col_offset, call_path))
             elif isinstance(fn, ast.Name) and fn.id == "save_checked":
-                checked = True
-        if save_lines and not checked:
-            issues.append(
-                "有 Save/SaveAs 但无落盘校验: 改用 nxlib.session.save_checked(path)，"
-                "或保存后 assert os.path.exists(path) and os.path.getsize(path) > 0 "
-                "(见 SKILL.md §3)"
-            )
+                # 该调用自身即"保存 + 校验"，同一位置同时记两条。
+                saves.append((node.lineno, node.col_offset, call_path))
+                checks.append((node.lineno, node.col_offset, call_path))
+        if saves:
+            last = max(saves, key=lambda s: (s[0], s[1]))
+            verified = False
+            for line, col, check_path in checks:
+                if (line, col) < (last[0], last[1]):
+                    continue
+                # SaveAs 路径是字面量时，校验路径必须是同一字面量；校验路径
+                # 不是字面量（变量）时无法静态确认，按可能命中处理。
+                if last[2] is not None and check_path is not None \
+                        and check_path != last[2]:
+                    continue
+                verified = True
+                break
+            if not verified:
+                issues.append(
+                    "有 Save/SaveAs 但保存后无落盘校验: 改用 nxlib.session.save_checked(path)，"
+                    "或保存后 assert os.path.exists(path) and os.path.getsize(path) > 0 "
+                    "(见 SKILL.md §3)"
+                )
 
     # 5.14  DraftBuilder.Method 只读 + 容差默认 0 必须显式设
     draft_vars = _builder_vars(tree, "CreateDraftBuilder")
     if not allow_probes and draft_vars:
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Attribute):
-                if _waived(src_lines, node.lineno):
-                    continue
-                tgt = node.targets[0]
-                if tgt.attr == "Method":
-                    root_id = _root_name(tgt)
-                    if root_id and root_id in draft_vars:
-                        issues.append(
-                            f"第 {node.lineno} 行: DraftBuilder({root_id}).Method 是只读属性 "
-                            f"(AttributeError: object attribute 'Method' is read-only); "
-                            f"改用 DraftIsoclineOrTruedraft = "
-                            f"NXOpen.Features.DraftBuilder.Method.TrueDraft"
-                        )
-                        break
+        for lineno, tgt in _attr_assign_targets(tree):
+            if _waived(comments, lineno):
+                continue
+            if tgt.attr == "Method":
+                root_id = _root_name(tgt)
+                if root_id and root_id in draft_vars:
+                    issues.append(
+                        f"第 {lineno} 行: DraftBuilder({root_id}).Method 是只读属性 "
+                        f"(AttributeError: object attribute 'Method' is read-only); "
+                        f"改用 DraftIsoclineOrTruedraft = "
+                        f"NXOpen.Features.DraftBuilder.Method.TrueDraft"
+                    )
+                    break
         if not _var_attr_assigned(tree, draft_vars, "AngleTolerance"):
             issues.append(
                 "使用 CreateDraftBuilder 但未设 .AngleTolerance: 默认 0.0, Commit 报 "
@@ -676,7 +838,7 @@ def check(path: Path) -> int:
                         f"第 {node.lineno} 行: journal 解释器是 NX12 内嵌 Python 3.6.1, "
                         f"from {mod} import {node.func.id} 后调用不支持 ({hit})"
                     )
-    # str.removeprefix/removesuffix (3.9+) 与方法名撞车风险高, 只在确认为字符串变量时提示
+    # str.removeprefix/removesuffix (3.9+) 与方法名撞车风险高, 按方法名提示, 不解析接收者类型
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
                 and node.func.attr in ("removeprefix", "removesuffix"):
@@ -693,7 +855,7 @@ def check(path: Path) -> int:
         if allow_probes:
             break
         lineno = getattr(node, "lineno", None)
-        if lineno is not None and _waived(src_lines, lineno):
+        if lineno is not None and _waived(comments, lineno):
             continue
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr in ENUM_ACCESSOR_PROPS

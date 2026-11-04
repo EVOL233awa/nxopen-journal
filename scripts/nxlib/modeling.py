@@ -13,12 +13,14 @@ import NXOpen
 import NXOpen.Features
 import NXOpen.UF
 
+from .session import _cross as _session_cross, _dot, _sub as _session_sub, _ufs, _unit as _session_unit
+
 NULL = NXOpen.NXObject.Null
 VIEW_REORIENT_FALSE = NXOpen.Sketch.ViewReorient.FalseValue
 
 
 def ufs():
-    return NXOpen.UF.UFSession.GetUFSession()
+    return _ufs()
 
 
 # ---------------------------------------------------------------- 表达式
@@ -109,6 +111,7 @@ def find_face(wp, body, point, want_normal, axis=2):
     """找法线 axis 分量≈want_normal、离 point 最近的平面（ftype 22，01 号口径）。
 
     axis=0/1/2 对应法线的 X/Y/Z 分量（02 号沿 X 打孔时传 axis=0）。
+    wp 不吃（留在首位只是模块的 wp 形参约定）；find_planar_face 按这一点复用它。
     """
     u = ufs()
     best = None
@@ -132,9 +135,9 @@ def find_face(wp, body, point, want_normal, axis=2):
 def make_sketch(wp, curves, reference_curves=None):
     """草图 + 自动约束 + 自动尺寸；reference_curves 转构造线并全固定（01 号口径）。
 
-    ⚠ 这里的 AutoDimension 实际不产生任何尺寸：AutoConstrain 已经把简单轮廓
-    标成完全约束且不产生表达式（实测圆 3→0 DOF、表达式表为空）。需要尺寸驱动
-    的草图用 make_sketch_dims（不跑 AutoConstrain）。
+    ⚠ AutoConstrain + AutoDimension 不产生可用的驱动尺寸：AutoConstrain 先把
+    简单轮廓标成完全约束，AutoDimension 随后只留下 inactive 尺寸对象、没有活动
+    表达式。需要尺寸驱动的草图用 make_sketch_dims（不跑 AutoConstrain）。
     """
     sib = wp.Sketches.CreateNewSketchInPlaceBuilder(NXOpen.Sketch.Null)
     origin_point = wp.Points.CreatePoint(NXOpen.Point3d(0.0, 0.0, 0.0))
@@ -194,7 +197,8 @@ def make_sketch_dims(wp, curves, links=(), rules=None):
     少调它不影响出尺寸。
 
     只用于简单轮廓（圆/矩形/扇形/台阶轮廓）；实测轮廓（短弧+倒角+偏移线）
-    开了自动尺寸会被拉变形，仍走 make_sketch 的固定约束路线。
+    开了自动尺寸会被拉变形，仍走 make_sketch：AutoConstrain 先把轮廓固定，
+    AutoDimension 不产生可用尺寸，不要指望它出驱动尺寸。
     """
     sib = wp.Sketches.CreateNewSketchInPlaceBuilder(NXOpen.Sketch.Null)
     sib.SketchOrigin = wp.Points.CreatePoint(NXOpen.Point3d(0.0, 0.0, 0.0))
@@ -280,24 +284,11 @@ def add_hole(wp, body, x, y, z_top, diam_expr):
 
 
 def find_planar_face(body, point, want_normal_z):
-    """找法线 z 分量≈want_normal_z、离 point 最近的平面（20/21/31 号口径；
-    与 find_face 的区别：不吃 wp、只按 Z 过滤、face 锚点在孔位本身）。"""
-    u = ufs()
-    best = None
-    best_dist = 1e18
-    for face in body.GetFaces():
-        data = u.Modeling.AskFaceData(face.Tag)
-        ftype, fp, fdir = data[0], data[1], data[2]
-        if ftype != 22:
-            continue
-        if abs(fdir[2] - want_normal_z) > 0.01:
-            continue
-        dist = abs((point.X - fp[0]) * fdir[0] + (point.Y - fp[1]) * fdir[1]
-                   + (point.Z - fp[2]) * fdir[2])
-        if dist < best_dist:
-            best_dist = dist
-            best = face
-    return best
+    """找法线 z 分量≈want_normal_z、离 point 最近的平面（20/21/31 号口径）。
+
+    与 find_face 同一实现：只按 Z 过滤（axis=2）、不吃 wp；face 锚点在孔位本身。
+    """
+    return find_face(None, body, point, want_normal_z, axis=2)
 
 
 def add_thru_hole(wp, body, x, y, z_top, expr_name):
@@ -378,6 +369,8 @@ def blend_on_edges(wp, edges, radius):
 def face_blend(wp, face_a, face_b, radius, reverse_a=False, reverse_b=False):
     """两支撑面 FaceBlend（BlendTwoFace）。
 
+    radius 可传数值或命名表达式名；入口用 str() 保留表达式名，不加引号。
+
     支撑面可以是平面、圆柱、圆锥、环面或 B 曲面，但必须是完整解析面且
     非相切；相切缝，或**支撑面宽 < R** 的窄条，会报
     `Radius is too large/small`（实测支撑宽 1.6 / R=1.6 可倒、1.5 / R=1.6
@@ -392,7 +385,7 @@ def face_blend(wp, face_a, face_b, radius, reverse_a=False, reverse_b=False):
     builder.ReverseFirstFaceNormal = reverse_a
     builder.ReverseSecondFaceNormal = reverse_b
     builder.CrossSectionType = fbt.CrossSectionOption.Circular
-    builder.CircularCrossSection.SetRadius(repr(radius))
+    builder.CircularCrossSection.SetRadius(str(radius))
     try:
         feat = builder.CommitFeature()
     finally:
@@ -435,25 +428,23 @@ def face_blend_edge(wp, edge, radius,
 
 
 def _sub3(a, b):
-    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    return tuple(_session_sub(a, b))
 
 
 def _dot3(a, b):
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    return _dot(a, b)
 
 
 def _cross3(a, b):
-    return (a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0])
+    return tuple(_session_cross(a, b))
 
 
 def _unit3(a):
-    n = math.sqrt(_dot3(a, a))
-    return None if n < 1e-9 else (a[0] / n, a[1] / n, a[2] / n)
+    u = _session_unit(a, zero="none", eps=1e-9)
+    return None if u is None else tuple(u)
 
 
-def _extrude_along(wp, curves, direction, distance, start, help_pt):
+def extrude_along(wp, curves, direction, distance, start, help_pt):
     """沿任意方向拉伸（ExtrudeBuilder；direction 为三元组）。"""
     section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
     rule = wp.ScRuleFactory.CreateRuleCurveDumb(curves)
@@ -515,6 +506,78 @@ def edge_is_concave(edge, trace=None):
     return None
 
 
+def section_profile(n0, n1, tangent, radius, add):
+    """两支撑法向 + 边切向 → 2D 截面（角区 − 切圆）。
+
+    与 `roll_edge` 同一套解析：返回 dict(e1, e2, ox, oy, arc_a0, arc_a1,
+    area, tangent_pts, c_out, radius, pts2)。两面近共面或切点退化时返回
+    {"ok": False, "reason": ...}。
+    """
+    ang = math.degrees(math.acos(max(-1.0, min(1.0, _dot3(n0, n1)))))
+    if not (20.0 < ang < 160.0):
+        return {"ok": False, "reason": "dihedral %.1f deg" % ang}
+    sgn = 1.0 if add else -1.0
+    e1 = _unit3((sgn * n0[0], sgn * n0[1], sgn * n0[2]))
+    if e1 is None:
+        return {"ok": False, "reason": "degenerate normal"}
+    e2 = _unit3(_cross3(tangent, e1))
+    if e2 is None:
+        return {"ok": False, "reason": "normal along edge"}
+    uu = []
+    for nv in (n0, n1):
+        wi = (sgn * nv[0], sgn * nv[1], sgn * nv[2])
+        uu.append((_dot3(wi, e1), _dot3(wi, e2)))
+    det = uu[0][0] * uu[1][1] - uu[0][1] * uu[1][0]
+    if abs(det) < 0.2:
+        return {"ok": False, "reason": "det %.2f" % det}
+    ox = (radius * uu[1][1] - radius * uu[0][1]) / det
+    oy = (uu[0][0] * radius - uu[1][0] * radius) / det
+    tt = [(ox - radius * uu[0][0], oy - radius * uu[0][1]),
+          (ox - radius * uu[1][0], oy - radius * uu[1][1])]
+    near = min(math.hypot(*q) for q in tt)
+    far = max(math.hypot(*q) for q in tt)
+    if near < 0.3 * radius or far > 6.0 * radius:
+        return {"ok": False, "reason": "tangent near %.2f far %.2f" %
+                (near, far)}
+    r0 = ((tt[0][0] - ox) / radius, (tt[0][1] - oy) / radius)
+    a0 = math.atan2(r0[1], r0[0])
+    r1 = ((tt[1][0] - ox) / radius, (tt[1][1] - oy) / radius)
+    a1 = math.atan2(r1[1], r1[0])
+    da = (a1 - a0 + math.pi) % (2.0 * math.pi) - math.pi
+    bis = (-(uu[0][0] + uu[1][0]), -(uu[0][1] + uu[1][1]))
+    mid = (ox + radius * math.cos(a0 + 0.5 * da),
+           oy + radius * math.sin(a0 + 0.5 * da))
+    if mid[0] * bis[0] + mid[1] * bis[1] <= ox * bis[0] + oy * bis[1]:
+        da -= 2.0 * math.pi if da > 0 else -2.0 * math.pi
+    bd = _unit3((-bis[0], -bis[1], 0.0))
+    # 角区 − 切圆：两条直边贴两个面，滚圆段用精确圆弧。切点不回缩、
+    # 只在角点外偏 0.1：切点附近回缩再用弦接圆弧会切进面内，留下
+    # 0.2–0.5 mm 的窄平台（面表多出一族偏 0.01–0.2 的平面）。
+    skirt = 0.1
+    c_out = (-skirt * bd[0], -skirt * bd[1])
+    if da < 0.0:
+        arc_a0, arc_a1 = a1, a1 - da
+    else:
+        arc_a0, arc_a1 = a0, a0 + da
+    pts2 = [c_out,
+            (ox + radius * math.cos(arc_a0), oy + radius * math.sin(arc_a0))]
+    for j in range(1, 16):
+        a = arc_a0 + (arc_a1 - arc_a0) * j / 16.0
+        pts2.append((ox + radius * math.cos(a),
+                     oy + radius * math.sin(a)))
+    pts2.append((ox + radius * math.cos(arc_a1),
+                 oy + radius * math.sin(arc_a1)))
+    area = 0.0
+    for i in range(len(pts2)):
+        x0, y0 = pts2[i]
+        x1, y1 = pts2[(i + 1) % len(pts2)]
+        area += x0 * y1 - x1 * y0
+    return {"ok": True, "e1": e1, "e2": e2, "ox": ox, "oy": oy,
+            "arc_a0": arc_a0, "arc_a1": arc_a1,
+            "area": abs(0.5 * area), "tangent_pts": tt,
+            "c_out": c_out, "radius": radius, "pts2": pts2}
+
+
 def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
     """开放链圆角刀：截面 = 角区 − 切圆，沿边拉伸（凸边减、凹边加）。
 
@@ -523,7 +586,7 @@ def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
     段独立提交、失败即可回滚**，且能按几何重找下一条边：每条边生成一把截面
     垂直于边的刀，拉伸到终点外 `ee`（起点与边端点平齐，穿出起点会切掉顶点
     邻边该留的料）。`add=True` 生成凹边一侧的刀、`False` 凸边；缺省按
-    `edge_is_concave` 自动判。两面不是平面、夹角不在 30°–150°、边长不足
+    `edge_is_concave` 自动判。两面不是平面、夹角不在 20°–160°、边长不足
     `4*radius`、切点退化时返回 None，原因写进 `trace`（若给）。返回
     `(feature, 预期体积 mm3)`，调用方对 `feature.GetBodies()[0]` 做一次布尔
     （凸 Subtract / 凹 Unite）。
@@ -565,73 +628,23 @@ def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
         if trace is not None:
             trace.append("faces %d" % len(nrm))
         return None
-    ang = math.degrees(math.acos(max(-1.0, min(1.0, _dot3(nrm[0], nrm[1])))))
-    if not (30.0 < ang < 150.0):
-        if trace is not None:
-            trace.append("angle %.1f" % ang)
-        return None
     if add is None:
         add = edge_is_concave(edge, trace)
         if add is None:
             return None
-    sgn = 1.0 if add else -1.0
-    e1 = _unit3((sgn * nrm[0][0], sgn * nrm[0][1], sgn * nrm[0][2]))
-    e2 = _unit3(_cross3(dv, e1))
-    uu = []
-    for nv in nrm:
-        wi = (sgn * nv[0], sgn * nv[1], sgn * nv[2])
-        uu.append((_dot3(wi, e1), _dot3(wi, e2)))
-    det = uu[0][0] * uu[1][1] - uu[0][1] * uu[1][0]
-    if abs(det) < 0.2:
+    sec = section_profile(nrm[0], nrm[1], dv, radius, add)
+    if not sec["ok"]:
         if trace is not None:
-            trace.append("det %.2f" % det)
+            trace.append(sec["reason"])
         return None
-    ox = (radius * uu[1][1] - radius * uu[0][1]) / det
-    oy = (uu[0][0] * radius - uu[1][0] * radius) / det
-    tt = [(ox - radius * uu[0][0], oy - radius * uu[0][1]),
-          (ox - radius * uu[1][0], oy - radius * uu[1][1])]
-    near = min(math.hypot(*q) for q in tt)
-    far = max(math.hypot(*q) for q in tt)
-    if near < 0.3 * radius or far > 6.0 * radius:
-        if trace is not None:
-            trace.append("tangent near %.2f far %.2f" % (near, far))
-        return None
-    r0 = ((tt[0][0] - ox) / radius, (tt[0][1] - oy) / radius)
-    r1 = ((tt[1][0] - ox) / radius, (tt[1][1] - oy) / radius)
-    a0 = math.atan2(r0[1], r0[0])
-    a1 = math.atan2(r1[1], r1[0])
-    da = (a1 - a0 + math.pi) % (2.0 * math.pi) - math.pi
-    bis = (-(uu[0][0] + uu[1][0]), -(uu[0][1] + uu[1][1]))
-    mid = (ox + radius * math.cos(a0 + 0.5 * da),
-           oy + radius * math.sin(a0 + 0.5 * da))
-    if mid[0] * bis[0] + mid[1] * bis[1] <= ox * bis[0] + oy * bis[1]:
-        da -= 2.0 * math.pi if da > 0 else -2.0 * math.pi
-    bd = _unit3((-bis[0], -bis[1], 0.0))
-    # 角区 − 切圆：两条直边贴两个面，滚圆段用精确圆弧。切点不回缩、
-    # 只在角点外偏 0.1：切点附近回缩再用弦接圆弧会切进面内，留下
-    # 0.2–0.5 mm 的窄平台（面表多出一族偏 0.01–0.2 的平面）。
-    skirt = 0.1
-    c_out = (-skirt * bd[0], -skirt * bd[1])
-    if da < 0.0:
-        arc_a0, arc_a1 = a1, a1 - da
-    else:
-        arc_a0, arc_a1 = a0, a0 + da
-    arc_p0 = (ox + radius * math.cos(arc_a0),
-              oy + radius * math.sin(arc_a0))
-    arc_p1 = (ox + radius * math.cos(arc_a1),
-              oy + radius * math.sin(arc_a1))
-    pts2 = [c_out, arc_p0]
-    for j in range(1, 16):
-        a = arc_a0 + (arc_a1 - arc_a0) * j / 16.0
-        pts2.append((ox + radius * math.cos(a),
-                     oy + radius * math.sin(a)))
-    pts2.append(arc_p1)
-    area = 0.0
-    for i in range(len(pts2)):
-        x0, y0 = pts2[i]
-        x1, y1 = pts2[(i + 1) % len(pts2)]
-        area += x0 * y1 - x1 * y0
-    area = abs(0.5 * area)
+    e1, e2 = sec["e1"], sec["e2"]
+    ox, oy = sec["ox"], sec["oy"]
+    arc_a0, arc_a1 = sec["arc_a0"], sec["arc_a1"]
+    c_out = sec["c_out"]
+    arc_p0 = (ox + radius * math.cos(arc_a0), oy + radius * math.sin(arc_a0))
+    arc_p1 = (ox + radius * math.cos(arc_a1), oy + radius * math.sin(arc_a1))
+    pts2 = sec["pts2"]
+    area = sec["area"]
     ee = min(0.8, 0.25 * ln) if ext is None else ext
     base = (p0[0] - dv[0] * ee, p0[1] - dv[1] * ee, p0[2] - dv[2] * ee)
 
@@ -651,8 +664,8 @@ def roll_edge(wp, edge, radius, min_len=None, ext=None, add=None, trace=None):
     hp = to3((sum(p[0] for p in pts2) / len(pts2),
               sum(p[1] for p in pts2) / len(pts2)))
     try:
-        feat = _extrude_along(wp, curves, dv, repr(ln + 2.0 * ee), repr(ee),
-                              hp)
+        feat = extrude_along(wp, curves, dv, repr(ln + 2.0 * ee), repr(ee),
+                             hp)
     except Exception:
         if trace is not None:
             trace.append("cutter extrude failed")

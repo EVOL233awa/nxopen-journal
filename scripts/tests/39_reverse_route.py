@@ -30,6 +30,9 @@
 # rim is rolled with roll_edge/apply_roll (section = corner minus tangent
 # circle, extruded along the edge) and must remove (R^2 - pi*R^2/4) * L and
 # leave a cylinder of exactly the roll radius.
+#   Radius entry: face_blend passes str(radius), so a named expression string
+#   reaches CircularCrossSection.SetRadius unquoted; this test uses a numeric
+#   BLEND_R and does not exercise the expression path.
 import math
 import os
 

@@ -43,13 +43,13 @@
 #   svb.ViewUnfolded = True commits (readback True, and CreateFolded flips from its
 #   default True to False), but the section line stays REVOLVED_SXLINE and the
 #   per-object readings are identical to the folded control (4 visible objects,
-#   DraftingCurve 3 + Hatch 1, same leg vectors and leg count). The one measured
-#   difference is the exported sheet, and that byte count floats with the view
-#   names and view count on the sheet (three measured pairs: 18372/18414,
-#   18248/18077, 18246/18077 -- the order is not even stable), so the assertion
-#   below is only "both exports are real content and are not byte identical".
-#   So the assertions here are: the toggle sticks, the view is a valid section, and
-#   the two exports are both real content yet not byte identical. The section-line
+#   DraftingCurve 3 + Hatch 1, same leg vectors and leg count). The exported
+#   page content is the measured difference, but its byte size floats with the
+#   view names and view count and can coincide; compare page count plus a hash
+#   of the decompressed content streams (font/metadata streams excluded), and
+#   record byte sizes only. So the assertions here are: the toggle sticks, the
+#   view is a valid section, and the two exports have equal page counts but
+#   different page-content hashes. The section-line
 #   TYPE cannot be used to check unfolding -- ufs.Draw.SxlineType carries
 #   UNFOLDED_SXLINE, but neither SectionViewBuilder.SectionLineType (Half /
 #   PointAndAngle / PointToPoint / Revolved / SimpleStepped) nor
@@ -105,6 +105,44 @@ SECTION_LINE_TYPES = ["Half", "PointAndAngle", "PointToPoint", "Revolved",
 # .NET section-view builder
 UF_SXLINE_TYPES = ["BREAKLINE", "FOLDED_SXLINE", "HALF_SXLINE", "REVOLVED_SXLINE",
                    "SIMPLE_SXLINE", "STEPPED_SXLINE", "UNFOLDED_SXLINE"]
+
+
+def pdf_content_signature(path):
+    """(page_count, content_hash) for an NX PDF export.
+
+    Drawing operators live in Flate-compressed page-content streams; file
+    metadata (CreationDate, ID, font subsets) changes between exports of the
+    same sheet. Hash only decompressed content streams, so equal drawings
+    compare equal even when their bytes differ.
+    """
+    import hashlib
+    import re
+    import zlib
+    with open(path, "rb") as fh:
+        data = fh.read()
+    pages = len(re.findall(rb"/Type\s*/Page\b", data))
+    digests = []
+    pattern = rb"stream\r?\n(.*?)\r?\nendstream"
+    for match in re.finditer(pattern, data, re.S):
+        back = data[max(0, match.start() - 500):match.start()]
+        payload = match.group(1)
+        try:
+            payload = zlib.decompress(payload)
+        except zlib.error:
+            pass
+        if b"/Type/ObjStm" in back:
+            pages += len(re.findall(rb"/Type\s*/Page\b", payload))
+        if payload.startswith(b"/CIDInit"):
+            continue
+        if any(key in back for key in (
+                b"/Length1", b"/Type/ObjStm", b"/Type/XRef",
+                b"/Subtype/Image", b"/Subtype/XML")):
+            continue
+        digests.append(hashlib.sha256(payload).hexdigest())
+    if not digests:
+        raise RuntimeError("no content stream in %s" % (path,))
+    return pages, hashlib.sha256(
+        "".join(digests).encode("ascii")).hexdigest()
 
 
 def main():
@@ -374,6 +412,7 @@ def main():
     def s6_unfolded_toggle():
         part = state["part"]
         sizes = {}
+        sigs = {}
         for label, unfolded, sheet_name, pdf in (
                 ("folded", False, "SHT_FOLD", "sx31_folded.pdf"),
                 ("unfolded", True, "SHT_UNFOLD", "sx31_unfolded.pdf")):
@@ -422,20 +461,28 @@ def main():
             vis, kinds = view_kinds(sheet, view)
             if view.IsOutOfDate:
                 raise RuntimeError("the %s view is out of date" % label)
-            size = export_pdf(part, sheet, os.path.abspath(pdf))
+            pdf_path = os.path.abspath(pdf)
+            size = export_pdf(part, sheet, pdf_path)
             if size < PDF_MIN_BYTES:
                 raise RuntimeError("the %s sheet exported %d bytes; a blank A4 "
                                    "sheet is 917 bytes" % (label, size))
             sizes[label] = size
+            sigs[label] = pdf_content_signature(pdf_path)
             say("UNFOLDED_%s view=%s type=%s ViewUnfolded=%r CreateFolded=%r vis=%d "
                 "kinds=%s pdf=%d"
                 % (label.upper(), view.Name, sxline_type_name(ufs, stype),
                    unfolded, create_folded, len(vis),
                    ",".join("%s:%d" % kv for kv in sorted(kinds.items())), size))
-        if sizes["folded"] == sizes["unfolded"]:
-            raise RuntimeError("the folded and unfolded sheets exported the same "
-                               "%d bytes: the toggle no longer changes the drawing"
-                               % sizes["folded"])
+        if sigs["folded"][0] != sigs["unfolded"][0]:
+            raise RuntimeError("the folded and unfolded sheets exported %d/%d "
+                               "pages" % (sigs["folded"][0],
+                                          sigs["unfolded"][0]))
+        if sigs["folded"][1] == sigs["unfolded"][1]:
+            raise RuntimeError("the folded and unfolded sheets exported identical "
+                               "page content (pages=%d, bytes=%d/%d): the toggle "
+                               "no longer changes the drawing"
+                               % (sigs["folded"][0], sizes["folded"],
+                                  sizes["unfolded"]))
         state["fold_sizes"] = sizes
 
     def s7_save():

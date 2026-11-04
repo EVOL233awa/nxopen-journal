@@ -35,7 +35,10 @@ _p = os.path.abspath(os.path.join(_here, ".."))
 if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
     sys.path.insert(0, _p)
 
-from nxlib.drafting import norm_tag
+from nxlib.drafting import (
+    cell_text, export_pdf, new_table, norm_tag, pin_table_geometry, read_cell,
+)
+from nxlib.modeling import face_radius
 from nxlib.testing import FAILED_STAGES, stage
 
 PART = os.path.abspath("bracket.prt")
@@ -125,12 +128,6 @@ def main():
     def near(pt, xyz):
         return (abs(pt.X - xyz[0]) < TOL and abs(pt.Y - xyz[1]) < TOL
                 and abs(pt.Z - xyz[2]) < TOL)
-
-    def face_radius(face):
-        try:
-            return abs(ufs.Modeling.AskFaceData(face.Tag)[4])
-        except Exception:
-            return -1.0
 
     circles = []      # (centre xy, z, radius, edge)
     n_edges = 0
@@ -241,69 +238,10 @@ def main():
     stage("map_model_to_drawing", probe_mapping)
 
     # ---------------------------------------------------------------- table
-    # helpers shared by the sheet furniture and the BOM table below
-    def cell_text(tn, row, col):
-        r0 = ufs.Tabnot.AskNthRow(tn, row)
-        c0 = ufs.Tabnot.AskNthColumn(tn, col)
-        cell = ufs.Tabnot.AskCellAtRowCol(norm_tag(r0), norm_tag(c0))
-        return norm_tag(cell)
-
-    def read_cell(tn, ri, ci):
-        got = ufs.Tabnot.AskCellText(cell_text(tn, ri, ci))
-        return got[1] if isinstance(got, tuple) else got
-
-    def drain_table(tn):
-        # the default table arrives as 5x5; drop every row/column it ships with.
-        # Row count has no documented getter, so drain defensively instead of
-        # guessing an API name.
-        for _ in range(50):
-            try:
-                ufs.Tabnot.RemoveColumn(norm_tag(ufs.Tabnot.AskNthColumn(tn, 0)))
-            except Exception:
-                break
-        for _ in range(50):
-            try:
-                ufs.Tabnot.RemoveRow(norm_tag(ufs.Tabnot.AskNthRow(tn, 0)))
-            except Exception:
-                break
-
-    def new_table(origin, col_widths, row_heights, thick_border=False):
-        sp = ufs.Tabnot.AskDefaultSectionPrefs()
-        if thick_border:
-            # the frame and the title block plot with a heavy border, like a
-            # real sheet's 图框线; the BOM table keeps the default thin one
-            sp.UseDoubleWidthBorder = True
-            sp.BorderWidth = 0.7
-        sp.AttachPoint = NXOpen.UF.Tabnot.AttachPoint.ATTACH_POINT_TOP_LEFT
-        res = ufs.Tabnot.Create(sp,
-                                [float(origin[0]), float(origin[1]), 0.0])
-        tn = norm_tag(res)
-        drain_table(tn)
-        for w in col_widths:
-            ufs.Tabnot.AddColumn(tn, norm_tag(ufs.Tabnot.CreateColumn(w)), -1)
-        for h in row_heights:
-            ufs.Tabnot.AddRow(tn, norm_tag(ufs.Tabnot.CreateRow(h)), -1)
-        return tn
-
-    def pin_table_geometry(tn, row_heights, ncols=1, center_first_row=False):
-        # Row heights are only honoured once the per-cell auto-fit is off
-        # (uf_tabnot.h on UF_TABNOT_set_row_height: "Fit methods auto size row
-        # and auto size text must be disabled"); without this the frame row
-        # collapsed to ~5 mm and the whole frame vanished.
-        for ri, h in enumerate(row_heights):
-            row = norm_tag(ufs.Tabnot.AskNthRow(tn, ri))
-            for ci in range(ncols):
-                cell = cell_text(tn, ri, ci)
-                cp = ufs.Tabnot.AskCellPrefs(cell)
-                cp.NmFitMethods = 0
-                ufs.Tabnot.SetCellPrefs(cell, cp)
-            ufs.Tabnot.SetRowHeight(row, float(h))
-        if center_first_row:
-            cell = cell_text(tn, 0, 0)
-            cp = ufs.Tabnot.AskCellPrefs(cell)
-            cp.HorizJust = NXOpen.UF.Tabnot.Just.JUST_CENTER
-            cp.VertJust = NXOpen.UF.Tabnot.Just.JUST_MIDDLE
-            ufs.Tabnot.SetCellPrefs(cell, cp)
+    # cell_text / read_cell / new_table / pin_table_geometry come from
+    # nxlib.drafting (the 19/20 table recipe lives there once); only the call
+    # sites below are case-specific. The frame and title block use
+    # thick_border=True (图框线), the BOM table keeps the default thin border.
 
     # ---------------------------------------------------- frame + title block
     # Both are ordinary tabular notes: a tabular note is sheet-bound and plots
@@ -512,23 +450,14 @@ def main():
     stage("table", make_table)
 
     # ------------------------------------------------------------------ plot
-    def export_pdf():
-        if os.path.exists(PDF):
-            os.remove(PDF)
-        pdfb = part.PlotManager.CreatePrintPdfbuilder()
-        pdfb.SourceBuilder.SetSheets([sheet])
-        pdfb.Colors = NXOpen.PrintPDFBuilder.Color.BlackOnWhite
-        pdfb.Size = NXOpen.PrintPDFBuilder.SizeOption.FullScale
-        pdfb.Units = NXOpen.PrintPDFBuilder.UnitsOption.Metric
-        pdfb.Scale = 1.0
-        pdfb.Filename = PDF
-        pdfb.Commit()
-        pdfb.Destroy()
-        size = os.path.getsize(PDF) if os.path.exists(PDF) else -1
+    # the PDF recipe is nxlib.drafting.export_pdf; the size floor stays here
+    # because it is this case's verdict, not part of the recipe.
+    def plot_pdf():
+        size = export_pdf(part, sheet, PDF)
         print("PDF=%s size=%d" % (PDF, size))
         if size < 20000:
             raise RuntimeError("plot produced no usable pdf (size=%d)" % size)
-    stage("export_pdf", export_pdf)
+    stage("export_pdf", plot_pdf)
 
     if FAILED_STAGES:
         print("TEST19_FAIL stages=" + ",".join(FAILED_STAGES))

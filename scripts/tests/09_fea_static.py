@@ -260,6 +260,8 @@ def main():
     stage("post_verify", s6)
 
     ufs.Part.Save()
+    assert os.path.exists(state["sim"].FullPath) and \
+        os.path.getsize(state["sim"].FullPath) > 0, "save did not land"
     print("FEA_DONE")
 
 

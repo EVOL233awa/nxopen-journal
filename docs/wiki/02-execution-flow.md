@@ -31,7 +31,7 @@ graph TD
 
 规则库的关键设计：**按变量作用域判定**。同一文件里 `builder.Length = x` 报错，但另一个对象的同名属性不误报（`scripts/check_journal.py` 的 `_builder_vars()` 的 `_builder_vars`）。这是文本匹配做不到的——本技能的用例里有大量刻意演示坑位的探针文件。
 
-豁免只有两种标记：整文件 `# check_journal: allow-probes`，单行 `# check_journal: expected-raise`（`scripts/check_journal.py` 的 `_waived()`）。单行豁免只对按行定位的 AST 规则生效（5.1 系列/5.5/5.9/5.14a/5.17/5.20）；不带行号的规则只能整文件豁免，但 5.2 与 5.7 连整文件标记也不放行（判据是 AST、且不带 `not allow_probes` 闸），只有 5.11/5.13/5.14b/5.15/5.19 随标记跳过。
+豁免只有两种标记（只认注释 token，字符串/docstring 里的同样文字不生效）：整文件 `# check_journal: allow-probes`，单行 `# check_journal: expected-raise`（`scripts/check_journal.py` 的 `_waived()`）。expected-raise 只对按行定位的规则生效（5.1a-5.1f/5.5/5.9/5.14a/5.17/5.20）；allow-probes 跳过 5.1e/5.1f、5.5、5.9、5.10、5.11、5.12、5.13、5.14a/5.14b、5.15、5.17、5.18、5.19、5.20；两种标记都不放行：5.2、5.3（语法层）、5.7、5.8、5.16；5.1a-5.1d 只认 expected-raise。
 
 规则库自身也要被验证：`scripts/tests/verify_check_rules.py` 对 5.1–5.20 每条规则各配一个反例（报错级必须命中，提示级只断言输出提示、退出码仍为 0），干净与"看似该报实际合法"的样本必须通过，由 `RUN_TESTS.bat` 的 `:ruleselftest` 段调用。
 
@@ -43,7 +43,7 @@ graph TD
 2. 工作目录 `pushd` 与无条件回显 `=== RUN_JOURNAL workdir=... ===`——workdir 建失败时 `pushd` 不报错，journal 会在调用者 CWD 里落盘（`scripts/run_journal_batch.bat` 的 workdir 注释）。
 3. `call ugiicmd.bat` 后跑 `run_journal.exe`，回显退出码（`scripts/run_journal_batch.bat` 调用 `ugiicmd.bat` 处）。
 
-套件的判决在 `:gate` 子过程：**有 token 且无 `_FAIL` 行**（`scripts/tests/RUN_TESTS.bat` 的 `:gate`，两条 `findstr`：一条查 `_FAIL`，一条查 token）。退出码不参与判决，原因写在文件头：`run_journal` 只把未捕获异常变成非零，journal 按 SKILL.md §3 逐步 try/except 后继续，失败被吞时退出码仍是 0；反过来用例 26 故意复现原生崩溃，日志写 successful 而退出码是 1（`scripts/tests/RUN_TESTS.bat` 文件头的 26 号崩溃说明）。
+套件的判决在 `:gate` 子过程：优先用 `scripts/run_journal_checked.py` 判 ok（token + `_FAIL`/`STAGE_FAIL`/`FATAL`/`Traceback`；`memory access violation` 只对 `GATE_ALLOW_CRASH` 登记的 26/28 放行）；宿主无 python 时回退 `findstr` 三连（token + `_FAIL` + 非 `TESTxx_FATAL` 的 `FATAL`）。退出码不参与判决，原因写在文件头：`run_journal` 只把未捕获异常变成非零，journal 按 SKILL.md §3 逐步 try/except 后继续，失败被吞时退出码仍是 0；反过来用例 26 故意复现原生崩溃，日志写 successful 而退出码是 1（`scripts/tests/RUN_TESTS.bat` 文件头的 26 号崩溃说明）。
 
 ## 套件的三个收尾段
 

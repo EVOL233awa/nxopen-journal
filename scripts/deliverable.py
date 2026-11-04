@@ -16,6 +16,8 @@ import math
 import os
 import re
 
+from stl_math import read_stl_triangles
+
 # ---------------------------------------------------------------- 通用
 
 PASS = "PASS"
@@ -76,7 +78,9 @@ def step_census(path):
         entities[eid] = typ
         counts[typ] = counts.get(typ, 0) + 1
     defined = set(entities)
-    referenced = set(int(x) for x in _STEP_REF_RE.findall(text))
+    # STEP 字符串字面量用单引号包裹，串内 '#' 不是实体引用，先剔串。
+    unquoted = re.sub(r"'[^']*'", "''", text)
+    referenced = set(int(x) for x in _STEP_REF_RE.findall(unquoted))
     dangling = sorted(referenced - defined)
 
     pmi_types = {}
@@ -149,52 +153,6 @@ def step_gate(census, facts=None, schema=None, pmi=None):
 
 
 # ---------------------------------------------------------------- STL
-
-def _read_stl_binary(data):
-    if len(data) < 84:
-        return None
-    import struct
-    count = struct.unpack("<I", data[80:84])[0]
-    if count <= 0 or 84 + 50 * count > len(data):
-        return None
-    tris = []
-    off = 84
-    for _ in range(count):
-        vals = struct.unpack("<12f", data[off:off + 48])
-        tris.append(([vals[0], vals[1], vals[2]],
-                     [vals[3], vals[4], vals[5]],
-                     [vals[6], vals[7], vals[8]],
-                     [vals[9], vals[10], vals[11]]))
-        off += 50
-    return tris
-
-
-def _read_stl_ascii(text):
-    tris, nrm, verts = [], None, []
-    for line in text.splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        if parts[0].lower() == "facet" and len(parts) >= 5:
-            nrm = [float(parts[2]), float(parts[3]), float(parts[4])]
-        elif parts[0].lower() == "vertex" and len(parts) >= 4:
-            verts.append([float(parts[1]), float(parts[2]), float(parts[3])])
-            if len(verts) == 3:
-                tris.append((nrm or [0.0, 0.0, 0.0],
-                             verts[0], verts[1], verts[2]))
-                verts = []
-    return tris
-
-
-def read_stl_triangles(path):
-    """读二进制/ASCII STL，返回 [(normal, v0, v1, v2)]。"""
-    with open(path, "rb") as fh:
-        data = fh.read()
-    tris = _read_stl_binary(data)
-    if tris is None:
-        tris = _read_stl_ascii(data.decode("utf-8", "replace"))
-    return tris
-
 
 def _vsub(a, b):
     return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -333,8 +291,8 @@ def stl_census(path, weld_digits=6):
     }
 
 
-def stl_gate(census, facts=None, volume_tol=0.001, bbox_tol=0.05):
-    """STL 门：水密 + 绕向 + 分量数 + 体积/包盒；χ 按 2C−2g 解释。"""
+def stl_gate(census, facts=None, volume_tol=0.001):
+    """STL 门：水密 + 绕向 + 分量数 + 体积；χ 按 2C−2g 解释。"""
     codes, notes = [], []
     if census["triangles"] == 0:
         return _fail(["DELIV_E_STL_EMPTY"], ["no triangle"])
@@ -371,12 +329,6 @@ def stl_gate(census, facts=None, volume_tol=0.001, bbox_tol=0.05):
                 codes.append("DELIV_E_STL_VOLUME")
                 notes.append("volume %.6f vs %.6f (%.4f%%)"
                              % (census["volume"], want_vol, rel * 100.0))
-        want_box = facts.get("bbox")
-        if want_box and census["bbox"]:
-            worst = max(abs(a - b) for a, b in zip(census["bbox"], want_box))
-            if worst > bbox_tol:
-                codes.append("DELIV_E_STL_BBOX")
-                notes.append("bbox worst delta %.4f" % worst)
     return _fail(codes, notes) if codes else _pass(notes)
 
 

@@ -15,7 +15,6 @@ import nxlib.measure as ms
 import nxlib.modeling as mdl
 import nxlib.reverse as rv
 
-PLANE_DEPTH = ms.SECTION_CUT_DEPTH
 AXIS_DEPTH = ms.SECTION_CUT_DEPTH
 IOU_MIN = 0.95
 AREA_ERR_MAX = 5.0
@@ -129,7 +128,7 @@ def _expr_map(part):
     """命名表达式表 {lhs: expression}。
 
     自动表达式（`p0`/`p1`…/`PI`）与 `measure.expression_survey` 用**同一个**
-    过滤器（`ms._is_auto_expression`）剔除，两处口径必须一致：把命名表达式
+    过滤器（`ms.is_auto_expression`）剔除，两处口径必须一致：把命名表达式
     正确绑到 builder 后 NX 会生成 `p6 = L_PLATE` 这类别名，它不是设计参数，
     也不该被包络/局部性当成可编辑量（否则默认调用会把正常件判成
     `non-numeric rhs` → `stuck` → `pass=False`）。
@@ -140,7 +139,7 @@ def _expr_map(part):
             lhs = x.Equation.split("=")[0].strip()
         except Exception:
             continue
-        if lhs and not ms._is_auto_expression(lhs):
+        if lhs and not ms.is_auto_expression(lhs):
             out[lhs] = x
     return out
 
@@ -241,13 +240,13 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
                 e.RightHandSide = "%.6f" % (val * fac)
                 rollback = None
                 try:
-                    ms._do_update("loc_%s_%d" % (name, int(fac * 100)))
+                    ms.do_update("loc_%s_%d" % (name, int(fac * 100)))
                 except Exception as exc:
                     rollback = str(exc).splitlines() or [""]
                 if rollback is not None:
                     e.RightHandSide = rhs
                     try:
-                        ms._do_update("loc_restore_%s" % name)
+                        ms.do_update("loc_restore_%s" % name)
                     except Exception:
                         pass
                     row["error"] = "update rolled back: %s" % rollback[0]
@@ -273,7 +272,7 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
                                       if r["iou"] is not None else None)]
                 # restore before deciding, and verify the part is intact
                 e.RightHandSide = rhs
-                ms._do_update("loc_restore_%s" % name)
+                ms.do_update("loc_restore_%s" % name)
                 st_after = _state(part, bsx[0] if len(bsx) == 1 else None)
                 if not _state_matches(st_after, base_state):
                     raise RuntimeError(
@@ -387,19 +386,19 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
                 continue
             e.RightHandSide = "%.6f" % (val * (1.0 + float(min_fraction)))
             try:
-                ms._do_update("scr_%s" % name)
+                ms.do_update("scr_%s" % name)
                 moved = _mesh(part)
             except Exception as exc:
                 e.RightHandSide = rhs
                 try:
-                    ms._do_update("scr_restore_%s" % name)
+                    ms.do_update("scr_restore_%s" % name)
                 except Exception:
                     pass
                 out.append({"expr": name, "structure": sid,
                             "error": (str(exc).splitlines() or [""])[0][:160]})
                 continue
             e.RightHandSide = rhs
-            ms._do_update("scr_restore_%s" % name)
+            ms.do_update("scr_restore_%s" % name)
             touched = []
             for i, st in enumerate(plan.get("stations", [])):
                 key = (tuple(st["origin"]), tuple(st["normal"]))
@@ -733,7 +732,7 @@ def edit_envelope(part, names=None, factor_max=1.5, steps=None,
             ok = True
             try:
                 e.RightHandSide = "%.6f" % (val * fac)
-                errs = ms._do_update("env_%s_%d" % (name, int(fac * 100)))
+                errs = ms.do_update("env_%s_%d" % (name, int(fac * 100)))
                 v1 = mdl.volume(part, body)
                 if errs:
                     ok = False
@@ -747,7 +746,7 @@ def edit_envelope(part, names=None, factor_max=1.5, steps=None,
             # restore, then verify the part came back to the baseline state
             e.RightHandSide = base
             try:
-                ms._do_update("env_restore_%s_%d" % (name, int(fac * 100)))
+                ms.do_update("env_restore_%s_%d" % (name, int(fac * 100)))
             except Exception as exc:
                 rec.setdefault("restore_failed_at", []).append(fac)
                 raise RuntimeError(

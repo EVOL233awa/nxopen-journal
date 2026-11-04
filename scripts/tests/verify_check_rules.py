@@ -3,8 +3,8 @@
 
 每条规则配一个会命中的反例（规则必须配会命中的样本，防规则本身是死的），
 外加阴性对照（干净样本，以及"看起来该报、实际合法/已豁免"的写法）。
-报错级规则必须 rc=1 且输出带对应判据；提示级规则（5.4/5.6/5.12）只断言提示出现、
-退出码仍为 0 —— 它们本来就不拦。
+报错级规则必须 rc=1 且输出带对应判据；提示级规则（5.4/5.6/5.12、5.2 非字面量、
+通用 3/4）只断言提示出现、退出码仍为 0 —— 它们本来就不拦。
 RUN_TESTS.bat 末尾以 host 解释器调用（同 verify_anno_pdf 模式）。
 判定出口：`PASS check_journal rule selftest` / `FAIL check_journal rule selftest ...`
 """
@@ -37,8 +37,21 @@ COUNTER_EXAMPLES = [
     ("5.1d ReplaceRules 3 参第 2 位传 bool", "negatedEntities",
      _WP + "    sc = wp.ScCollectors.CreateCollector()\n"
            "    sc.ReplaceRules([], True, False)\n", 1),
+    ("5.1d ReplaceRules 非法参数名", "没有参数名",
+     _WP + "    sc = wp.ScCollectors.CreateCollector()\n"
+           "    sc.ReplaceRules([], bogusFlag=False)\n", 1),
+    ("5.1d ReplaceRules 只传 1 参", "至少需要 2 个参数",
+     _WP + "    sc = wp.ScCollectors.CreateCollector()\n"
+           "    sc.ReplaceRules([])\n", 1),
     ("5.1e Point3d 传 int", "Expecting double type",
      _WP + "    p = NXOpen.Point3d(0, 0, 0)\n", 1),
+    ("字符串里的 allow-probes 不豁免", "Expecting double type",
+     "def main():\n"
+     "    marker = \"check_journal: allow-probes\"\n"
+     "    p = NXOpen.Point3d(0, 0, 0)\n", 1),
+    ("字符串里的 expected-raise 不豁免", "Expecting double type",
+     "def main():\n"
+     "    p = NXOpen.Point3d(0, 0, 0); s = \"check_journal: expected-raise\"\n", 1),
     ("5.1f SetOriginAndLengths 传数字", "必须 str",
      _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
            "    blk.SetOriginAndLengths(NXOpen.Point3d(0.0, 0.0, 0.0), '100', '60', 20)\n", 1),
@@ -51,6 +64,11 @@ COUNTER_EXAMPLES = [
      "    fn = s.Parts.FileNew()\n"
      "    fn.NewFileName = 'a.prt'\n"
      "    fn.Commit()\n", 1),
+    ("5.2 NewFileName 非字面量（提示级）", "无法静态确认",
+     _WP + "    fn = NXOpen.Session.GetSession().Parts.FileNew()\n"
+           "    fn.Units = NXOpen.Part.Units.Millimeters\n"
+           "    fn.NewFileName = name\n"
+           "    fn.Commit()\n", 0),
     ("5.3 SaveComponents.True（语法层提示）", "TrueValue",
      _WP + "    wp.Save(NXOpen.BasePart.SaveComponents.True, "
            "NXOpen.BasePart.CloseAfterSave.FalseValue)\n", 1),
@@ -60,6 +78,9 @@ COUNTER_EXAMPLES = [
     ("5.5 Block 尺寸属性只读", "属性只读",
      _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
            "    blk.Length = 10.0\n", 1),
+    ("5.5 Cylinder 尺寸属性只读", "属性只读",
+     _WP + "    cb = wp.Features.CreateCylinderBuilder(NXOpen.Features.Feature.Null)\n"
+           "    cb.Diameter = 10.0\n", 1),
     ("5.6 CreateRevolveBuilder（提示级）", "CreateRevolveBuilder",
      _WP + "    rv = wp.Features.CreateRevolveBuilder(NXOpen.Features.Feature.Null)\n", 0),
     ("5.7 NXOpen.UF.FeatureSigns", "ModlFeatureSigns",
@@ -70,6 +91,10 @@ COUNTER_EXAMPLES = [
      "def main():\n"
      "    x = NXOpen.UF.FeatureSigns.POSITIVE\n"
      "    print(x)\n", 1),
+    ("5.7 NXOpen.UF.UFDraw", "UFDraw",
+     _WP + "    bad = NXOpen.UF.UFDraw\n", 1),
+    ("5.7 NXOpen.UF.UFMotion", "UFMotion",
+     _WP + "    bad = NXOpen.UF.UFMotion\n", 1),
     ("5.8 ComponentAssembly.Components", "ComponentAssembly.Components 不存在",
      _WP + "    xs = wp.ComponentAssembly.Components\n", 1),
     ("5.9 Block builder 的 BooleanOption", "BooleanOption",
@@ -91,6 +116,12 @@ COUNTER_EXAMPLES = [
      _WP + "    wp.Save()\n", 1),
     ("5.13 SaveAs 无落盘校验", "落盘校验",
      _WP + "    wp.SaveAs('x.prt')\n", 1),
+    ("5.13 校验早于 Save", "落盘校验",
+     _WP + "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"
+           "    wp.Save()\n", 1),
+    ("5.13 SaveAs 后校验别的路径", "落盘校验",
+     _WP + "    wp.SaveAs('a.prt')\n"
+           "    assert os.path.exists('b.prt') and os.path.getsize('b.prt') > 0\n", 1),
     ("5.14a DraftBuilder.Method 只读", "只读属性",
      _WP + "    db = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
            "    db.Method = 1\n"
@@ -108,10 +139,47 @@ COUNTER_EXAMPLES = [
      "\n"
      "def main():\n"
      "    print(dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
+    ("5.16 math.dist 属性访问", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
+    ("5.16 math.prod", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.prod([1, 2, 3]))\n", 1),
+    ("5.16 math.isqrt", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.isqrt(9))\n", 1),
+    ("5.16 math.comb", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.comb(5, 2))\n", 1),
+    ("5.16 math.perm", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.perm(5, 2))\n", 1),
+    ("5.16 math.nextafter", "3.6.1",
+     _WP + "    import math\n"
+           "    print(math.nextafter(1.0, 2.0))\n", 1),
+    ("5.16 functools.cache", "3.6.1",
+     _WP + "    import functools\n"
+           "    print(functools.cache)\n", 1),
+    ("5.16 functools.cached_property", "3.6.1",
+     _WP + "    import functools\n"
+           "    print(functools.cached_property)\n", 1),
+    ("5.16 itertools.pairwise", "3.6.1",
+     _WP + "    import itertools\n"
+           "    print(itertools.pairwise([1, 2, 3]))\n", 1),
+    ("5.16 str.removeprefix", "removeprefix",
+     _WP + "    s = 'abc'\n"
+           "    print(s.removeprefix('a'))\n", 1),
+    ("5.16 str.removesuffix", "removesuffix",
+     _WP + "    s = 'abc'\n"
+           "    print(s.removesuffix('c'))\n", 1),
     ("5.17 枚举访问器 0 参调用", "枚举属性",
      _WP + "    spring = wp.Axies.CreateSpringBuilder(NXOpen.Features.Feature.Null)\n"
            "    t = spring.AttachmentType()\n"
            "    print(t)\n", 1),
+    ("5.17 Types() 枚举访问器", "枚举属性",
+     _WP + "    t = wp.Types()\n", 1),
+    ("5.17 HoleDepthOptions() 枚举访问器", "枚举属性",
+     _WP + "    t = wp.HoleDepthOptions()\n", 1),
     ("5.18 CylinderBuilder 枚举成员名", "AxisDiameterAndHeight",
      _WP + "    cb = wp.Features.CreateCylinderBuilder(NXOpen.Features.Feature.Null)\n"
            "    cb.Type = NXOpen.Features.CylinderBuilder.Types.AxisAndHeight\n"
@@ -141,6 +209,19 @@ COUNTER_EXAMPLES = [
      "def main():\n"
      "    if (n := 1):\n"
      "        print(n)\n", 1),
+    ("通用 2 TODO 注释", "占位符",
+     _WP + "    # TODO: fill this in\n", 1),
+    ("通用 3 缺 main（提示级）", "未找到 def main",
+     "import NXOpen\n"
+     "\n"
+     "\n"
+     "def f():\n"
+     "    pass\n", 0),
+    ("通用 4 裸 except（提示级）", "裸 except",
+     _WP + "    try:\n"
+           "        pass\n"
+           "    except:\n"
+           "        pass\n", 0),
 ]
 
 CLEAN_SAMPLE = (
@@ -210,6 +291,15 @@ EXTRA_CLEAN = [
      "    wp = NXOpen.Session.GetSession().Parts.Work\n"
      "    wp.Save()\n"
      "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"),
+    ("注释里的 allow-probes 生效",
+     "def main():\n"
+     "    # check_journal: allow-probes\n"
+     "    p = NXOpen.Point3d(0, 0, 0)\n"),
+    ("字符串里的 TODO 不是占位符",
+     _WP + "    print(\"TODO in text\")\n"),
+    ("SaveAs 后校验同一路径",
+     _WP + "    wp.SaveAs('a.prt')\n"
+           "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"),
 ]
 
 

@@ -7,6 +7,7 @@
 
 ### Added
 
+
 - `scripts/nxlib/exchange.py`：STEP 导出/导入/回读/B-rep 事实表；`export_step` 固定 `InputFile + ObjectTypes.Solids=True + ProcessHoldFlag`，AP214 自动取 `ugstep214.def`，AP242 不设 242 def；`import_step` 的 WorkPart 路线补 `OutputFile`，NewPart 路线等 8 s 落盘后再由调用方重开。
 - `scripts/deliverable.py`：离线 STEP 实体普查（solid/face/edge、NAUO、PMI 子类型、悬空引用）、STL 拓扑（水密/绕向/有符号体积/χ=2C−2g/分量）、DXF 布局感知审计（实体分 `Model`/`SHT1`）；错误码 `DELIV_E_*`，三态 PASS/FAIL/NO_SIGNAL。
 - `scripts/occupancy.py`：Z/X/Y 三轴切片 + 体积差 + 连通分量占用门；站距粗于最小特征一半且无差异时给 NO_SIGNAL。
@@ -20,11 +21,75 @@
 
 ### Changed
 
+
 - `scripts/tests/RUN_TESTS.bat`：gate 数 46 → 50；`:gate` 增加非 `TESTxx_FATAL` 的 `FATAL` 扫描；末尾增加标记自检。
 - `scripts/tests/08_editability_probe.py`：草图检查从 `GetStatus` 门改为“草图存在”；`GetStatus` 只打印（Update 后自由草图也报 Well/0）。
 - `SKILL.md` §3 STEP 导出改为 `InputFile + Solids=True + AP214 def` 配方；§5 增加交付件验证路由；§6/§8 同步 53 用例/50 gate/15 模块。
-- `scripts/check_repo.py`：`EXPECTED_CASES/GATES/API_COUNT` 同步为 53/50/227。
+- `scripts/check_repo.py`：`EXPECTED_CASES/GATES/API_COUNT` 同步为 53/50/231。
 - `docs/wiki/`、`README.md`、`README.en.md`、`scripts/tests/README.md`：模块名册、用例名册与计数同步。
+
+
+- `scripts/nxlib/structure_inference.py` `_explained_offsets`：拒绝门槛由 `run >= STACK_OFFSETS` 改为 `run + 1 >= STACK_OFFSETS`（`run` 数的是相邻对），6 层一致堆叠由“出板”改判堆叠。
+- `scripts/nxlib/modeling.py` `find_planar_face`：改为委托 `find_face(None, body, point, want_normal_z, axis=2)`；`scripts/nxlib/rolling.py` `_band_faces` 删掉从不使用的 `major` 形参。
+- `scripts/check_repo.py`：TREE 组改按清单条目全名比对（不再子串放行）；NOLIB 组遍历 `ast.walk`；PY36 组纳入 `occupancy.py`/`deliverable.py`；用例编号匹配放宽并抽成 `CASE_NAME`；`md_files` 排除隐藏目录、`KEEP_DIRS` 改前缀匹配；WIKI 组引用解析失败与锚点取不到标识符改判 FAIL、§ 引用扩到裸写法、非数字 token 按标题开头匹配；CONCISE 日期扩到 `2026年11月4日` 形式；高发清单条目计数兼认 `*`/`+`/`N)` 与表格行；路径存在性按写出的相对路径解析。
+- `scripts/check_journal.py`：builder 变量绑定扩到 `AnnAssign`/`with as`/`for`/推导式目标并展开 Tuple/List/Starred（5.2/5.5/5.9/5.14/5.15 随之生效）；数值字面量判据先剥 `±`（负数漏判与 5.20 对负数抛 `AttributeError`）；5.11 要求存在 `X.ProcessHoldFlag = True` 赋值；5.9 按命中属性出文案；文件头规则清单按 5.1–5.20 编号补全。
+- `scripts/tests/verify_check_rules.py`：补 17 条反例（31 → 48 条；5.5/5.7/5.16/5.17 的子判据与 5.1d 参数名分支此前无反例）。
+- `.github/workflows/ci.yml`：静态检查循环补 `scripts/render/export_stl.py`（54 个 journal）。
+- `SKILL.md`：域文件数 8 → 9；`nxlib` 名册补 `exchange`；豁免标记适用范围补 5.8/5.10/5.12/5.16/5.18；检查 token 归属改为「34/35/37 与 50-53」；§3 片段统一用 `theSession`/`workPart`；删遥测背压实测读数。
+- `references/*.md`：判据与实现口径对齐（建模回转/圆周间距/齿轮越界角、装配 DOF 改几何判据、工程图越界移动条件句、G7 宽度项移出 BLOCKED 证据、PDF 与 DXF 门判据范围、FEA 收敛口径），删无产出物的实验读数。
+- `README.md`、`README.en.md`、`docs/wiki/03-modules.md`、`scripts/tests/README.md`：域文件数与模块数、未发布变更说明、名册行数、用例项数（42→19/45→10/46→23）、19 号 14 阶段、`check_finish` 归属。
+- `scripts/check_journal.py` 5.13：落盘校验必须在最后一次 `Save`/`SaveAs` 之后且路径匹配；5.1d 的 `ReplaceRules` 少于 2 参报错；5.2 非字面量 `NewFileName` 只提示；豁免标记只认 `tokenize.COMMENT`；5.16 注释改为按方法名判定。
+- `scripts/check_repo.py`：高发清单改按 `<!-- trap-list -->` 认定；TREE 补内层路径存在性；references 面类型号与 `measure` 常量对账；`EXPECTED_API_COUNT` 与实际 `nxlib_apis()` 实比；shipped/README/wiki 缺文件改判失败；`SELF_CONTAINED` 加 `05_modify_existing.py`（7 → 8）。
+- `scripts/tests/RUN_TESTS.bat`：`:gate` 优先 `run_journal_checked.py`（`--token`/`--allow-crash`），宿主无 python 时回退三条 `findstr`。
+- `scripts/nxlib/measure.py`：`station_report` 把截面 `open>0` 判 FAIL；同半径延续统一到 `SAME_RADIUS_TOL_MM=0.5`；面类型常量补 18/23/43；`unit`/`basis`/`axis_key`/`do_update`/`is_auto_expression`/`same_radius_continuation` 改公开名。
+- `scripts/nxlib/transitions.py`：路由分母改切向支撑面（`_support_face`）；宽度门槛 `R+0.5` → `R`；`supports_only` 与 `measure` 共用同半径判据。
+- `scripts/nxlib/modeling.py`：`face_blend` 半径改 `SetRadius(str(radius))`；`section_profile` 从 `rolling` 迁入并统一夹角门 20°–160°；`extrude_along` 改公开名。
+- `scripts/nxlib/{session,audit,drafting,assembly,template,reverse,skeleton,structures,rolling,structure_inference}.py`：`GetUFSession()` 与向量 helper 收敛到 `session`，域模块间私有调用清零。
+- `scripts/nxlib/drafting.py`：`export_pdf` 补 `OwningPart` 校验（外来 sheet 直接抛错，不再静默出空白页）。
+- `scripts/deliverable.py`：`step_gate` 删 `bbox` 死分支；STL 读取改调 `stl_math`；`PASS/FAIL/NO_SIGNAL` 收敛为唯一定义。
+- `scripts/run_journal_checked.py`：`verdict` 无 token 时必须显式 `allow_missing_token`。
+- `scripts/render/export_stl.py`：`MIN_STL_BYTES=84`，0 字节不再算成功，失败不打 `DONE_EXPORT_STL`。
+- `scripts/check_deliverables.py`、`scripts/render/pdf_audit.py`：`--pdf-min-words` 默认 20 → 3。
+- `SKILL.md`：CONCISE/ROUTE 只扫 agent 文档、库 docstring 不受约束；§5 路由表写前置、删「域文件互不依赖」；§8 补 `stl_math.py`。
+- `references/*.md`、`docs/wiki/*`、`scripts/tests/README.md`：面类型 18/23/43、宽度门槛 `R`、PDF 词数默认 3、gate 判决源、自包含用例 8 个、行数与 API 计数同步。
+
+### Removed
+
+- `scripts/nxlib/rolling.py` `edge_tangent`、`scripts/nxlib/template.py` `structure_template`、`scripts/nxlib/testing.py` `reset`：零引用公开函数删除（公开 API 227 → 231，含 7 个私有名公开、3 个删除）。
+- `scripts/tests/parts38`、`scripts/tests/parts46`、`scripts/tests/parts49`：三个空目录。
+
+### Fixed
+
+
+- `scripts/nxlib/transitions.py` `transitions_plan`：默认路径调用不存在的 `measure.fillet_radius_seed` 抛 `AttributeError` → 改用 `reverse.fillet_radius_seed`。
+- `scripts/nxlib/measure.py` `verify_parts`：G2 补 `status`，无孔件（`applicable=False`）记 N/A，不再被补判成 PASS。
+- `scripts/nxlib/structure_inference.py`：锥口对账读 `mouth_cone`（审计返回复数 `mouth_cones`，原分支恒不执行）→ 同轴孔链由 2 段并为 1 段；`_json_default` 支持 `skeleton.Frame`，同值 Frame 两次编码逐字节一致。
+- `scripts/nxlib/assembly.py` `preload_components`：只吞异常文本含 `file already exists` 的幂等情形（其余 re-raise），接收 `(part, loadStatus)`，`NumberUnloadedParts` 非 0 抛 `RuntimeError`。
+- `scripts/nxlib/template.py` `load_json`：显式 `encoding="utf-8"`（NX 内嵌解释器默认 cp936，读 UTF-8 的 schema 表会乱码）。
+- `scripts/nxlib/drafting.py` `read_cell`：元组分支取首项 `got[0]`，与 `norm_tag`、`gb_drawing._norm` 口径一致。
+- `scripts/gb_drawing.py`：`GeneralText`/`AppendedText` 字高回到 `dim_text`(3.5) 并补 `FirstPosToExtLineDist`/`LinePastArrowDistance`；`linear_edges` 按 `Edge.EdgeType.Linear` 筛（跨度不足整圆的圆弧不再当直边）；模块头补 `apply_gb_preferences`/`set_cjk_font` 的调用顺序。
+- `scripts/run_journal_checked.py` `strip_clean_exit`：吞块前先按 `_MARKERS`（`_FAIL`/`STAGE_FAIL`/`FATAL`/`Traceback`）查块内内容，`USER FATAL MESSAGE` 与 `TESTxx_FAIL` 夹在 `SystemExit: 0` 之间不再被整段吞掉。
+- `scripts/deliverable.py`：抽实体引用前先剥引号串，`FILE_NAME('bracket#7.stp')` 里的 `#7` 不再被当悬空引用。
+- `scripts/check_deliverables.py`：`--pmi` 移出 `if args.step` 分支（单独给出时不再被静默丢弃并报 PASS）；`--schema` 补 help 说明取值口径。
+- `scripts/tests/46_edit_envelope.py`：失败快照移到最后一个 `check()` 之后（原位置在 14 条 check 之后，晚期失败仍会打 `TEST46_DONE`）。
+- `scripts/tests/19_drafting_annotation.py`：内联的表格/PDF 配方改为 `from nxlib.drafting import cell_text, export_pdf, new_table, pin_table_geometry, read_cell`，`face_radius` 取自 `nxlib.modeling`。
+- `scripts/nxlib/audit.py`、`scripts/nxlib/measure.py`：删死常量 `PLANE_DEPTH`、死局部 `_hi`。
+- `scripts/tests/RUN_TESTS.bat`：`:gate` 的无宿主 python 回退分支原来只有一个空标签、会直接落到「缺 token」→ 补回三条 `findstr`。
+- `scripts/nxlib/measure.py` `_fillet_support` 与 `scripts/nxlib/transitions.py` `supports_only`：同半径延续容差 0.05 与 0.01R 两套并存 → 统一 0.5 mm。
+- `scripts/nxlib/transitions.py` `_dihedral`：柱面-平面分支与「支撑对」路由冲突 → 只对平面-平面支撑算二面角。
+- `scripts/tests/14_block_boolean.py`：`allow-probes` 标记写在 docstring 里 → 移到注释。
+- `scripts/tests/09_fea_static.py`、`scripts/tests/10_assembly_constraints.py`、`scripts/tests/24_shell_mesh.py`：保存后补落盘断言。
+- `scripts/tests/31_drafting_sections.py`：展开剖判据由「两份 PDF 字节数不等」改为「页数相等 + 解压内容流哈希不等」。
+- `scripts/tests/49_structure_inference.py`：夹具补平面端面，宽度断言改 `need=R`。
+- `scripts/gb_drawing.py`：`dim_between`/`dim_diameter` 删 `part`/`text` 死参；`frame`/`title_block` 先 `sheet.Open()`。
+- `scripts/nxlib/modeling.py` `make_sketch`：docstring 改为 AutoDimension 不产生可用尺寸（13 条尺寸全 inactive）。
+- `scripts/nxlib/structure_inference.py`：删 `ROLE_TRANSITION`/`ROLE_UNKNOWN`。
+- `.gitignore`：删重复的 `scripts/__pycache__/`，补 `.ruff_cache/`。
+- `scripts/tests/10_assembly_constraints.py`：换行由 CRLF 改回 LF。
+- `references/assembly.md`：删 `869.6 m` 与 `J17_DRAG` 整行日志；`DragByTransform` 的转置句改为「未单独验证，判方向用模型点位移」。
+- `references/drafting.md`：原生 `FrontTopRight` 在 FirstAngle 下 Right 排左侧（原写右侧）。
+- `scripts/nxlib/structures.py`、`references/reverse-engineering.md`、`scripts/tests/02_flange.py`：单次 360° 能吃单调的带台阶/凹陷轮廓（体积等于解析值），删「只吃凸轮廓」。
+- `references/verification.md`：通孔负控百分比按 `ΔV/V_ref` 写 1.3085%（原 1.3258% 用的是带孔件体积作分母）。
 
 ## [1.4.0] - 2026-11-03
 
@@ -54,8 +119,7 @@
 - `scripts/check_repo.py` WIKI 组：新增正文行数核对——wiki 正文里"`<模块>` 后 N 行"与文件实际行数不一致时判失败（名册表的行数列原本有校验，正文里写死的行数实测漂了 16 行仍全绿）。
 - `scripts/nxlib/structures.py` `sweep_trim` + `profile_uz_curves`：端壁按测量侧视轮廓沿 ±V 扫掠切，`profile_segs` 支持 `{"line":...}` / `{"arc":...}` 混合段——折线剖面会把一段弧切成几十个小平面（`added_types` 只剩 22），圆弧作为一条曲线进剖面才留下 type16 柱面。`checks` 记体数/去料体积/新增面型，布尔被拒时记原文。
 - `scripts/tests/47_structure_builders.py`：57 → 63 项（45° 斜切端壁只留一侧料且只多平面；带弧端壁新增一个柱面；去料体积与轮廓外体积对账）。
-- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。"
-"宽度不足与二面角越界分两档：参考件自己的圆角已经存在，所以"支撑比 2R 窄"证明的是复刻难而不是物理不可达，记 `build_obstacle`（构建阶段行动项）；只有二面角越界/退化跑道进 `evidence`（BLOCKED 依据）。
+- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。宽度不足与二面角越界分两档：参考件自己的圆角已经存在，所以"支撑比 2R 窄"证明的是复刻难而不是物理不可达，记 `build_obstacle`（构建阶段行动项）；只有二面角越界/退化跑道进 `evidence`（BLOCKED 依据）。
 - `scripts/tests/49_structure_inference.py`：24 → 29 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面、宽度不足只能记 `build_obstacle` 不得进 BLOCKED）。
 - `references/reverse-engineering.md` §9.1b：过渡规划的接口、机制路由判据、证据口径与两个读法要点。
 - `scripts/nxlib/structure_inference.py`：结构判定补三条——① 同一轴上的多个半径并成一条 `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成多行 `cylinder`，而多行同轴 cylinder 正是 z 带堆叠的入场券），同轴凹面组不并入凸面行；② `_arc_fit` 用**等弧长重采样的局部圆拟合**提取边界圆弧并聚簇，给出瓣数/瓣半径/瓣心偏移（射线扇会把背后的整条臂算进半径，半径序列没有平台；局部圆拟合要按弧长重采样，否则样条陡段的近直三点拟合会给出半径任意的"圆"），参考点先判是否在料内、非星形截面另报；③ `_loft_structures` 沿板带行程取两张截面，面积比 >2% **且** 两截面形状不相似（`_sections_similar`：归一化到平均半径 1 后逐点比，拔模体是相似形、变截面臂不是）才判 `section_loft`。修 `_sampled_structures` 恒返回 `[]` 的交付漏洞（判据对、行被丢），行补齐 `id/build_order/frame`。

@@ -2,9 +2,9 @@
 # (Nastran .f06/.op2 included). They are NOT part of the skill; never
 # commit them. Artifact count and size live in scripts/tests/README.md only.
 scripts/tests/parts/
-scripts/__pycache__/
 __pycache__/
 *.pyc
+.ruff_cache/
 
 # RUN_TESTS.bat gate logs (written next to the tests, deleted on both
 # pass and fail; ignore them in case a run is interrupted mid-case).

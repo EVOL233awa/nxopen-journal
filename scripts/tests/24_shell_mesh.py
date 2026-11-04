@@ -122,6 +122,8 @@ def main():
         say("REG_SHELL_MESH_ELEMENTS=INFO 无 GetElementStatus: %s" % type(exc).__name__)
 
     ufs.Part.Save()
+    assert os.path.exists(FEM) and os.path.getsize(FEM) > 0, \
+        "save did not land: %s" % FEM
     ok = all(v for _, v in RESULTS)
     failed = [n for n, v in RESULTS if not v]
     say("TEST24_CASES=%d" % len(RESULTS))

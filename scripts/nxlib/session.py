@@ -6,12 +6,48 @@
   new_part(path="D:/x.prt")   → 落盘件：先建目录、删旧文件（14/15/22 号口径）
 模板统一 model-plain-1-mm-template.prt、毫米；返回前 SetWork。
 """
+import math
 import os
 
 import NXOpen
 import NXOpen.UF
 
 TEMPLATE = "model-plain-1-mm-template.prt"
+
+
+def _ufs():
+    return NXOpen.UF.UFSession.GetUFSession()
+
+
+def _unit(v, zero="zero", eps=1e-12):
+    """单位向量；zero="raise" 抛零向量，zero="none" 返回 None，否则返回 [0,0,0]。"""
+    n = math.sqrt(sum(x * x for x in v))
+    if zero == "raise" and n <= eps:
+        raise ValueError("zero-length vector")
+    if zero == "none" and n < eps:
+        return None
+    if n == 0:
+        return [0.0, 0.0, 0.0]
+    return [x / n for x in v]
+
+
+def _dot(a, b):
+    return sum(a[i] * b[i] for i in range(3))
+
+
+def _sub(a, b):
+    return [a[i] - b[i] for i in range(3)]
+
+
+def _cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]]
+
+
+def _perp_dist(p1, p2, d):
+    v = _sub(p2, p1)
+    return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
 
 
 def new_part(name=None, path=None, template=TEMPLATE):
@@ -64,7 +100,7 @@ def work():
 
 def save():
     """保存工作部件（UFSession.Part.Save，01 号口径）。"""
-    NXOpen.UF.UFSession.GetUFSession().Part.Save()
+    _ufs().Part.Save()
 
 
 def save_checked(path):

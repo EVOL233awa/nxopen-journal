@@ -2,8 +2,9 @@
 """GB-style drawing furniture + annotation helpers for NX 12 journals.
 
 随手出一张国标图纸的标准件：任何 NXOpen journal 把本目录加进 sys.path 后
-`import gb_drawing`，按 "建件 -> blank_datums -> new_sheet -> frame ->
-standard_views -> title_block/tech_note -> 标注 -> export_pdf" 的顺序调用即可
+`import gb_drawing`，按 "建件 -> blank_datums -> apply_gb_preferences ->
+set_cjk_font -> new_sheet -> frame -> standard_views -> title_block/tech_note
+-> 标注 -> export_pdf" 的顺序调用即可
 得到与回归用例 33 同版的图纸质量。所有数值口径都来自回归用例实测（引用见
 各常量与 references/gb-drawing.md），不要凭感觉改。
 
@@ -93,13 +94,16 @@ def blank_datums(part):
 
 
 def apply_gb_preferences(part, dim_text=TEXT_DIM, small_text=TEXT_SMALL):
-    """Lettering 3.5/2.5 + filled arrows, per 19_drafting_annotation.py."""
+    """Lettering 3.5/2.5 + filled arrows, per 19_drafting_annotation.py.
+
+    3.5 = 尺寸数字/注释/附加文本，2.5 = 公差（drafting-annotation.md §2）。
+    界线紧贴引出点、无箭头尾段（两份配方都要求 0）。"""
     ap = part.Annotations.Preferences
     lp = ap.GetLetteringPreferences()
     for getter, setter, size in (
             (lp.GetDimensionText, lp.SetDimensionText, dim_text),
-            (lp.GetGeneralText, lp.SetGeneralText, small_text),
-            (lp.GetAppendedText, lp.SetAppendedText, small_text),
+            (lp.GetGeneralText, lp.SetGeneralText, dim_text),
+            (lp.GetAppendedText, lp.SetAppendedText, dim_text),
             (lp.GetToleranceText, lp.SetToleranceText, small_text)):
         lt = getter()
         lt.Size = float(size)
@@ -108,6 +112,8 @@ def apply_gb_preferences(part, dim_text=TEXT_DIM, small_text=TEXT_SMALL):
     lap = ap.GetLineAndArrowPreferences()
     lap.ArrowheadLength = ARROW_LEN
     lap.ArrowheadIncludedAngle = 10.0
+    lap.FirstPosToExtLineDist = 0.0
+    lap.LinePastArrowDistance = 0.0
     lap.FirstArrowType = NXOpen.Annotations.ArrowheadType.FilledArrow
     lap.SecondArrowType = NXOpen.Annotations.ArrowheadType.FilledArrow
     ap.SetLineAndArrowPreferences(lap)
@@ -190,7 +196,9 @@ def _center_cell(tn, ri, ci):
 def frame(sheet, size="A4"):
     """GB/T 14689.1 图框：单格表格 + 双线宽边框，随图纸出图。
 
+    先 `sheet.Open()` 把传入图纸置为当前页再建表。
     Returns dict(tag=..., left, right, top, bottom) in sheet mm."""
+    sheet.Open()
     w, h = SHEET[size]
     c = NONBIND_C[size]
     left, bottom = BINDING_A, c
@@ -207,6 +215,7 @@ def title_block(sheet, frame_geo, name=None, design=None, check=None,
 
     签名/材料等没有依据的字段传 None 留空，不造数据；date=None 取当天
     （生成日期是真实事实）。Returns the same geometry dict as frame()."""
+    sheet.Open()
     ufs = _ufs()
     left = frame_geo["right"] - TB_W
     top = frame_geo["bottom"] + TB_H
@@ -622,10 +631,15 @@ def hole_circles(body, radius=None, tol=0.01):
 
 
 def linear_edges(body):
-    """All straight edges as [(edge, p1, p2)] with vertex coordinates."""
+    """All straight edges as [(edge, p1, p2)] with vertex coordinates.
+
+    直边由 Edge.SolidEdgeType（== Edge.EdgeType.Linear）判定，不能只看
+    两端点是否重合：短于整圆的圆弧/样条边两端点不同，会被误当直边。"""
     out = []
     for face in body.GetFaces():
         for e in face.GetEdges():
+            if e.SolidEdgeType != NXOpen.Edge.EdgeType.Linear:
+                continue
             try:
                 p1, p2 = e.GetVertices()
             except Exception:
@@ -716,8 +730,7 @@ def box_overlap(a, b, gap=0.0):
                 a[3] + gap <= b[1] or b[3] + gap <= a[1])
 
 
-def dim_between(part, view, a, b, lane_y=None, lane_x=None, horizontal=True,
-                text=None):
+def dim_between(view, a, b, lane_y=None, lane_x=None, horizontal=True):
     """Linear dimension between two attachments.
 
     a/b = (edge, assoc_type, model_point).  The dimension line sits at
@@ -743,7 +756,7 @@ def dim_between(part, view, a, b, lane_y=None, lane_x=None, horizontal=True,
     return _norm(r)
 
 
-def dim_diameter(part, view, edge, center_model, org_xy, text=None):
+def dim_diameter(view, edge, center_model, org_xy):
     """Diameter callout with a leader landing at org_xy (sheet mm)."""
     ufs = _ufs()
     o, _xy = _assoc_obj(edge, view, "ARC_CENTER", center_model)
@@ -817,17 +830,17 @@ def centerline_by_points(part, view, edge_a, pt_a, edge_b, pt_b):
 def export_pdf(part, sheet, path):
     """Plot one sheet to PDF (PrintPDFBuilder; measured).
 
-    SetSheets accepts a sheet that does not belong to `part` without complaint
-    and then plots a BLANK page (measured), so the owner is checked here.  One
-    SetSheets call produces ONE PDF (possibly multi-page), not one file per
-    sheet."""
+    NX12 raises NXException "One or more sheets are not in the displayed
+    part." at Commit when the sheet belongs to another display part
+    (measured), so the owner is checked here to fail before the builder is
+    created.  One SetSheets call produces ONE PDF (possibly multi-page), not
+    one file per sheet."""
     import os
     owner = sheet.OwningPart
     if owner is None or int(owner.Tag) != int(part.Tag):
         raise RuntimeError(
-            "export_pdf: sheet %r does not belong to the display part; "
-            "SetSheets accepts it silently and plots a blank page"
-            % (getattr(sheet, "Name", "?"),))
+            "export_pdf: sheet %r does not belong to part %r"
+            % (getattr(sheet, "Name", "?"), getattr(part, "Name", "?")))
     if os.path.exists(path):
         os.remove(path)
     pdfb = part.PlotManager.CreatePrintPdfbuilder()

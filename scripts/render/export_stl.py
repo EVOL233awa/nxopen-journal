@@ -26,6 +26,10 @@ import traceback
 import NXOpen
 import NXOpen.UF
 
+# Binary STL: 80-byte header + uint32 count.  A 0-triangle file is exactly 84
+# bytes, so anything at or below that carries no geometry.
+MIN_STL_BYTES = 84
+
 PART = os.environ.get("IMG_PART", "").strip()
 OUT = os.environ.get("IMG_OUT", "").strip()
 if OUT:
@@ -60,8 +64,9 @@ def export(session, bodies, out, say):
         sc.ExportSelectionBlock.SetArray(bodies)
     sc.Commit()
     sc.Destroy()
-    ok = os.path.exists(out)
-    say("  stl written=%s size=%s" % (ok, os.path.getsize(out) if ok else 0))
+    size = os.path.getsize(out) if os.path.exists(out) else 0
+    ok = size > MIN_STL_BYTES
+    say("  stl written=%s size=%s" % (ok, size))
     return ok
 
 
@@ -93,16 +98,18 @@ def main():
         return
     session = NXOpen.Session.GetSession()
     ufs = NXOpen.UF.UFSession.GetUFSession()
+    ok = False
     try:
         part, status = session.Parts.Open(PART)
         ufs.Part.SetDisplayPart(part.Tag)
         say("opened %s" % part.FullPath)
         bodies = collect_bodies(part, say)
-        export(session, bodies, OUT, say)
+        ok = export(session, bodies, OUT, say)
     except Exception as exc:
         say("FAIL %s: %s" % (type(exc).__name__, exc))
         say(traceback.format_exc())
-    say("DONE_EXPORT_STL")
+    if ok:
+        say("DONE_EXPORT_STL")
 
 
 if __name__ == "__main__":

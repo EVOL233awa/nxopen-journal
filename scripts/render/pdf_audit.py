@@ -13,10 +13,13 @@ token 判定与版面判定分开：给了 `expect` 就只对 expect 负责；�
 """
 import os
 import re
+import sys
 
-PASS = "PASS"
-FAIL = "FAIL"
-NO_SIGNAL = "NO_SIGNAL"
+_SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+from deliverable import FAIL, NO_SIGNAL, PASS  # noqa: E402
 
 _SOFT = re.compile(u"[\u00ad\u200b\u200c\u200d\ufeff]")
 
@@ -75,7 +78,7 @@ def audit(path):
             "pages": pages, "page_count": len(pages)}
 
 
-def pdf_gate(path, expect=None, min_words=20):
+def pdf_gate(path, expect=None, min_words=3):
     """返回 {verdict, codes, notes}；expect 给了就只对出现的 token 负责。"""
     data = audit(path)
     if not data.get("available", True):

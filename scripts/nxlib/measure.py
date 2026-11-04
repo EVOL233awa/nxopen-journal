@@ -10,10 +10,11 @@
         原件也能量自建件，所以自检闭环是"量原件 → 建 → 量自建件 → 比"。
   偏差  面积加权表面采样 + 精确点—三角面距离 + 均匀网格索引，两个方向
         分别给 RMS/P95；测站由面表平面族和孔/锥轴生成，逐站复算面积与
-        IoU。`verify_parts` 把 G0–G6 汇总成一次调用。
+        IoU。`verify_parts` 把 G0–G9 汇总成一次调用。
 
 约定：
-  圆柱=16、圆锥=17、圆环=19、平面=22（Parasolid 面类型）。
+  圆柱=16、圆锥=17、球面=18、圆环=19、平面=22、blend 面=23、B 曲面=43
+  （Parasolid 面类型）。
   圆锥半角对外用度；UF 的 rad_data 是弧度。
   长度单位随部件（mm）。
 """
@@ -27,20 +28,22 @@ import tempfile
 import NXOpen
 import NXOpen.UF
 
+from .session import _cross, _dot, _perp_dist, _sub, _ufs, _unit
+
 CYLINDER = 16
 CONE = 17
 TORUS = 19
 PLANE = 22
+SPHERE = 18
+BLEND = 23
+B_SURFACE = 43
 
 STL_CHORDAL_TOL = 0.01
 # 判定口径的切站偏移：切平面与模型平面共面时三角面求交会漏/重算，平面站
 # 必须离开面一个亚毫米量级；轴站也带同一偏移，避免擦到端面共面三角。
 SECTION_CUT_DEPTH = 0.0137
+SAME_RADIUS_TOL_MM = 0.5
 _MESH_SEQ = [0]
-
-
-def _ufs():
-    return NXOpen.UF.UFSession.GetUFSession()
 
 
 def part_length_scale(part):
@@ -56,23 +59,9 @@ def part_length_scale(part):
     return "unknown", 1.0
 
 
-def _unit(v):
-    n = math.sqrt(sum(x * x for x in v))
-    return [x / n for x in v] if n else [0.0, 0.0, 0.0]
-
-
-def _dot(a, b):
-    return sum(a[i] * b[i] for i in range(3))
-
-
-def _sub(a, b):
-    return [a[i] - b[i] for i in range(3)]
-
-
-def _cross(a, b):
-    return [a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0]]
+def unit(v):
+    """单位向量；零向量返回零向量。"""
+    return _unit(v)
 
 
 def _canon(d):
@@ -85,20 +74,13 @@ def _canon(d):
     return d
 
 
-def _axis_key(d, digits=3):
+def axis_key(d, digits=3):
     d = _canon(d)
     return (round(d[0], digits), round(d[1], digits), round(d[2], digits))
 
 
 def _line_dist(p1, d, p2):
-    v = _sub(p2, p1)
-    return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
-
-
-def _perp_dist(p1, p2, d):
-    """两点差在垂直于 d 的平面上的投影长度（G2 孔心口径）。"""
-    v = _sub(p2, p1)
-    return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
+    return _perp_dist(p1, p2, d)
 
 
 def _project_extent(box, p0, d):
@@ -156,7 +138,7 @@ def part_volume(part):
     return total
 
 
-def _do_update(tag):
+def do_update(tag):
     s = NXOpen.Session.GetSession()
     mark = s.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, tag)
     try:
@@ -169,7 +151,7 @@ def _do_update(tag):
     return 0 if errs is None else int(errs)
 
 
-def _is_auto_expression(name):
+def is_auto_expression(name):
     """NX 自动表达式（p0/p1…）与 PI 不计入 G8 存活率。"""
     if not name:
         return True
@@ -203,7 +185,7 @@ def expression_survey(part, factor=1.1):
             lhs = e.Equation.split("=")[0].strip()
         except Exception:
             continue
-        if _is_auto_expression(lhs) or lhs in seen:
+        if is_auto_expression(lhs) or lhs in seen:
             continue
         seen.add(lhs)
         named.append((lhs, e))
@@ -219,7 +201,7 @@ def expression_survey(part, factor=1.1):
         try:
             e.RightHandSide = "%.6f" % (val * factor)
             changed = True
-            errs = _do_update("survey_%d" % i)
+            errs = do_update("survey_%d" % i)
             d = part_volume(part) - v0
             if errs != 0:
                 broken.append({"name": name, "errors": errs})
@@ -233,7 +215,7 @@ def expression_survey(part, factor=1.1):
             continue
         try:
             e.RightHandSide = rhs
-            errs2 = _do_update("restore_%d" % i)
+            errs2 = do_update("restore_%d" % i)
             vr = part_volume(part)
         except Exception as exc:
             raise RuntimeError("expression restore failed for %s: %s" %
@@ -371,8 +353,9 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3,
     """把面表聚成同轴组。
 
     圆柱按 (轴, 半径) 分桶，圆锥按 (轴, 半角) 分桶；桶内再按到轴线的距离
-    聚簇，距离上限取 2r+2（同一孔的上下两段圆柱不会被拆开，不同孔不会被
-    并在一起），cluster_tol 给定时改用它。返回组的
+    聚簇，距离上限取 max(2r+2, 5)（同一孔的上下两段圆柱不会被拆开；半径
+    小到 2r+2 < 5 时按 5 mm 合并，间距 < 5 mm 的两只独立孔也会并成一组），
+    cluster_tol 给定时改用它。返回组的
     axis/point/extent/length/center/radius/faces。
     """
     kind = _kind_value(kind)
@@ -380,10 +363,10 @@ def group_coaxial(faces, kind=CYLINDER, axis_digits=3, radius_digits=3,
     buckets = {}
     for f in picked:
         if kind == CONE:
-            key = (_axis_key(f["dir"], axis_digits),
+            key = (axis_key(f["dir"], axis_digits),
                    round(f.get("rad_data", 0.0), 4))
         else:
-            key = (_axis_key(f["dir"], axis_digits),
+            key = (axis_key(f["dir"], axis_digits),
                    round(f.get("radius", 0.0), radius_digits))
         buckets.setdefault(key, []).append(f)
 
@@ -556,8 +539,8 @@ def structure_directory(faces, cluster_tol=None, axis_digits=3):
     每组给几何参数（轴/参考点/半径/半角/轴向区间/包围盒/凹性/面 tag），是
     "每个功能面组只属于一个结构"的机器可读底表：孔/座/窗取 cylinders 与
     cones 的轴向区间，圆角面另由 `fillet_map` 按半径单列。
-    cluster_tol 缺省交给 `group_coaxial` 的 2R+2 口径；显式给定时只用于
-    测试/特殊件。
+    cluster_tol 缺省交给 `group_coaxial` 的 max(2R+2, 5) 口径；显式给定时
+    只用于测试/特殊件。
     """
     groups = group_coaxial(faces, CYLINDER, axis_digits=axis_digits,
                            cluster_tol=cluster_tol)
@@ -681,7 +664,12 @@ def _face_supports(f, by_tag):
     return out
 
 
-def _fillet_support(f, s, tol=0.002):
+def same_radius_continuation(radius_a, radius_b, tol=SAME_RADIUS_TOL_MM):
+    """两面半径差是否落在同半径延续带内（不是支撑面）。"""
+    return abs(abs(float(radius_a)) - abs(float(radius_b))) <= tol
+
+
+def _fillet_support(f, s):
     """支撑面是否像圆角的邻面（而不是孔端面/同半径锥口）。"""
     ft = f.get("type")
     fr = abs(f.get("rad_data", 0.0)) if ft == TORUS else abs(f.get("radius", 0.0))
@@ -689,7 +677,7 @@ def _fillet_support(f, s, tol=0.002):
     if st in (CYLINDER, CONE, TORUS, 18):
         sr = (abs(s.get("rad_data", 0.0)) if st == TORUS
               else abs(s.get("radius", 0.0)))
-        return abs(sr - fr) > max(3.0 * tol, 0.05)
+        return not same_radius_continuation(fr, sr)
     if st == PLANE:
         n = _canon(s.get("dir", [0.0, 0.0, 1.0]))
         ax = _canon(f.get("dir", [0.0, 0.0, 1.0]))
@@ -1291,7 +1279,7 @@ def _exact_section_impl(part, origin, normal, tolerance, samples, body):
         loops.append({"pts": pts,
                       "closed": key(pts[0]) == key(pts[-1]),
                       "gap": gap(pts)})
-    e1, e2 = _basis(normal)
+    e1, e2 = basis(normal)
     for lp in loops:
         pts = lp["pts"]
         uv = [(_dot(_sub(p, origin), e1), _dot(_sub(p, origin), e2))
@@ -1406,7 +1394,7 @@ def _inner_ring(part, group):
         except Exception:
             continue
         measured += 1
-        e1, e2 = _basis(d)
+        e1, e2 = basis(d)
         polys = []
         for lp in sec["loops"]:
             if not lp.get("closed"):
@@ -1889,7 +1877,7 @@ def mesh_bbox(mesh):
     return [lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]]
 
 
-def _basis(normal):
+def basis(normal):
     n = _unit(normal)
     if abs(n[2]) > 0.9:
         e1 = [1.0, 0.0, 0.0]
@@ -1910,7 +1898,7 @@ def section_outline(mesh, origin, normal, weld=1e-4):
     {"loops":[{"pts":[(u,v)],"area":signed}], "area":净面积, "open":未闭合数}。
     """
     n = _unit(normal)
-    e1, e2 = _basis(n)
+    e1, e2 = basis(n)
     segments = []
     for nrm, v0, v1, v2 in mesh:
         vs = (v0, v1, v2)
@@ -2075,6 +2063,7 @@ def section_iou_pre(oa, mesh_b, origin, normal, step=None, weld=1e-4):
                 "area_a": oa["area"], "area_b": ob["area"],
                 "area_inter": 0.0, "area_union": 0.0, "step": 0.0,
                 "empty_a": not oa["loops"], "empty_b": not ob["loops"],
+                "open_a": oa["open"], "open_b": ob["open"],
                 "both_empty": True}
     umin, umax, vmin, vmax = min(us), max(us), min(vs), max(vs)
     diag = math.sqrt((umax - umin) ** 2 + (vmax - vmin) ** 2)
@@ -2100,6 +2089,8 @@ def section_iou_pre(oa, mesh_b, origin, normal, step=None, weld=1e-4):
         "step": step,
         "empty_a": not oa["loops"],
         "empty_b": not ob["loops"],
+        "open_a": oa["open"],
+        "open_b": ob["open"],
         "both_empty": False,
     }
 
@@ -2142,7 +2133,7 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
         key = view.lower()
         if key == "iso":
             view = (1.0, 1.0, 1.0)
-            e1, e2 = _basis(view)
+            e1, e2 = basis(view)
             iu, iv = e1, e2
             nrm = _unit(view)
         else:
@@ -2153,7 +2144,7 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
                                  "or a normal vector" % (view,))
             nrm = None
     else:
-        e1, e2 = _basis(view)
+        e1, e2 = basis(view)
         iu, iv = e1, e2
         nrm = _unit(view)
     pa = _project(mesh_a, iu, iv, nrm)
@@ -2359,8 +2350,7 @@ def _ring_lower_bound(p, ci, lo, cell, dims, r):
 def _grid_distance(p, index):
     if index is None:
         return 0.0
-    lo, _hi, cell, dims = (index["lo"], index["hi"], index["cell"],
-                           index["dims"])
+    lo, cell, dims = (index["lo"], index["cell"], index["dims"])
     ci = [max(0, min(dims[i] - 1, int(math.floor((p[i] - lo[i]) / cell))))
           for i in range(3)]
     best = 1e300
@@ -2447,7 +2437,7 @@ def station_plan(measure, max_stations=48, offset_tol=1e-4):
     def add(origin, normal, source, kind, role, group, radius):
         n = _canon(normal)
         off = _dot(origin, n)
-        key = (_axis_key(n), round(off / max(offset_tol, 1e-9)))
+        key = (axis_key(n), round(off / max(offset_tol, 1e-9)))
         if key in acc:
             if source not in acc[key]["sources"]:
                 acc[key]["sources"].append(source)
@@ -2680,6 +2670,9 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             progress(i, len(stations), "stl")
         res = section_iou(mesh_a, mesh_b, st["origin"], st["normal"])
         aa, ab = res["area_a"], res["area_b"]
+        open_a = res.get("open_a", 0)
+        open_b = res.get("open_b", 0)
+        open_ok = open_a == 0 and open_b == 0
         if abs(aa) > 1e-9:
             err = abs(ab - aa) / abs(aa) * 100.0
         else:
@@ -2693,7 +2686,7 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
                                             st["normal"]) else "no_material")
         else:
             ok = (res["iou"] is not None and res["iou"] >= iou_min and
-                  err <= area_err_max_pct)
+                  err <= area_err_max_pct and open_ok)
             status = "PASS" if ok else "FAIL"
         rows.append({
             "index": i,
@@ -2714,6 +2707,7 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
             "only_a": max(0.0, aa - res["area_inter"]),
             "only_b": max(0.0, ab - res["area_inter"]),
             "area_err_pct": err,
+            "open_a": open_a, "open_b": open_b, "open_ok": open_ok,
             "status": status,
             "na_reason": na_reason,
             "pass": ok,
@@ -2760,7 +2754,7 @@ def station_report(mesh_a, mesh_b, plan, iou_min=0.95,
 
 def _exact_loops_2d(sec, origin, normal):
     """B-rep 截面环投到测站平面二维坐标。"""
-    e1, e2 = _basis(normal)
+    e1, e2 = basis(normal)
     polys = []
     for lp in sec["loops"]:
         pts = []
@@ -3256,7 +3250,7 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
                "invalid_faces": [mo.get("invalid_faces", 0),
                                  mb.get("invalid_faces", 0)]},
         "G1": sec,
-        "G2": cmp,
+        "G2": dict(cmp, status=cmp["verdict"]),
         "G3": {"pass": vol_pct <= volume_pct, "diff_pct": vol_pct,
                "limit_pct": volume_pct},
         "G4": {"pass": not g4_fail, "status": g4_status,

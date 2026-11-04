@@ -19,12 +19,9 @@ import NXOpen.UF
 
 import nxlib.modeling as mdl
 import nxlib.skeleton as sk
+from .session import _ufs as _uf
 
 NULL = NXOpen.Features.Feature.Null
-
-
-def _uf():
-    return NXOpen.UF.UFSession.GetUFSession()
 
 
 def bodies_of(feature):
@@ -85,7 +82,7 @@ def intersect(wp, target, tool_body):
 def prism(wp, curves, direction, d0, d1, help_pt=None):
     """闭合轮廓沿 direction 从 d0 拉到 d1（d0/d1 可传表达式名）。"""
     hp = help_pt if help_pt is not None else NXOpen.Point3d(0.0, 0.0, 0.0)
-    f = mdl._extrude_along(wp, curves, _vec3(direction), d1, d0, hp)
+    f = mdl.extrude_along(wp, curves, _vec3(direction), d1, d0, hp)
     return _result([f])
 
 
@@ -266,7 +263,7 @@ def _extrude_z(wp, curves, frame, z0, z1, help_pt, draft_expr=None):
     """
     direction = sk.normalize(frame.Z)
     if draft_expr is None:
-        return mdl._extrude_along(wp, curves, direction, z1, z0, help_pt)
+        return mdl.extrude_along(wp, curves, direction, z1, z0, help_pt)
     section = wp.Sections.CreateSection(0.0009, 0.001, 0.01)
     rule = wp.ScRuleFactory.CreateRuleCurveDumb(curves)
     section.AddToSection([rule], NXOpen.NXObject.Null, NXOpen.NXObject.Null,
@@ -344,9 +341,10 @@ def revolved_profile(wp, profile_tr, axis_pt=(0.0, 0.0, 0.0),
     数值或表达式名（表达式在建体时求值，之后仍由它驱动几何）；
     r == 0 的点在轴上（锥尖），相邻两点可都在轴上（该段跳过）。
 
-    为什么按段回转：360° 回转只吃凸轮廓，带台阶/凹陷的整条轮廓报
-    "Cannot create Swept geometry"；把轮廓切成单调段后逐段回转再合并，
-    台阶位置不被平滑掉，也不产生 z 带棱柱的段间台阶面。
+    为什么按段回转：360° 也能吃单调的带台阶/凹陷整条轮廓（体积等于解析值），
+    但整条只出一条特征；切成单调段后逐段回转再合并，每段一条特征，台阶落在
+    段界上不被平滑掉，也不产生 z 带棱柱的段间台阶面。自交或越过旋转轴的轮廓
+    在两种路线下都报 "Cannot create Swept geometry"。
     每段一条特征，特征名 `<name>_S<i>`。
 
     radials: 每段用的径向（与 axis_dir 垂直），默认取同一稳定径向；相邻

@@ -20,35 +20,26 @@ scene.json:
 import json
 import math
 import os
-import struct
 import sys
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS = os.path.dirname(_HERE)
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+from stl_math import read_stl_triangles  # noqa: E402
+
 DEFAULT_COLOR = (0.66, 0.71, 0.78)
 
 
 def read_stl(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    if data[:5].lower().startswith(b"solid") and b"facet" in data[:2048].lower():
-        verts, faces = [], []
-        tri = []
-        for ln in data.decode("ascii", "replace").splitlines():
-            s = ln.strip().lower()
-            if s.startswith("vertex"):
-                p = s.split()
-                tri.append([float(p[1]), float(p[2]), float(p[3])])
-                if len(tri) == 3:
-                    verts.extend(tri)
-                    faces.append([len(verts) - 3, len(verts) - 2, len(verts) - 1])
-                    tri = []
-        return np.array(verts, float), np.array(faces, int)
-    n = struct.unpack("<I", data[80:84])[0]
-    rec = np.frombuffer(data[84:84 + 50 * n], dtype=np.uint8).reshape(n, 50)
-    tri = rec[:, 12:48].copy().view("<f4").reshape(n, 3, 3).astype(float)
-    return tri.reshape(-1, 3), np.arange(n * 3).reshape(n, 3)
+    tris = read_stl_triangles(path)
+    verts = []
+    for tri in tris:
+        verts.extend(tri[1:])
+    return np.array(verts, float), np.arange(len(tris) * 3).reshape(-1, 3)
 
 
 def weld(verts, ndigits=4):

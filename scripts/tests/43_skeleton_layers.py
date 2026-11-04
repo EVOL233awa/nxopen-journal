@@ -131,7 +131,7 @@ def main():
     e = exprs["PLATE_T"]
     rhs = e.RightHandSide
     e.RightHandSide = "%.6f" % (h * 1.1)
-    errs = ms._do_update("t43_drive")
+    errs = ms.do_update("t43_drive")
     v1 = mdl.volume(wp, body)
     # NX12 boundary (section 11.5): the cylinder builder's axis point is a
     # literal, so the boss stays at z = 12 while the plate grows through it and
@@ -147,7 +147,7 @@ def main():
           "update errors=%r" % (errs,))
 
     e.RightHandSide = rhs
-    ms._do_update("t43_restore")
+    ms.do_update("t43_restore")
     v2 = mdl.volume(wp, body)
     check("T43_RESTORE_BITWISE", abs(v2 - v0) < 1e-6,
           "restore %.6f vs %.6f (tolerance 1e-6 mm3)" % (v2, v0))

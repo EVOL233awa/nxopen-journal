@@ -19,8 +19,11 @@
 
 - 同轴柱/锥/环面组 → 回转体（多段半径台阶 → `revolved_profile`；单段 →
   `cylinder`/`hole_chain`）；
-- 同法向 ≥2 偏置平面族 → 板/环带（`plate_2p5d`），两端截面必须同拓扑，
-  否则要有拔模证据，否则 `unresolved`；
+- 同法向 ≥2 偏置平面族 → 板/环带（`plate_2p5d`）：取族内面积最大的一对
+  偏置当板厚（宽面），要求该对面积 ≥ 所有带里最大对面积的
+  `BAND_AREA_SHARE`；给 `part` 时沿族的行程方向取 1/6 与 5/6 两张截面，
+  面积比 ≥ 1+`BAND_AREA_TOL` 且两截面不相似的判为变截面臂
+  （`section_loft`），相似（拔模/缩放）的仍算板；
 - 孔审计的功能孔 + 同轴分段 → 孔链（`hole_chain`），锥口/沉孔各自成段；
 - 同一法向偏置数 ≥ `STACK_OFFSETS`、且这些偏置构成一条**面积与节距同时一致
   的连续链**（链长达到该常量，首个偏置算 1）且没有结构解释 → 判为"平行面
@@ -46,12 +49,10 @@ COAXIAL_TOL_DEG = 0.5         # 同轴容差
 
 ROLE_FUNCTIONAL = "functional"
 ROLE_FILLET = "fillet"
-ROLE_TRANSITION = "transition"
-ROLE_UNKNOWN = "unknown"
 
 
 def _norm(v):
-    return ms._unit([float(x) for x in v])
+    return ms.unit([float(x) for x in v])
 
 
 def _angle_deg(a, b):
@@ -171,7 +172,7 @@ def _explained_offsets(band, area_share=0.05, thickness_share=0.02):
     判会把原件自己的 45° 臂台阶族判成逐片堆叠，连带整族不出结构。
 
     判据：按偏移排序找最长的一条"面积与厚度同时一致"的连续链；
-    链长 ≥ `STACK_OFFSETS` 才判无结构解释（返回 False）。
+    链上偏置数（首个偏置算 1）≥ `STACK_OFFSETS` 才判无结构解释（返回 False）。
     层面积从 `pairs` 取——`offsets` 只是偏移值列表，没有各自的面积。
     """
     pairs = sorted(band.get("pairs") or [], key=lambda p: p["lo"])
@@ -187,7 +188,7 @@ def _explained_offsets(band, area_share=0.05, thickness_share=0.02):
         same_pitch = (abs(ta - tb) / max(ta, tb) <= thickness_share)
         if same_area and same_pitch:
             run += 1
-            if run >= STACK_OFFSETS:
+            if run + 1 >= STACK_OFFSETS:
                 return False      # 同轮廓等节距的层链够长 → 无结构解释
         else:
             run = 1
@@ -383,12 +384,15 @@ def _hole_chains(measure, revolved, part=None):
                          "extent": [_round(v) for v in h.get("extent", [])],
                          "length": _round(h.get("length", 0.0)),
                          "faces": sorted(int(t) for t in h.get("faces", []))})
-        for c in audit.get("mouth_cone") or []:
+        for c in audit.get("mouth_cones") or []:
             pool.append({"kind": "cone",
                          "radius": _round(abs(float(c.get("radius", 0.0)))),
                          "half_angle_deg": None,
                          "axis": [_round(v) for v in c.get("axis", [])],
-                         "point": [_round(v) for v in c.get("point", [])],
+                         # 审计记录给的是 center（轴线上一点），没有 point：
+                         # 落到默认原点上时同轴判据会按"轴线离原点多远"误分链。
+                         "point": [_round(v) for v in
+                                   (c.get("point") or c.get("center") or [])],
                          "extent": [_round(v) for v in c.get("extent", [])],
                          "length": _round(c.get("length", 0.0)),
                          "faces": sorted(int(t) for t in c.get("faces", []))})
@@ -547,7 +551,7 @@ def _arc_fit(part, face, hole_axis, window=None):
         sec = ms.exact_section(part, p, d)
     except Exception:
         return empty
-    e1, e2 = ms._basis(d)
+    e1, e2 = ms.basis(d)
     rings = []
     for lp in sec.get("loops") or []:
         pts = lp.get("pts") or []
@@ -1114,4 +1118,9 @@ def _json_default(obj):
         return sorted(obj)
     if isinstance(obj, float):
         return _round(obj)
+    # 局部系（skeleton.Frame）展开成数值：默认的 str(obj) 是对象地址，
+    # 同一测量两次写盘就不逐字节相同了。
+    if all(hasattr(obj, k) for k in ("origin", "U", "V", "Z")):
+        return {k: [_round(float(x)) for x in getattr(obj, k)]
+                for k in ("origin", "U", "V", "Z")}
     return str(obj)

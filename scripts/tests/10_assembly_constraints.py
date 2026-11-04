@@ -96,6 +96,8 @@ def main():
     stage("verify_and_refset", s4)
 
     ufs.Part.Save()
+    assert os.path.exists(state["assy"].FullPath) and \
+        os.path.getsize(state["assy"].FullPath) > 0, "save did not land"
     print("ASM_CONSTR_DONE")
 
 

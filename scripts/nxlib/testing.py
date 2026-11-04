@@ -66,10 +66,3 @@ def check_finish(done_line, fail_prefix):
         return False
     say(done_line)
     return True
-
-
-def reset():
-    """清空当前运行状态（一个进程串多个用例时用）。"""
-    del RESULTS[:]
-    del FAILED_STAGES[:]
-    del LOG_LINES[:]

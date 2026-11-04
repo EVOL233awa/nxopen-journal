@@ -23,7 +23,7 @@
 
 不可达判据（每条都写进 `reason`）：
 
-* 支撑面宽度 < R + 0.5（圆角要在两侧各吃掉一个 R，撑不住就 NX 报
+* 支撑面宽度 < R（圆角要在两侧各吃掉一个 R，撑不住就 NX 报
   `Radius is too large`，真正的原因是宽度）；
 * 二面角不在 20°–160°（更尖的边倒圆会自交，更平的边没有料可去）。
 
@@ -37,9 +37,9 @@
 import math
 
 import nxlib.measure as ms
+import nxlib.reverse as rv
 
 # 通用阈值（不含任何零件量值）
-SUPPORT_WIDTH_MARGIN = 0.5     # 支撑面要多出的余量（mm）
 DIHEDRAL_RANGE = (20.0, 160.0)
 
 
@@ -49,8 +49,18 @@ def _round(v, nd=6):
     return 0.0 if r == 0.0 else r
 
 
+def _dot(a, b):
+    return sum(float(a[i]) * float(b[i]) for i in range(3))
+
+
+def _unit(v):
+    """单位向量；零向量返回零向量。"""
+    n = math.sqrt(sum(float(x) ** 2 for x in v))
+    return [float(x) / n for x in v] if n > 1e-12 else [0.0, 0.0, 0.0]
+
+
 def _dihedral(face_a, face_b):
-    """两平面/柱面支撑的夹角（度）；拿不到就 None。"""
+    """平面-平面支撑的二面角（度）；调用点只传 PLANE 型支撑，其余 None。"""
     ta = face_a.get("type")
     tb = face_b.get("type")
     na = face_a.get("dir") or [0.0, 0.0, 1.0]
@@ -59,14 +69,35 @@ def _dihedral(face_a, face_b):
         d = abs(sum(float(na[i]) * float(nb[i]) for i in range(3)))
         d = max(-1.0, min(1.0, d))
         return 180.0 - math.degrees(math.acos(d))
-    if (ta == ms.CYLINDER) != (tb == ms.CYLINDER):
-        # 柱面与平面：柱轴与外法向的夹角就是接触角的余角
-        cyl = face_a if ta == ms.CYLINDER else face_b
-        pl = face_b if ta == ms.CYLINDER else face_a
-        d = abs(sum(float(cyl["dir"][i]) * float(pl["dir"][i])
-                    for i in range(3)))
-        return 90.0 + math.degrees(math.asin(max(-1.0, min(1.0, d))))
     return None
+
+
+def _support_face(f, g, radius):
+    """邻面是否可能是跑道支撑面：曲面留给同半径筛，平面按与跑道轴的几何关系判。
+
+    柱/锥跑道的支撑平面与跑道轴平行（法向垂直于轴）；环面跑道的支撑平面
+    垂直于环轴，且与环面中心面相距一个管半径（即圆角半径）。
+    平面端面因此被排除：它与柱/锥轴不垂直、与环轴不平行。
+    """
+    gt = g.get("type")
+    if gt in (ms.CYLINDER, ms.CONE, ms.TORUS, ms.SPHERE):
+        return True
+    if gt != ms.PLANE:
+        return False
+    n = _unit(g.get("dir") or [0.0, 0.0, 1.0])
+    ax = _unit(f.get("dir") or [0.0, 0.0, 1.0])
+    along = abs(_dot(n, ax))
+    ft = f.get("type")
+    if ft in (ms.CYLINDER, ms.CONE):
+        return along < 0.5
+    if ft == ms.TORUS:
+        if abs(along - 1.0) > 0.01:
+            return False
+        gp = g.get("point") or [0.0, 0.0, 0.0]
+        fp = f.get("point") or [0.0, 0.0, 0.0]
+        gap = abs(_dot(n, [float(gp[i]) - float(fp[i]) for i in range(3)]))
+        return abs(gap - radius) <= 0.05
+    return False
 
 
 def _face_width(face):
@@ -137,6 +168,7 @@ def plan_runway(run, faces_by_tag, radius=None):
     out["supports"] = sup_recs
 
     # 宽度与二面角：只用能读到的支撑面几何判
+    runway_faces = set(int(t) for t in (run.get("faces") or []))
     sup_faces = []
     seen = set()
     for tag in (run.get("faces") or []):
@@ -146,10 +178,10 @@ def plan_runway(run, faces_by_tag, radius=None):
         for e in f.get("edges", []):
             for t in e.get("faces", []):
                 t = int(t)
-                if t in seen or t in set(int(x) for x in run.get("faces") or []):
+                if t in seen or t in runway_faces:
                     continue
                 g = faces_by_tag.get(t)
-                if g is not None:
+                if g is not None and _support_face(f, g, r):
                     seen.add(t)
                     sup_faces.append(g)
 
@@ -158,7 +190,6 @@ def plan_runway(run, faces_by_tag, radius=None):
     # （共面），把它当成拓扑不可达就把每条被切开的圆角都判成 BLOCKED。判据
     # 用半径而非类型：环面（type 19）只是圆角的一种表达，圆角也可能是同半径
     # 的圆柱面（§9.2）。
-    runway_faces = set(int(t) for t in (run.get("faces") or []))
     supports_only = []
     for f in sup_faces:
         if int(f.get("tag", -1)) in runway_faces:
@@ -166,7 +197,7 @@ def plan_runway(run, faces_by_tag, radius=None):
         fr = (abs(float(f.get("rad_data") or 0.0))
               if f.get("type") == ms.TORUS
               else abs(float(f.get("radius") or 0.0)))
-        if fr > 0.0 and abs(fr - r) <= max(0.002, 0.01 * r):
+        if fr > 0.0 and ms.same_radius_continuation(fr, r):
             continue          # 同半径延续，不是支撑面
         supports_only.append(f)
     widths = [w for w in (_face_width(f) for f in supports_only) if w]
@@ -176,19 +207,19 @@ def plan_runway(run, faces_by_tag, radius=None):
         # 那个邻面"判会把绝大多数跑道判成障碍：实测 114 条里 88 条被这样标
         # 记，而其中 43 条其实有两条合格支撑。
         #
-        # 每个支撑面要承担一个 roll 半径，所以门槛是 R + 余量（不是 2R+0.5：
+        # 每个支撑面要承担一个 roll 半径，所以门槛是 R（不是 2R：
         # 那个两倍半径的余量是给"每个面都要独立撑 2R"的误读，与
-        # `structures.fillet_feasible` 的单面判据 R 不一致）。
-        need = r + SUPPORT_WIDTH_MARGIN
+        # `structures.fillet_feasible` 的单面判据一致）。
+        need = r
         adequate = [w for w in widths if w >= need]
         if len(adequate) < 2:
             out["reachable"] = False
             out["reasons"].append(
-                "only %d support(s) wide enough (%.3f each, need %d x "
-                "R+%.1f = %.3f); widest=%.3f"
+                "only %d support(s) wide enough (%.3f each, need %d "
+                "supports each >= R = %.3f); widest=%.3f"
                 % (len(adequate),
                    max(adequate) if adequate else 0.0, 2,
-                   SUPPORT_WIDTH_MARGIN, need, max(widths)))
+                   need, max(widths)))
         out["support_widths"] = [_round(w) for w in sorted(widths, reverse=True)]
         out["support_need"] = _round(need)
 
@@ -223,7 +254,7 @@ def plan_runway(run, faces_by_tag, radius=None):
     # 不可达分两档，只有第二档能进 G7 的 BLOCKED：
     #
     #  * 宽度不足是**构建约束**——NX 的圆角要在支撑面上各吃掉一个 R，支撑比
-    #    R+0.5 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明
+    #    R 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明
     #    的是"复刻难"而不是"这处圆角物理上不可达"。这一档记 `build_obstacle`，
     #    是构建阶段的行动项（改支撑/改刀），不构成 BLOCKED 证据。
     #  * 二面角越界是**拓扑不可达**——近共面缝、相切缝无论用什么机制都不该
@@ -258,7 +289,7 @@ def transitions_plan(part, measure, radii=None, fillet_faces=None):
     faces = measure.get("faces", [])
     faces_by_tag = dict((int(f.get("tag", -1)), f) for f in faces)
     use_radii = list(radii) if radii is not None else \
-        [r for r in (ms.fillet_radius_seed(faces) or [])]
+        [r for r in (rv.fillet_radius_seed(faces) or [])]
     if not use_radii:
         return {"runs": [], "by_mechanism": {}, "unreachable": [],
                 "status": "empty", "radii": []}

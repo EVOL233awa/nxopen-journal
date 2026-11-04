@@ -16,24 +16,7 @@
 import math
 
 from . import measure as ms
-
-
-def _unit(v):
-    n = math.sqrt(sum(x * x for x in v))
-    return [x / n for x in v] if n else [0.0, 0.0, 0.0]
-
-
-def _dot(a, b):
-    return sum(a[i] * b[i] for i in range(3))
-
-
-def _sub(a, b):
-    return [a[i] - b[i] for i in range(3)]
-
-
-def _perp_dist(p1, p2, d):
-    v = _sub(p2, p1)
-    return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))
+from .session import _dot, _perp_dist, _unit
 
 
 def _bbox_union(rows):
@@ -359,7 +342,7 @@ def station_plan_full(measure, structures=None, fillet_faces=None,
 
     fam_of = {}
     for i, st in enumerate(out["stations"]):
-        key = ms._axis_key(st["normal"])
+        key = ms.axis_key(st["normal"])
         fam_of[i] = key
         if st.get("kind") == "axis":
             gis = [int(s.split("#")[1]) for s in st.get("sources", [])
