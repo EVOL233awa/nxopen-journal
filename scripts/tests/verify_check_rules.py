@@ -122,6 +122,10 @@ COUNTER_EXAMPLES = [
     ("5.13 SaveAs 后校验别的路径", "落盘校验",
      _WP + "    wp.SaveAs('a.prt')\n"
            "    assert os.path.exists('b.prt') and os.path.getsize('b.prt') > 0\n", 1),
+    ("5.13 多路径 SaveAs 只校最后一个", "落盘校验",
+     _WP + "    wp.SaveAs('a.prt')\n"
+           "    wp.SaveAs('b.prt')\n"
+           "    assert os.path.exists('b.prt') and os.path.getsize('b.prt') > 0\n", 1),
     ("5.14a DraftBuilder.Method 只读", "只读属性",
      _WP + "    db = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
            "    db.Method = 1\n"
@@ -300,6 +304,11 @@ EXTRA_CLEAN = [
     ("SaveAs 后校验同一路径",
      _WP + "    wp.SaveAs('a.prt')\n"
            "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"),
+    ("两次 SaveAs 各自校验",
+     _WP + "    wp.SaveAs('a.prt')\n"
+           "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"
+           "    wp.SaveAs('b.prt')\n"
+           "    assert os.path.exists('b.prt') and os.path.getsize('b.prt') > 0\n"),
 ]
 
 

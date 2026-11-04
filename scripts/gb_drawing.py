@@ -330,25 +330,17 @@ def model_bbox(body):
     """Model-space bounding box as ((xmin,ymin,zmin), (xmax,ymax,zmax)).
 
     NX12 UF 把 UF_MODL_ask_bounding_box 封装在 ufs.ModlGeneral（不是
-    ufs.Modeling）；属性名写错时本函数会落入直边回退，纯回转体无直边
-    即抛错，所以回退时打印警告而不是静默。返回
-    ((xmin,ymin,zmin), (xmax,ymax,zmax))。
+    ufs.Modeling）。查不到就报错：直边回退只覆盖直线边，回转件带平面
+    时得到的包盒会明显偏小（P15 实测），宁可不给也不能给假值。
     """
     ufs = _ufs()
     try:
         r = ufs.ModlGeneral.AskBoundingBox(body.Tag)
         return ((r[0], r[1], r[2]), (r[3], r[4], r[5]))
     except Exception as exc:
-        print("WARN model_bbox: AskBoundingBox failed (%s); using linear edges"
-              % exc)
-    xs, ys, zs = [], [], []
-    for _e, p1, p2 in linear_edges(body):
-        xs += [p1.X, p2.X]
-        ys += [p1.Y, p2.Y]
-        zs += [p1.Z, p2.Z]
-    if not xs:
-        raise RuntimeError("model_bbox: body has no edges")
-    return ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))
+        raise RuntimeError(
+            "model_bbox: ModlGeneral.AskBoundingBox failed (%s); "
+            "no linear-edge fallback" % exc)
 
 
 def assembly_bbox(bodies):
@@ -633,11 +625,16 @@ def hole_circles(body, radius=None, tol=0.01):
 def linear_edges(body):
     """All straight edges as [(edge, p1, p2)] with vertex coordinates.
 
+    每条边只返回一次：面遍历会把共享边重复给出（P15 实测 4 条直边返回 8 条）。
     直边由 Edge.SolidEdgeType（== Edge.EdgeType.Linear）判定，不能只看
     两端点是否重合：短于整圆的圆弧/样条边两端点不同，会被误当直边。"""
     out = []
+    seen = set()
     for face in body.GetFaces():
         for e in face.GetEdges():
+            if e.Tag in seen:
+                continue
+            seen.add(e.Tag)
             if e.SolidEdgeType != NXOpen.Edge.EdgeType.Linear:
                 continue
             try:

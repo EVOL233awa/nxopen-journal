@@ -2,7 +2,8 @@
 """宿主侧交付件门：STEP / STL / DXF / PMI / 占用。
 
 输入是 NX journal 落盘的 facts.json（B-rep 事实）与导出文件路径。
-三态出口：PASS=0，FAIL=1，NO_SIGNAL=3（仪器看不见，例如缺 ezdxf）。
+三态出口：PASS=0，FAIL=1，NO_SIGNAL=3（仪器看不见，例如二进制 DXF 缺
+ezdxf）。ASCII DXF 走纯标准库解析，不需要 ezdxf；有 ezdxf 时另查 audit。
 错误码统一 DELIV_E_*，与 deliverable.py 一致。
 
 例：

@@ -29,6 +29,7 @@ if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
 import deliverable as d
 from nxlib import exchange, measure, modeling
 from nxlib import session as S
+from nxlib.assembly import add_component
 from nxlib.testing import check, check_finish, say
 
 BASE = os.getcwd()
@@ -166,6 +167,30 @@ def main():
           r_no["verdict"] == "FAIL"
           and c_no["pmi"].get("FLATNESS_TOLERANCE", 0) == 0,
           str(c_no["pmi"]))
+
+    # 装配结构：同件两实例 + 另一件一实例。STEP 的几何实体按原型写一次，
+    # NAUO 按实例写，PRODUCT 按原型数 + 装配根；两边必须严格相等。
+    proto_a, path_a = build_part("deliv50_proto_a")
+    proto_b, path_b = build_part("deliv50_proto_b")
+    assy = S.new_part(path=os.path.join(BASE, "deliv50_assy.prt"))
+    add_component(assy, path_a, NXOpen.Point3d(0.0, 0.0, 0.0))
+    add_component(assy, path_a, NXOpen.Point3d(60.0, 0.0, 0.0))
+    add_component(assy, path_b, NXOpen.Point3d(0.0, 50.0, 0.0))
+    S.save()
+    facts_assy = exchange.part_facts(assy)
+    say("ASSY_FACTS " + str(facts_assy))
+    assy_stp = os.path.join(BASE, "deliv50_assy.stp")
+    exchange.export_step(assy, assy_stp, "ap242")
+    c_assy = d.step_census(assy_stp)
+    r_assy = d.step_gate(c_assy, facts_assy, schema="AP242")
+    say("STEP_ASSY nauo=%d products=%d %s"
+        % (c_assy["nauo"], c_assy["products"],
+           d.format_result("gate", r_assy)))
+    check("T50_STEP_ASSEMBLY",
+          r_assy["verdict"] == "PASS"
+          and c_assy["nauo"] == 3 and c_assy["products"] == 3
+          and facts_assy["nauo"] == 3 and facts_assy["products"] == 3,
+          str(r_assy))
 
     return check_finish("TEST50_DONE", "TEST50")
 

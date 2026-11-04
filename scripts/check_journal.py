@@ -700,10 +700,11 @@ def check(path: Path) -> int:
         )
 
     # 5.13  Save/SaveAs 之后必须有落盘校验（save_checked 已内含存在性+大小断言）。
-    #     判据走 AST：注释或字符串里写个 "getsize(" 顶不掉它；校验必须晚于最后一次
-    #     保存，SaveAs 写死路径时校验的也必须是同一路径（校别的是"保存到哪个文件"）。
+    #     判据走 AST：注释或字符串里写个 "getsize(" 顶不掉它；每一次 SaveAs
+    #     都要有自己的校验（多路径保存只校最后一个会漏掉前面的文件），最后
+    #     一次 Save/SaveAs 也要有校验；SaveAs 写死路径时校验必须是同一路径。
     if not allow_probes:
-        saves: list[tuple[int, int, str | None]] = []
+        saves: list[tuple[int, int, str | None, str]] = []
         checks: list[tuple[int, int, str | None]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -715,7 +716,7 @@ def check(path: Path) -> int:
                     arg = node.args[0]
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                         call_path = arg.value
-                saves.append((node.lineno, node.col_offset, call_path))
+                saves.append((node.lineno, node.col_offset, call_path, fn.attr))
             elif isinstance(fn, ast.Attribute) and fn.attr in ("getsize", "exists") \
                     and "path" in _attr_chain(fn):
                 if node.args:
@@ -725,22 +726,30 @@ def check(path: Path) -> int:
                 checks.append((node.lineno, node.col_offset, call_path))
             elif isinstance(fn, ast.Name) and fn.id == "save_checked":
                 # 该调用自身即"保存 + 校验"，同一位置同时记两条。
-                saves.append((node.lineno, node.col_offset, call_path))
+                saves.append((node.lineno, node.col_offset, call_path,
+                              "save_checked"))
                 checks.append((node.lineno, node.col_offset, call_path))
         if saves:
-            last = max(saves, key=lambda s: (s[0], s[1]))
-            verified = False
-            for line, col, check_path in checks:
-                if (line, col) < (last[0], last[1]):
+            saves.sort(key=lambda s: (s[0], s[1]))
+            missing = []
+            for idx, save in enumerate(saves):
+                is_last = idx == len(saves) - 1
+                if not is_last and save[3] != "SaveAs":
                     continue
-                # SaveAs 路径是字面量时，校验路径必须是同一字面量；校验路径
-                # 不是字面量（变量）时无法静态确认，按可能命中处理。
-                if last[2] is not None and check_path is not None \
-                        and check_path != last[2]:
-                    continue
-                verified = True
-                break
-            if not verified:
+                verified = False
+                for line, col, check_path in checks:
+                    if (line, col) < (save[0], save[1]):
+                        continue
+                    # SaveAs 路径是字面量时，校验路径必须是同一字面量；校验
+                    # 路径不是字面量（变量）时无法静态确认，按可能命中处理。
+                    if save[2] is not None and check_path is not None \
+                            and check_path != save[2]:
+                        continue
+                    verified = True
+                    break
+                if not verified:
+                    missing.append(save)
+            if missing:
                 issues.append(
                     "有 Save/SaveAs 但保存后无落盘校验: 改用 nxlib.session.save_checked(path)，"
                     "或保存后 assert os.path.exists(path) and os.path.getsize(path) > 0 "

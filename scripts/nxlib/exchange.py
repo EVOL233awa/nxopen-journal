@@ -209,6 +209,7 @@ def reopen_part(path):
 
 
 def _component_bodies(part):
+    """按实例累加的组件体（历史口径，`bodies` 字段用）。"""
     out = []
     try:
         root = part.ComponentAssembly.RootComponent
@@ -231,14 +232,50 @@ def _component_bodies(part):
     return out
 
 
-def part_facts(part):
-    """B-rep 事实表：bodies/solid_bodies/faces/edges/volume。
+def _component_usage(part):
+    """返回 (实例数, 去重后的原型件列表)。
 
-    装配的 `part.Bodies` 可能为 0，此时按组件原型体累加。
+    实例按任意深度的出现次数计；原型按 FullPath 去重、保持首次出现顺序。
+    STEP 对每个产品定义只写一次几何实体、每个实例写一条 NAUO（P14 实测：
+    A x3 + B x1 -> 2 solids / 4 NAUO / 3 PRODUCT；嵌套 A x2 + B + SUB(A)
+    -> 2 solids / 5 NAUO / 4 PRODUCT）。
     """
-    bodies = list(part.Bodies)
-    if not bodies:
-        bodies = _component_bodies(part)
+    instances = 0
+    protos = []
+    seen = set()
+    try:
+        root = part.ComponentAssembly.RootComponent
+    except Exception:
+        return 0, protos
+    if root is None:
+        return 0, protos
+    stack = [root]
+    while stack:
+        comp = stack.pop()
+        try:
+            children = list(comp.GetChildren())
+        except Exception:
+            children = []
+        for child in children:
+            instances += 1
+            try:
+                proto = child.Prototype
+            except Exception:
+                proto = None
+            key = None
+            if proto is not None:
+                try:
+                    key = os.path.normcase(os.path.abspath(proto.FullPath))
+                except Exception:
+                    key = getattr(proto, "Name", None)
+            if key and key not in seen:
+                seen.add(key)
+                protos.append(proto)
+            stack.append(child)
+    return instances, protos
+
+
+def _count_bodies(bodies):
     solid = 0
     faces = 0
     edges = 0
@@ -250,10 +287,39 @@ def part_facts(part):
             pass
         faces += len(list(b.GetFaces()))
         edges += len(list(b.GetEdges()))
+    return solid, faces, edges
+
+
+def part_facts(part):
+    """B-rep 事实表：bodies/instances/prototypes/nauo/products 与面边数。
+
+    单件：`bodies` 为自身实体数，`products=1`（自身即装配根）。
+    装配：`bodies` 按实例累加（历史口径）；`solid_bodies/faces/edges`
+    按去重后的原型件各算一次，因为 STEP 的 MANIFOLD_SOLID_BREP /
+    ADVANCED_FACE / EDGE_CURVE 按产品定义写一次、不按实例重复。
+    `nauo` 是递归实例数，`products` 是去重原型数 + 1（装配根）。
+    """
+    own = list(part.Bodies)
+    instances, protos = _component_usage(part)
+    proto_bodies = []
+    for proto in protos:
+        try:
+            proto_bodies.extend(list(proto.Bodies))
+        except Exception:
+            pass
+    if own:
+        bodies = own
+        step_bodies = own + proto_bodies
+    else:
+        bodies = _component_bodies(part)
+        step_bodies = proto_bodies
+    solid, faces, edges = _count_bodies(step_bodies)
     try:
-        volume = measure.part_volume(part) if list(part.Bodies) else 0.0
+        volume = measure.part_volume(part) if own else 0.0
     except Exception:
         volume = 0.0
     return {"part": part.Name, "bodies": len(bodies),
+            "instances": instances, "prototypes": len(protos),
+            "nauo": instances, "products": len(protos) + 1,
             "solid_bodies": solid, "faces": faces, "edges": edges,
             "volume": round(float(volume), 4)}

@@ -10,7 +10,8 @@
 
 事实表 facts（由 NX 侧 journal 落盘）：
     {"bodies": 1, "solid_bodies": 1, "faces": 7, "edges": 14,
-     "volume": 9497.3452, "schema": "AP242", "pmi": {"FLATNESS_TOLERANCE": 1}}
+     "nauo": 0, "products": 1, "volume": 9497.3452,
+     "schema": "AP242", "pmi": {"FLATNESS_TOLERANCE": 1}}
 """
 import math
 import os
@@ -135,7 +136,9 @@ def step_gate(census, facts=None, schema=None, pmi=None):
         for key, got, want in (
                 ("solids", census["solid_breps"], facts.get("solid_bodies")),
                 ("faces", census["advanced_faces"], facts.get("faces")),
-                ("edges", census["edge_curves"], facts.get("edges"))):
+                ("edges", census["edge_curves"], facts.get("edges")),
+                ("nauo", census["nauo"], facts.get("nauo")),
+                ("products", census["products"], facts.get("products"))):
             if want is None:
                 continue
             if got != want:
@@ -334,13 +337,110 @@ def stl_gate(census, facts=None, volume_tol=0.001):
 
 # ---------------------------------------------------------------- DXF
 
+def _dxf_text_census(path):
+    """纯标准库读 ASCII DXF；二进制 DXF 返回 None（需要 ezdxf）。
+
+    只做门要用的两项：HEADER 的 $INSUNITS/$MEASUREMENT 与 ENTITIES 的实体
+    计数。按 0/SECTION 与 2/<name> 分组；实体在 ENTITIES 里按 67/410 归布局
+    （NX 导出的文件不带 410，全部归 Model，总数仍正确）。audit 不做。
+    """
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    if raw.startswith(b"AutoCAD Binary DXF"):
+        return None
+    lines = raw.decode("utf-8", "replace").splitlines()
+    pairs = []
+    i = 0
+    while i + 1 < len(lines):
+        try:
+            code = int(lines[i].strip())
+        except ValueError:
+            i += 1
+            continue
+        pairs.append((code, lines[i + 1].strip()))
+        i += 2
+    insunits = None
+    measurement = None
+    section = None
+    total = {}
+    layouts = {}
+    state = {"type": None, "layout": "Model"}
+
+    def flush():
+        typ = state["type"]
+        if typ is None:
+            return
+        total[typ] = total.get(typ, 0) + 1
+        bucket = layouts.setdefault(state["layout"], {})
+        bucket[typ] = bucket.get(typ, 0) + 1
+        state["type"] = None
+
+    for idx, (code, value) in enumerate(pairs):
+        if code == 0 and value == "SECTION":
+            flush()
+            section = None
+            continue
+        if code == 0 and value == "ENDSEC":
+            flush()
+            section = None
+            continue
+        if section is None and code == 2 and value in (
+                "HEADER", "CLASSES", "TABLES", "BLOCKS", "ENTITIES", "OBJECTS"):
+            section = value
+            continue
+        if section == "HEADER" and code == 9 \
+                and value in ("$INSUNITS", "$MEASUREMENT"):
+            nxt = pairs[idx + 1] if idx + 1 < len(pairs) else None
+            if nxt is not None and nxt[0] == 70:
+                try:
+                    number = int(nxt[1] or 0)
+                except ValueError:
+                    number = None
+                if value == "$INSUNITS":
+                    insunits = number
+                else:
+                    measurement = number
+            continue
+        if section == "ENTITIES":
+            if code == 0:
+                flush()
+                state["type"] = value
+                state["layout"] = "Model"
+            elif code == 67:
+                state["layout"] = "Model" if value in ("", "0") else "Paper"
+            elif code == 410 and value:
+                state["layout"] = value
+    flush()
+    return {
+        "path": os.path.abspath(path),
+        "available": True,
+        "engine": "text",
+        "audit_errors": None,
+        "audit_fixes": None,
+        "insunits": insunits,
+        "measurement": measurement,
+        "layouts": layouts,
+        "total": total,
+        "dimensions": total.get("DIMENSION", 0),
+    }
+
+
 def dxf_census(path):
-    """DXF 审计：必须遍历全部布局，DIMENSION 常在 SHT1 而不是 msp。"""
+    """DXF 审计：必须遍历全部布局，DIMENSION 常在 SHT1 而不是 msp。
+
+    ezdxf 可用时走 ezdxf（含 audit）；不可用时走纯文本解析，仍有
+    $INSUNITS 与 DIMENSION 计数，audit 记为未检查。二进制 DXF 必须用
+    ezdxf，缺库时保持 NO_SIGNAL。
+    """
     try:
         import ezdxf
     except ImportError:
+        census = _dxf_text_census(path)
+        if census is not None:
+            return census
         return {"path": os.path.abspath(path), "available": False,
-                "reason": "ezdxf not installed", "layouts": {},
+                "engine": "none",
+                "reason": "binary DXF needs ezdxf", "layouts": {},
                 "total": {}, "dimensions": 0}
     doc = ezdxf.readfile(path)
     auditor = doc.audit()
@@ -356,6 +456,7 @@ def dxf_census(path):
     return {
         "path": os.path.abspath(path),
         "available": True,
+        "engine": "ezdxf",
         "audit_errors": len(auditor.errors),
         "audit_fixes": len(auditor.fixes),
         "insunits": doc.header.get("$INSUNITS"),
@@ -371,9 +472,12 @@ def dxf_gate(census, expect_units=4, expect_dims=None):
         return _no_signal(["DELIV_E_DXF_UNAVAILABLE"],
                           [census.get("reason", "ezdxf missing")])
     codes, notes = [], []
-    if census["audit_errors"]:
+    audit_errors = census.get("audit_errors")
+    if audit_errors:
         codes.append("DELIV_E_DXF_AUDIT")
-        notes.append("%d audit errors" % census["audit_errors"])
+        notes.append("%d audit errors" % audit_errors)
+    elif audit_errors is None and census.get("engine") == "text":
+        notes.append("audit not checked (text DXF engine)")
     if expect_units is not None and census["insunits"] != expect_units:
         codes.append("DELIV_E_DXF_UNITS")
         notes.append("$INSUNITS=%r expected %r"
