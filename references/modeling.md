@@ -122,11 +122,11 @@ cell = template.edit_check(wp, exprs["PLATE_T"], +1.0, probe=plate_probe)
 
 ### 1.13 草图驱动轮廓 + 骨架帧（让设计参数真的能驱动几何）
 
-**适用**：轮廓简单（圆/矩形/台阶/扇形）、尺寸要由命名表达式驱动（模板/零件族/逆向重建）。测量轮廓（短弧+倒角+偏移线）不要开自动尺寸——会被拉变形，走 §1.5 固定约束 + 数据层字面值。
+**适用**：轮廓简单（圆/矩形/台阶/扇形）、尺寸要由命名表达式驱动（模板/零件族/逆向重建）。测量轮廓（短弧+倒角+偏移线）不要开自动尺寸——会被拉变形，走 `make_sketch`（AutoConstrain 固定轮廓；其后的 AutoDimension 不产生可用尺寸）+ 数据层字面值。
 
 - **配方**：`make_sketch_dims(wp, curves, links=[(数值, "2 * R_TEST"), ...])` 建草图 → AutoDimension 出尺寸 → 按数值把尺寸改指命名表达式，返回 `(sketch, 改指数)`。改指后 `GetStatus()` 的 dof 归 0；`R_TEST ×1.5` 后体积按 r² 变 2.25 倍，还原回原值（`tests/37`）。
 - ⚠ **多边形原语的尺寸点必须落在它自己的默认半径上**：`CreateSketchPolygonBuilder` 建出的多边形初始半径是默认值（100），若把尺寸点直接放在目标半径（如 4.0）再去改绑半径尺寸，约束是"尺寸点到多边形中心的距离"而不是标定半径，改绑后整个多边形**平移**到别处而不是缩放。做法是先读 `poly.RadiusDimension.RightHandSide` 取种子值把尺寸点放在该半径上，再对圆心与尺寸点各加 `CreateFixedConstraint`，之后改半径才只缩放不变位。
-- **主要前提**：**不要先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。曾把"0 尺寸"归因于"少调 `GetStatus`"，受控实验证明 `GetStatus` 只用来读 dof，少调不影响出尺寸。已知证据只覆盖简单轮廓上的这种抢占；复杂轮廓的其它 0 尺寸成因未逐一排除，别把这一条当唯一解释。
+- **主要前提**：**不要先跑 `AutoConstrain`**——它会把简单轮廓标成完全约束且不产生表达式，随后的 AutoDimension 一个尺寸都不出。`GetStatus` 只用来读 dof，调不调它都不影响出尺寸，不要把它当成“0 尺寸”的原因。该判据的证据边界是简单轮廓；复杂轮廓的其它 0 尺寸成因未排除，不要当唯一解释。
 - **links 的数值要写自动尺寸真会生成的量**（半径、直径 2r、长度），匹配按 `float(RightHandSide)` 1e-6；写推导量匹配不上时该尺寸不改指、也不报错，只表现为返回的改指数偏小——用改指数与 links 条数对账。
 - **骨架帧**：`Frame.from_azimuth(az, origin)` 给径向 U、切向 V、+Z；构造函数即校验两两正交，非正交在构造处抛 `ValueError`，不要等提交特征才失败。`frame.pt/vec/vec3` 是唯一坐标出口，结构代码里不手写 sin/cos。
 - **设计/数据分层**：设计量进命名表达式（`PLATE_T`），测量轮廓坐标留字面值（data 层，用 `polyline`/`loop_*` 传入），`schema_skeleton` 核对每个结构 design∩data=∅（分工见 `reverse-engineering.md` §12.2）。
@@ -227,7 +227,7 @@ tb.CommitFeature(); tb.Destroy()
 - 相邻截面面积突变（接近 3 倍）可以直接放样成实体（体数 1、`IsSolidBody=True`、体积 5731.8240，非退化），不是必报 "Cannot create B-surface by through curves"；重采样不是前提。但**提交后仍必须查体积**（下一条）。
 - 段数/类型不一致的截面先重采样成同一 N 点折线（每段一条 `CreateLine`，N=160），再用 `CreateJoinedCurve(tags[:-1], 1)` + 最后一段组 Section。这条折线是放样输入，不是交付边界：放样后按面表半径重建解析圆弧，等截面件直接用直线 + 圆弧建截面（见 `reverse-engineering.md` §2）。参数化按截面相似度选：
   - 弧长等分 + 起点对齐上一站：相邻两站形状相近时用。
-  - 绕形心等角：面积/拓扑变化大时用。面内取 N 条等角射线与闭合环求交，每角取最外交点；索引 k 即固定角度，无需起点对齐。基向量必须是测站平面内的两轴（常半径站族的法向是径向，面内轴为切向与 z）。该参数化只对星形截面保形，凹口会被最外交点填平；保留凹口时先放样外轮廓再切凹入区。
+  - 绕形心等角：面积/拓扑变化大时用。面内取 N 条等角射线与闭合环求交，每角取最外交点；索引 k 即固定角度，无需起点对齐。基向量必须是测站平面内的两轴（常半径站族的法向是径向，面内轴为切向与 z）。该参数化只对星形截面保形：非星形截面 `_resample_ring` 直接抛错（不填凹口）；只有绕开它自己写射线求交时，凹口才会被最外交点填平。保留凹口时先放样外轮廓再切凹入区。
 - **提交后必须查体积，不只看 `IsSolidBody`**：对应关系扭曲时 `ThroughCurves` 仍提交，得到 `IsSolidBody=True`、体积 0 的自交实体；截面扫描线 IoU 仍可到 0.99，不能作为实体有效证据。体积为 0 时换绕形心等角参数化重做。
 - **≥5 张截面时给首站加定位截面**：后段形状会把首站附近的曲面拉低；在首站外侧 2 mm 加一张同形、沿放样轴平移的截面，首站即可恢复。
 - **`BodyPreference=Solid` 也可能出片体**：提交后查 `IsSolidBody`；片体不可与实体合并（"Cannot add solids and sheets"）。
@@ -338,10 +338,10 @@ feat, rev = face_blend_edge(wp, edge, R_BLEND)  # 未知法向组合时自动试
 
 - 建造器固定 `BlendTwoFace` + `FirstFaceCollector`/`SecondFaceCollector` + `CircularCrossSection.SetRadius`；`BlendFromEdges` 只给边链会报 `combination ... not sufficient`。不要设 `OverflowOption.None`（NX12 无此枚举）。
 - 法向组合不固定：凸平面-平面、凹口通常 `(True, True)`；凸圆柱-圆柱常见 `(False, False)`。`face_blend_edge` 按 `(TT, FF, TF, FT)` 各在自己的 undo mark 内试，失败回滚，返回成功的 `(rev_a, rev_b)` 并可用 `trace` 记录。
-- 前置检查：**两条支撑面各自 ≥ R**——圆角在两侧各吃掉一个 R；FaceBlend 支撑宽 1.6 mm / R=1.6 可倒，支撑宽 1.5 mm / R=1.6 报 `Radius is too large for the faces selected`，没有 0.5 mm 余量（`structures.fillet_feasible` 也是 `width < R` 才拒）。`transitions.py` 与 `reverse-engineering.md` 多处按 ≥ `R + 0.5` 判，与本条读数口径不同，待统一。其余：边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错（`Unable to terminate the blend faces` 是 EdgeBlend 的文案，FaceBlend 不抛）。判据按**最窄邻面**取会误杀：一条跑道旁常挂着尽端面与侧壁；回建模加宽/重建支撑面，不要降半径。
+- 前置检查：**两条支撑面各自 ≥ R**——圆角在两侧各吃掉一个 R；FaceBlend 支撑宽 1.6 mm / R=1.6 可倒，支撑宽 1.5 mm / R=1.6 报 `Radius is too large for the faces selected`，没有 0.5 mm 余量（`structures.fillet_feasible` 也是 `width < R` 才拒）。`transitions.py` 与 `reverse-engineering.md` 使用同一 `width < R` 判据。其余：边处二面角 20°–160°、边长 ≥ `0.5R`。`Radius is too large/small for the faces selected` 是支撑面太窄或近相切，不是法向错（`Unable to terminate the blend faces` 是 EdgeBlend 的文案，FaceBlend 不抛）。判据按**最窄邻面**取会误杀：一条跑道旁常挂着尽端面与侧壁；回建模加宽/重建支撑面，不要降半径。
 - 开放链逐段 `face_blend_edge`，每段成功后按几何重找下一条边；闭合矩形窗口四段可逐段提交、0 告警。角部若原件是环面，另建角过渡；不要用直线段圆角冒充整圈。
 - 结果面型：直边平面-平面 → type 16、`radius` = R；圆形平面-圆柱 → type 19、`rad_data` = R、`radius` = 主半径；圆柱-圆柱可能是 type 43。验收按半径/环面主副半径 + 体积变化。
-- 命名表达式可驱动 `CircularCrossSection.SetRadius`：×1.1 后体积变化、还原后体积差 0、`DoUpdate` 0 错；这是可编辑性门的要求。
+- 命名表达式可驱动 `CircularCrossSection.SetRadius`（入口用 `str(radius)`，不要 `repr()`：`repr` 会给表达式名加引号变成字面量）：×1.1 后体积变化、还原后体积差 0、`DoUpdate` 0 错；这是可编辑性门的要求。
 - **B 曲面只在真二面角上做**：放样条带之间的近相切缝是折面近似，FaceBlend 会“成功”但只生成近零体积薄片，不代表圆角已建；该处应回建模重建支撑面。
 
 **开放链圆角刀（EdgeBlend 的替代）**：`EdgeBlend` 在开放链上**不必然失败**——`Unable to terminate the blend faces` 由半径大于支撑宽触发（上一条），不是"边不闭合"本身。需要**逐段独立提交、失败即回滚、每段另按几何重找下一条边**的场合（端缘 2–5 mm 折面链、开放轮廓边），用 `nxlib.modeling` 的滚圆刀：
@@ -359,7 +359,7 @@ ok, body = apply_roll(wp, body, edge, radius)
 - 弧段与直边共点、截面在 edge 的局部系内建（`e1 = sgn*n0`、`e2 = d × e1`、滚心 `o·u_i = R`），拉伸方向沿边、终点穿出 `ee = min(0.8, 0.25L)`；起点与边端点平齐（起点在顶点处与邻边相接，穿出会切掉邻边该留的料），刀具体不要与目标体共面收尾。
 - 截面与拉伸必须在 undo mark 内建，布尔失败立刻 `UndoToMark` + `DeleteUndoMark` + `UpdateManager.ClearErrorList()`，然后重新取实体（`part.Bodies` 的包装对象已失效）。
 - **已成功提交的圆角不要回滚**：回滚后实体 out-of-date，质量属性读 0，下一次布尔报 `Tool body completely outside target body`。逐条滚时“成功就留在树上”。
-- 候选边先筛：两面都是平面（type 22）、夹角 30°–150°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。这是"值不值得试"的预筛，不是可行性判据；`apply_roll` 的刀具有默认 ≥4R 行程门槛，判"倒不出来"用 `structures.fillet_feasible` 的 ≥0.5R。
+- 候选边先筛：两面都是平面（type 22）、夹角 20°–160°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。这是"值不值得试"的预筛，不是可行性判据；`apply_roll` 的刀具有默认 ≥4R 行程门槛，判"倒不出来"用 `structures.fillet_feasible` 的 ≥0.5R。
 - 端缘是 2–5 mm 折面链时逐段滚，长度下限放到 1.2R，两端仍各穿出 0.8；相邻两段的刀具有重叠，顶点处自然形成过渡，不必另建球面。
 - 每条边记中点（四舍五入到 0.01），被拒的边不再重试，否则重扫循环不收敛。
 - 验收：滚出的圆角面是类型 16、`radius` = 圆角半径（直边，精确圆弧）或类型 19（`rad_data` = 圆角半径、`radius` = 主半径）；体积按“截面面积 × 边长”校验在 35% 以内（凸减、凹加）。
@@ -408,7 +408,7 @@ pb.CommitFeature(); pb.Destroy()
 ⚠ 2D 线性阵列必须 `rect.UseYDirectionToggle = True` 并给 YDirection。
 ⚠ 依赖特征一起阵列（打孔→倒圆）自带倒圆。
 ⚠ 验收：孔壁 type=16 半径=HD/2；孔口倒圆 type=19，`radius` = 主半径 = HD/2 + 倒圆半径。
-⚠ 圆周间距用 `PitchDistance`（`CountAndPitch` 不存在）。
+⚠ 圆周间距走 `AngularSpacing.PitchAngle`（矩形是 `XSpacing/YSpacing.PitchDistance`）；`CountAndPitch` 不存在。
 
 ### 3.1a 沿路径阵列（`AlongPath`）
 
@@ -667,7 +667,7 @@ session.UpdateManager.DoUpdate(mark)  # ⚠ Session 属性是 UpdateManager（�
 - 单位按量纲传：角度用 `GetBase("Angle")`；`RightHandSide` 支持表达式名、`.Value` 只接受数值 → **统一用 `RightHandSide`**。
 - 硬限制：
   1. 表达式名**大小写不敏感**（`D` 存在时建 `d` 报 "expression variable already exists"）。
-  2. NX12 **无 atan/acos/asin/atan2**；渐开线改压力角参数化 `r=rb/cosα, φ=ψb−(tanα−α)`。**两套参数域不可混用**：压力角域上限 `degrees(atan(umax))`（31.32°），给成 `umax*180/π`（34.81°）会越过齿顶圆，报 "Section curves are not connected each other"。
+  2. NX12 **无 atan/acos/asin/atan2**；渐开线改压力角参数化 `r=rb/cosα, φ=ψb−(tanα−α)`。**两套参数域不可混用**：压力角域上限 `degrees(atan(umax))`（31.32°），给成 `umax*180/π`（34.87°）会越过齿顶圆，报 "Section curves are not connected each other"。
   3. 规律曲线 `ZLaw` 缺常量报 "Expression does not exist for law" → `ZLaw.LawType=Constant` + `Value.RightHandSide="0"`。
   4. `FileNew` Commit 不落盘，以 `part.Save()` 为准。
 
@@ -684,9 +684,9 @@ print(template.clean_cells(cells))                  # 干净格/总格
 
 - `edit_check` 是"改值 → DoUpdate → 读数 → 还原 → 再读"：`update_errors`/`restore_errors` 都必须是 0，`diff_snapshot(base, after)` 只列变化项（体积/面数/包盒/告警），本结构 `probe` 读数用来证明"动的是该结构"。
 - 还原后体积/面数与基线不逐位相同 → 更新过程重写了几何，该参数不适合直接驱动；先改引用，不要加豁免。
-- 单格异常（如 `Update undo happened`）记 `invalid` 继续下一格，整张矩阵跑完再归因；一格崩掉整轮等于没有可编辑性证据。
+- 单格异常（如 `Update undo happened`）会中止整轮 `edit_matrix`（库里没有逐格隔离），所以按格单独跑 `edit_check` 再归因；一格崩掉整轮等于没有可编辑性证据。
 - 局部性判据按**库里的实际口径**取，不要另立一套：`audit.locality` 判"越界站"用 `max(area_tol, rel_tol×面积)`，默认 `area_tol=1.0`（mm²）、`rel_tol=0.005`；形状变化用对称差（union−inter）栅格量。`template.diff_snapshot` 对体积/体数/面数是**严格不等**、对包盒用 1e-4 mm 阈值。局部性没有"相对 1e-6 / 1e-5 mm"这套阈值（`template.edit_check` 里的 1e-6 是**还原体积相等的绝对判据**，不是局部性阈值）。
-- 矩阵只覆盖挑出来的参数，交付前另做全表普查：每个命名表达式 +10% → 体积响应，live/named ≥0.9、broken=0；派生量不进编辑集（改其 RHS 会破坏公式，还原报变量不存在）。
+- 矩阵只覆盖挑出来的参数，交付前另做全表普查：`measure.expression_survey` 对每个命名表达式 +10% 量体积响应，`pass` 要求单实体、`alive_ratio=1.0`、`dead`/`broken`/`alerts` 全空；再用 `audit.liveness` 对账声明的设计参数，`missing` 为空才算过；派生量不进编辑集（改其 RHS 会破坏公式，还原报变量不存在）。
 
 ### 4.2 自动约束 / 自动标注（替代手加约束）
 
@@ -703,9 +703,9 @@ adb.Commit(); adb.Destroy()  # 自动生成驱动尺寸表达式
 sk.GetStatus()
 ```
 
-- **“AutoDimension 不出尺寸”的已知主因是先跑了 AutoConstrain**：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `auto = not dims` 分流。
+- **“AutoDimension 不出尺寸”的已知主因是先跑了 AutoConstrain**：AutoConstrain 会把简单轮廓直接标成完全约束且**不产生表达式**（圆 3→0 DOF，表达式表为空），随后 AutoDimension 无事可做。需要自动尺寸的草图**不要**先 AutoConstrain；两者都用时按 `dims` 分流：要驱动尺寸走 `make_sketch_dims`，否则走 `make_sketch`（AutoConstrain 固定轮廓；AutoDimension 不产生可用尺寸）。
 - **`GetStatus()` 不是前提**：AddGeometry 之后不调 `GetStatus` 直接建 AutoDimension，尺寸照出；0 尺寸的原因是先跑了 AutoConstrain，不是少调 `GetStatus`。
-- ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小圆弧）会被拉到自交，拉伸体体积异常增大。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓。
+- ⚠ AutoDimension 会**挪动几何**：测量轮廓（尤其小圆弧）会被拉到自交，拉伸体体积异常增大。测量轮廓只加固定约束，自动约束/自动尺寸只用于简单轮廓；先跑 AutoConstrain 时 AutoDimension 只留下 inactive 尺寸对象，不产生可用尺寸。
 - **适用边界**：圆、矩形、扇形弧+线、10 点台阶轮廓安全（几何/体积不变）；曲线多、段长的轮毂轮廓会生成大量线长/角度尺寸而不是设计半径，**不可用**。轮廓越接近测量数据（短弧、倒角、偏移线越多），越不要开自动尺寸。
 
 ### 4.2b 自动尺寸 → 命名参数（简单轮廓上的可行参数化路线）

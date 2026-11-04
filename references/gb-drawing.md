@@ -24,13 +24,13 @@ views = gb.standard_views(part, sheet, body=body, scale=1.0, size="A4")
 tb = gb.title_block(sheet, frame, name=u"试验板", dwg_no="NXOJ-33", scale_txt=gb.scale_text(1.0))
 gb.tech_note(sheet, tb)   # GB/T 1804-m + 1184-K
 bbox = gb.model_bbox(body); ct = gb.content_bbox(views["TOP"], *bbox)
-gb.dim_between(part, views["TOP"], (e1, "END_POINT", p1), (e2, "END_POINT", p2), lane_y=ct[1]-gb.LANE_FIRST)
-gb.dim_diameter(part, views["TOP"], hole_edge, hole_center, (x, y))
+gb.dim_between(views["TOP"], (e1, "END_POINT", p1), (e2, "END_POINT", p2), lane_y=ct[1]-gb.LANE_FIRST)
+gb.dim_diameter(views["TOP"], hole_edge, hole_center, (x, y))
 gb.centermark(part, views["TOP"], hole_edge, hole_center)
 gb.export_pdf(part, sheet, "drawing.pdf")
 ```
 
-调用顺序：建模 → `blank_datums` → `apply_gb_preferences` → `set_cjk_font` → `new_sheet` → `frame` → `standard_views`（必须传 `size=`，与 `new_sheet` 一致；不传即抛 `RuntimeError: standard_views: pass size=`）→ `title_block`/`tech_note` → 尺寸/中心线 → `export_pdf`。道位用 `content_bbox`（`LANE_FIRST=10`、`LANE_STEP=7`），勿用 `view_bbox`；同向多道小内大外。
+调用顺序：建模 → `blank_datums` → `apply_gb_preferences` → `set_cjk_font` → `new_sheet` → `frame` → `standard_views`（必须传 `size=`，与 `new_sheet` 一致；不传即抛 `RuntimeError: standard_views: pass size=`）→ `title_block`/`tech_note` → 尺寸/中心线 → `export_pdf`。道位用 `content_bbox`（`LANE_FIRST=10`、`LANE_STEP=7`），勿用 `view_bbox`；同向多道小内大外。`frame`/`title_block` 内部先 `sheet.Open()` 把传入图纸置为当前页；`dim_between`/`dim_diameter` 不接收 `part`。
 
 ## 国标条款与本技能实现口径
 
@@ -164,7 +164,7 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 
 - **数量引线**：`dim_diameter` 默认不带数量前缀，成组等径孔走 `quantity_label(part, view, edge, centre, org, "2x<O>10")`（字高 3.5；均布加 EQS）；直径尺寸对象本身也能加前缀（`AppendedText.SetBeforeText`，见 `drafting-annotation.md` §4b）。
 - **尺寸文字落在轮廓外**：`content_bbox(view, ...)` 取内容包盒，`dim_text_box(center_xy, text, size)` 估算文字框——该函数只有三行算术（`3.81×len(text)×size/3.5` 与 `7.0×size/3.5`），不查任何字体/文字度量 API，所以框是**保守上界**：33 号图上 Ø/线性尺寸文字（44/100/60/10）文本层字串宽 3.7–5.5mm（≈1.8–2.0 mm/字符），行距 5.25mm（1.5×字高）而框高取 7.0mm（2×字高），`box_overlap(box, content_bbox, gap=0)` 可能报出墨迹并未接触的重叠——判为重叠后须在图上确认。`dim_diameter` 的 `org_xy` 是文字中心，箭头仍在圆弧上，移动 `org_xy` 即可拉长引出线。
-- **自定义尺寸文字走 `quantity_label`**；`dim_diameter` 的 `text` 形参不生效，文字始终按所选圆弧的实际值自动生成 `Ø<值>`。
+- **自定义尺寸文字走 `quantity_label`**；`dim_between`/`dim_diameter` 都不接收自定义文字形参，尺寸文字按实际几何自动生成。
 - 无法用直径表达的小特征（凹槽圆角等）宁可不标，由技术要求兜底，不要硬造一个 `Ø` 引线压在轮廓上。
 - **成图前清理未请求的中心标记**：遍历 `part.Annotations.Centerlines`，把不是本次 `gb.centermark` 返回对象的 `CenterMark` 全部 `Blank()`（保留返回对象 tag 的集合）。否则图上会留下孤立十字。
 
@@ -176,7 +176,8 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 | `blank_datums(part)`、`apply_gb_preferences(part)`、`model_bbox(body)`、`assembly_bbox(bodies)`、`content_bbox(view,...)` |
 | `title_block(sheet,frame_geo,...)`、`tech_note(sheet,tb_geo,lines,base_y=None)`、`part_note(sheet,lines,origin)`、`hole_circles(body,radius)`、`linear_edges(body)`、`extreme_edge(...)` |
 | `save_model_view(part,name,rows)`、`base_view(part,sheet,name)`、`set_cjk_font(part)`（非轴对齐出图与中文出图） |
-| `dim_between(...)`、`dim_diameter(...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,centre,org,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
+| `dim_between(view,...)`、`dim_diameter(view,...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,centre,org,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
+| `map_point(view,model_xyz)`（模型点转图纸坐标一律走它，内部无回退，别改用仿射近似）、`sheet_part(sheet)`、`parent_ref(view)`、`view_bbox(view)`（含标签余量，仅供视图占位粗估）、`detail_rect(bx,by,half_w,half_h)`（局部放大选框） |
 
 ## 未覆盖范围
 

@@ -257,7 +257,7 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 9. 表格在图框内，不压标题栏。
 10. 尺寸链留一环不标或加括号，不封闭。
 
-## 9. 高发约束（跨域通用）
+## 9. 高发约束（跨域通用） <!-- trap-list -->
 
 - `CenterMarkBuilder` 一个 builder 最多 2 个 location、第 3 个起被拒（§7）；`CreateParallelDim` 线性边禁用，用 hdim/vdim（§4）。
 - `AssocDwgPos` 必须显式给（恰 2 个 double），关联点即图纸落点（§4）。

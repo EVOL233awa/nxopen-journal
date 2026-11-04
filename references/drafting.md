@@ -27,7 +27,7 @@ svb.Commit(); svb.Destroy()
 
 - 落位统一用 `v.SetDrawingReferencePoint(Point3d(x,y,0))` + 内容包盒闭环（`gb_drawing.pin_view`）；它钉住的是 NX 建视图时选定的锚点模型点，不是内容中心，偏差按视图恒定，用包盒迭代补偿（收敛 <0.05 mm）。`MoveView`/`SetOrigin`/`Fit()` 不用（`Fit()` 报 "Member view may not be fit"）。
 - 比例用 `ufs.Draw.SetViewScale(view_tag, s)`：传目标值即**绝对比例**（不是乘父比例，父视图比例不参与）。`AskViewScale(view_tag)` 的 UF 原型是 `(view, scale_tag@, scale@)`，Python 回读成 `(scale_tag, 比例)` 两元组：第 1 项是 out 参数 `scale_tag`（本技能各次读数均为 0，**不是**恒定值），**取第 2 项**当比例（误取第 1 项会以为比例是 0）。`DraftingView.Scale` 是自缩放链（随父视图/autoscale 变），不等于实际出图比例，核对一律用 `AskViewScale` 第 2 项。
-- 视图越界移动**不报错、也不自动回滚**（四次越界 Set 全部正常返回、零异常，无 `Cannot move view off of the drawing`）；布局必须由代码自查——摆位后逐视图核对内容包盒仍在图框内。
+- 视图越界移动**近距不报错、也不自动回滚**；只有移到极远处（如 (-500,-500)）才抛 `Cannot move view off of the drawing`，且该次调用自身不生效、已成功的移动不回滚。布局必须由代码自查——摆位后逐视图核对内容包盒仍在图框内。
 - `svb.Coordinate` / `FirstCorner` / `SecondCorner` / `HiddenObjects.Objects` 只读；`PlacementType` 只有 Center/Corner，提交后用 `SetDrawingReferencePoint` 摆。
 - 基准 `Blank()`（DatumCsys 带 3 基准面 + 3 基准轴）：建视图前最省事；建视图后 `Blank()` + `UpdateOneView` **同样生效**（可见对象 13→5）。视图内 `DraftingCurve.Blank()` 不生效（视图曲线照投影）。
 - 装配出图前 `Parts.Open` 预载子件；`Component.RemoveComponent` 后当次会话视图仍投影旧几何，`SaveAs` 重开则组件 Body 不载入。
@@ -35,7 +35,7 @@ svb.Commit(); svb.Destroy()
 拆件零件的构造曲线即使建视图前 `Blank()` 仍会投影，保留即可（都在图纸内）。
 
 ⚠ **视图排布与剖视语义**：
-1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图右侧（与 GB 第一角相反），严格第一角需手动重排。
+1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图**左侧**（内容中心 x 更小），与 GB 第一角一致；`gb_drawing.standard_views` 另行把 RIGHT 钉到主视图右侧，成套出图按该模块的钉位核对。
 2. 全剖剖切线过轴线；**切点须落在父视图的投影平面内**（阶梯剖把 Z 形路径挂 Front(XZ) 第 3 点被拒、挂 Top(XY) 才通过）。挂哪个父视图不是硬条件——同一个 Y=0 切面挂主视图作父视图同样成功（vis=10、Hatch=1）；剖切腿平面恒 ⊥ 父视图图面。
 3. 关联尺寸前确认目标边投影非退化（轴向边挂横剖圆环视图会渲染成 "0"）；局部放大源视图须含目标细节，detail 标注比例。
 
@@ -61,7 +61,7 @@ pt = ufs.View.MapModelToDrawing(view.Tag, [35.0, -20.0, 9.0])   # 返回图纸�
 
 `PrintPDFBuilder`（`part.PlotManager.CreatePrintPdfbuilder()`，在 **part** 上）正常出图；**一次 `SetSheets([...])` 出一份多页 PDF**（多张图纸合成一份文件，不是每 sheet 一份）。
 
-PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（`SizeOption` 只读）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 接受外来图纸但**不报错**（会出空白页），必须自查 sheet 属于 display part（`sheet.OwningPart`），`gb_drawing.export_pdf` 已加该校验。
+PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（`SizeOption` 只读）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 传外来图纸时 NX12 在 `Commit` 抛 `One or more sheets are not in the displayed part.`，仍须在调用前自查 `sheet.OwningPart`，让错误在 builder 创建前以稳定文本出现；`gb_drawing.export_pdf` 与 `nxlib.drafting.export_pdf` 都已加校验。
 
 **交付形态**：`run_journal.exe` 批处理一键（`.bat` 用 **GBK + CRLF**；Python 3.6 的 UTF-8 输出重定向进日志）。图纸 A3 三视图（第一角），**不含尺寸与中心线**。
 
@@ -178,7 +178,7 @@ segs.SegmentLocationForSecondLeg.AddCutSegment(
 - **读数**：半剖 `HALF_SXLINE`（4），`AskHalfSxline` 8 字段（第 6 段数 3）；旋转剖 `REVOLVED_SXLINE`（3），`AskRevolvedSxline` 11 字段（第 8 腿段数 4）。⚠ 元组长度非固定，断言取"≥ 已知最少"或按字段位置取；其余 `Ask*Sxline` 报 `Section line is not correct type.` → **剖切线类型是最省事判据**。
 - ⚠ **旋转剖不设旋转点必被拒**：默认落折点，报 `Rotation and bend points cannot be coincident.`；赋 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`。
 - ⚠ **`SegmentLocation.Length` 计段端点**：两腿各 2 点读 4、腿 2 单点读 2；半剖 L 形三点读 3，直线两点也读 3。别拿它判点数。
-- **展开剖 = `ViewUnfolded`**：可设可提交（`CreateFolded` 变 False），但**对象级读数与折叠态完全相同**（同 `REVOLVED_SXLINE`、同可见对象/类型计数、同剖切腿向量）。唯一可用的差别在**出图**：两份 PDF 的**字节数不稳定**——随视图名与视图数浮动（`31_drafting_sections.py` 头注记三组 18372/18414、18248/18077、18246/18077，连大小顺序都不固定；复跑 18248/18076），甚至有单次读数两份恰好相等。所以判据只能取"开关读回 + 视图有效 + **两份出图不相同**"（31 号断言字节不等，要稳则比内容哈希）；**不能**用"字节数相同"反推开关没生效。.NET 无展开剖类型，`AskUnfoldedSxline` 报 `Section line is not correct type.`。
+- **展开剖 = `ViewUnfolded`**：可设可提交（`CreateFolded` 变 False），但**对象级读数与折叠态完全相同**（同 `REVOLVED_SXLINE`、同可见对象/类型计数、同剖切腿向量）。唯一可用的差别在**出图**：PDF 字节数随视图名/视图数浮动，且可能恰好相等，**不能当判据**。判据取「开关读回 + 视图有效 + 页数相等且解压后页面内容流哈希不等」（排除字体/元数据流）；字节数只作记录；**不能**用「字节数相同」反推开关没生效。.NET 无展开剖类型，`AskUnfoldedSxline` 报 `Section line is not correct type.`。
 
 **阶梯剖路线约束**：先设 `SectionViewType = SimpleStepped`，再把 Z 形 4 点整条挂到投影面匹配的父视图；阶梯剖的点全给一条腿，不要拆 `SegmentLocationForSecondLeg`（腿 2 不生效）。模式用默认值（`StandAlone` 报内存访问违例或 `Section line lost model associativity.`）；入口用 `SectionViewBuilder`（弃用的 `SectionLineBuilder` 报 `Section line must have a cut segment.` / `Invalid view.`；`CreateSimpleSxview`/`CreateSxviewFromDmv` 需要既有剖切线，builder 够用）。
 

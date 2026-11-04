@@ -71,7 +71,7 @@
 
 实体分在 `Model` 与 `SHT1` 两个布局：几何线在 `Model`，`DIMENSION`/`VIEWPORT`/
 `INSERT`/`MTEXT` 在 `SHT1`。只数 `modelspace()` 会把尺寸数成 0；必须遍历
-`doc.layouts`。判据：`readfile` 成功、audit 0/0、`$INSUNITS=4`、`$MEASUREMENT=1`、
+`doc.layouts`。判据：`readfile` 成功、`audit_errors=0`、`$INSUNITS=4`、
 `DIMENSION` 数达到源图要求。
 
 ## 6. PMI 门
@@ -99,13 +99,14 @@ NX 写具体子类型：平面度是 `FLATNESS_TOLERANCE`，不是 `GEOMETRIC_TO
   FAIL，即使所有切片都 0 命中。面积站差阈值为 `max(0.5 mm², 0.1%·A_ref)`。
 - 无差异且站距粗于 `min_feature/2` 时输出 `NO_SIGNAL`，不是 `PASS`。
 - 连通分量变化也算差异（多体、内腔）。通孔负控：Ø10 通孔 ΔV 785.08 mm³
-  （1.3258%），缺料跨满 Z 0–10。
+  （ΔV/V_ref=1.3085%，V_ref=60000 mm³ 为无孔参考件，带孔件 59214.92 mm³），
+  缺料跨满 Z 0–10。
 
 ## 8. 图纸 PDF
 
 NX12 的 PDF 正文多为矢量轮廓：A3 页只有 8/12/16 个可提取词（归一化后
-8/11/13），CJK 字符 0 个；`0 重叠`是“无信号”，不能证明版面正确。PDF 门只负责
-页数、页面尺寸、可提取 token 与词级重叠；词数低于阈值时给 `NO_SIGNAL`。标题栏
+8/11/13），CJK 字符 0 个；`0 重叠`是“无信号”，不能证明版面正确。PDF 门只判
+可提取 token 与词级重叠（空页判 `DELIV_E_PDF_EMPTY`）；词数低于阈值时给 `NO_SIGNAL`。标题栏
 与中文技术要求是矢量路径（右下区域 3 条路径，0 个 CJK 字符），由 NX 模型侧回读
 （`gb_drawing.title_block` 的读回断言），不靠 PDF 文本层。软连字符 U+00AD
 与零宽字符先归一化再比较；块级检测会被 PyMuPDF 合并词块，只作辅助。
@@ -132,3 +133,8 @@ NX12 的 PDF 正文多为矢量轮廓：A3 页只有 8/12/16 个可提取词（�
 3. 回读：另起进程打开产物，重算体积/面数。
 4. 交付前：`check_deliverables.py` 汇总；`NO_SIGNAL` 要附原因（缺 ezdxf、
    缺 pymupdf、站距不足、PDF 无文本层）。
+5. 图纸 PDF：`--pdf-min-words` 默认 3，低于该值才给 `NO_SIGNAL`。有可提取
+   token 的图纸用 `--pdf-expect <token>`，命中即 `PASS`，不再看词数下限。
+   纯矢量、0 词的图纸（标题栏/技术要求已由模型侧读回）显式传
+   `--pdf-min-words 0` 放行词数阈值；此时门只剩空页与重叠检查，不能证明
+   版面正确。

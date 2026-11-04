@@ -6,13 +6,13 @@ description: 生成、检查并批处理回放 Siemens NX 12 的 NXOpen Python j
 # NXOpen Journal 生成（NX 12）
 
 NX 自动化唯一入口是 NXOpen API。本技能生成可在 NX 12 回放的 Python journal，覆盖建模/装配/工程图/有限元/运动仿真。
-分层：本文件 = 会话与部件层（必读）；八个域文件按任务选读其一（§5 路由表）。
+分层：本文件 = 会话与部件层（必读）；九个域文件按 §5 路由表选读，表内标了前置的先读前置。
 
 ⚠ **journal 解释器 = NX 12 内嵌 Python 3.6.1**：无 `math.dist`、`math.prod`、`math.isqrt`、f-string `=`、dict 合并运算符、`functools.cache`。`subprocess.run` 可用。宿主 3.12 预演通过不等于 NX 可跑，写完先过 `check_journal.py`。
 
 ## 1. 铁律
 
-本节是技能内唯一保留的跨域高发陷阱清单（通用 + 静默失败/崩溃）；单域负面事实写在对应路线里，不新开坑位清单。
+本节收跨域通用且高发的陷阱（静默失败/崩溃）；单域负面事实写在对应路线里。带 `<!-- trap-list -->` 标记的清单受 `check_repo.py` 的 8 条上限约束。
 
 1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实（`search_api` / `get_class` / `get_member`）。
 2. **MCP 核实“存在” ≠ Python 封装“可调用”**：新 API 必须先最小批处理验证，通过后才写入本技能。
@@ -41,7 +41,7 @@ def say(msg):
 - 批处理：`scripts\run_journal_batch.bat <journal.py> [workdir]`，自动加载 `ugiicmd.bat` 后调 `run_journal.exe`；每次启动新进程，不能注入已打开的 UG 会话。workdir 不存在会自动创建，并打印 `=== RUN_JOURNAL workdir=<绝对路径> ===`。
 - 批处理无已打开部件：`Parts.Work` 为 `None`；`UI.GetUI()` 与 `Parts.Display` 仅交互回放有意义。
 - mm 模板：`%NX_HOME%\UGII\templates\model-plain-1-mm-template.prt`。
-- nxopen MCP 嵌入端点 = `http://127.0.0.1:11436`（bge-m3）。服务未起时 `search_api`/`find_builder` 直接报错，改用 `get_class`/`get_member`。
+- nxopen MCP 嵌入端点 = `http://127.0.0.1:11436`（llama-server + bge-m3）。服务未起时 `search_api`/`find_builder` 直接报错，改用 `get_class`/`get_member`。
 - 交互回放：中文 工具→操作记录→运行；英文 Tools→Journal→Run。
 - 批处理 `.bat` 必须纯 ASCII（cmd 按 GBK 解析）。
 
@@ -89,9 +89,9 @@ NXOpen.UF.UFSession.GetUFSession().Part.Save()                    # 无参 UF �
 
 ```python
 import os
-wp.Save(NXOpen.BasePart.SaveComponents.TrueValue,
-        NXOpen.BasePart.CloseAfterSave.FalseValue)
-assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
+workPart.Save(NXOpen.BasePart.SaveComponents.TrueValue,
+              NXOpen.BasePart.CloseAfterSave.FalseValue)
+assert os.path.exists(workPart.FullPath) and os.path.getsize(workPart.FullPath) > 0   # 落盘才算数
 ```
 
 成员名是 `TrueValue` / `FalseValue`（`True`/`False` 是 Python 关键字）。
@@ -106,7 +106,7 @@ assert os.path.exists(path) and os.path.getsize(path) > 0   # 落盘才算数
 6. **STL 可导，位图不可导**：STL 用 `SetArray`，不要用 `SelectionComp`：
 
 ```python
-sc = s.DexManager.CreateStlCreator()
+sc = theSession.DexManager.CreateStlCreator()
 sc.OutputFile = stl_path
 sc.ExportSelectionBlock.SetArray(bodies)
 sc.ChordalTol = 0.05
@@ -127,18 +127,18 @@ sc.Commit(); sc.Destroy()
 2. 每步 try/except 记完整 traceback 后继续；只有致命错误才退出。
 3. 阶段边界保存并 `assert os.path.exists(path) and os.path.getsize(path) > 0`；Commit 成功 ≠ 落盘。
 4. 昂贵/易崩步骤前存 checkpoint 副本；每次布尔后断言体数（NX 布尔会静默不生效）。
-5. 长任务遥测走 JSONL + host 每连接一线程；发送端超时不要取 5 s：0.3 MB 内可全吸收，1.08 MB 背压 6.9 s、3.25 MB 27.1 s，单次 `sendall` 峰值 1.27 s，按整体 300 s 或后台发送线程设计。
+5. 长任务遥测走 JSONL + host 每连接一线程；发送端超时不要取 5 s，按整体 300 s 或后台发送线程设计。
 
 ### Undo mark 与失败回滚
 
 ```python
-mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "stage-1")
+mark = theSession.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "stage-1")
 try:
     ...  # 本段作业
-    session.DeleteUndoMark(mark, "stage-1")
+    theSession.DeleteUndoMark(mark, "stage-1")
 except Exception:
-    session.UndoToMark(mark, "stage-1")
-    session.DeleteUndoMark(mark, "stage-1")
+    theSession.UndoToMark(mark, "stage-1")
+    theSession.DeleteUndoMark(mark, "stage-1")
     raise
 ```
 
@@ -150,15 +150,14 @@ except Exception:
 先枚举能力，不要猜：
 
 ```python
-s = NXOpen.Session.GetSession()
-for n in dir(s.DexManager):
+for n in dir(theSession.DexManager):
     if n.startswith('Create'): print(n)
 ```
 
 - NX12 全集：Acis/Catiav4/Catiav5/Proe/Step(203/214/242)/Iges/Dxfdwg/Asc/Virtuallab/Stl/Nxto2d；3dxml/cgr 不在支持列表，先转 STEP/Parasolid 再导入。
 - **假成功**：不支持几何复制成 `.CATPart` 再 Commit 不报错但 `part.Bodies` 为 0；导入后必须开文件读体数。
 - CATProduct 导入是扁平化的，只解析当前文件直接层级；组件本体坐标通常已是整车坐标。
-- **集合没有 `__len__`**：`len(part.Features)` 直接抛 `TypeError`，用 `ToArray()` 或直接迭代；异常落在报告第一行会让该件全部读数丢失。
+- **集合没有 `__len__`**：`len(part.Features)` 直接抛 `TypeError`，用直接迭代 `for f in part.Features`；异常落在报告第一行会让该件全部读数丢失。
 - **导入后 `Parts.Work` 可能是 `None`**：另起一轮按路径 `Parts.Open` 再量，也更快。
 - **`CATProduct` 可能长时间不返回**：批量一律只吃 `CATPart`；总成清单用 ASCII 串直接从 `.CATProduct` 枚举。
 - **报告增量落盘**：每写一行 flush，挂起或被终止时不丢已完成的读数。
@@ -166,12 +165,12 @@ for n in dir(s.DexManager):
 ### 导出 STEP
 
 ```python
-sc = session.DexManager.CreateStepCreator()
+sc = theSession.DexManager.CreateStepCreator()
 sc.ExportAs = NXOpen.StepCreator.ExportAsOption.Ap242      # Ap203 / Ap214 / Ap242
 sc.ObjectTypes.Solids = True                               # 默认 False，必须显式开
 sc.ExportSelectionBlock.SelectionScope = NXOpen.ObjectSelector.Scope.SelectedObjects
 sc.ExportSelectionBlock.SelectionComp.Add(body)
-sc.InputFile  = wp.FullPath                                # 先保存；只给 OutputFile 会写空件
+sc.InputFile  = workPart.FullPath                          # 先保存；只给 OutputFile 会写空件
 sc.OutputFile = r"C:\path\out.stp"
 sc.ProcessHoldFlag = True                                  # 必设，否则 Commit 返回时文件还没写盘（约 5 秒后才出现）
 # AP214 才需要下一行；不给 def 也是空骨架：
@@ -206,7 +205,7 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 2. 按 §5 路由读域文件；建模先过 `modeling.md` §1 方法论。
 3. 用 nxopen MCP 核实将用到的类/方法/枚举；新 API 先写最小探针（`scripts/tests/11_api_probe.py`、`12_api_probe2.py`、`13_api_probe3.py` 可抄）。
 4. 按域文件配方生成 journal（`main()`、Session、部件新建/打开、保存、日志与阶段断言）。
-5. `python scripts/check_journal.py <journal.py>` 静态检查。豁免标记：整文件探针写 `# check_journal: allow-probes`；单行负向对照写 `# check_journal: expected-raise`（只对按行定位的 AST 规则 5.1 系列、5.5、5.9、5.14a、5.17、5.20 生效）。不带行号的规则（5.2/5.7/5.11/5.13/5.14b/5.15/5.19）只能整文件豁免，且不是每条都读这个标记：5.2（FileNew 的 `.Units` 与文件名后缀）与 5.7（`NXOpen.UF.FeatureSigns`、`UFDraw`、`UFMotion`）两种标记都不放行、照样报错，5.11/5.13/5.14b/5.15/5.19 才随 `allow-probes` 跳过。
+5. `python scripts/check_journal.py <journal.py>` 静态检查。豁免标记：整文件探针写 `# check_journal: allow-probes`；单行负向对照写 `# check_journal: expected-raise`（只对按行定位的 AST 规则 5.1 系列、5.5、5.9、5.14a、5.17、5.20 生效）。不带行号的规则（5.2/5.7/5.8/5.10/5.11/5.12/5.13/5.14b/5.15/5.18/5.19）只能整文件豁免，且不是每条都读这个标记：5.2（FileNew 的 `.Units` 与文件名后缀）、5.7（`NXOpen.UF.FeatureSigns`、`UFDraw`、`UFMotion`）、5.8（`ComponentAssembly.Components`）两种标记都不放行、照样报错，5.10/5.11/5.12/5.13/5.14b/5.15/5.18/5.19 才随 `allow-probes` 跳过；5.16 的判据按行号定位却同样不读 `expected-raise`。
 6. `scripts\run_journal_batch.bat <绝对路径\journal.py> <workdir>` 试跑 → 成功后交付交互回放；报错则 MCP 核实修正。
 
 ## 5. 模块路由
@@ -219,16 +218,16 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 | 抽壳/拔模/质量属性校验/去参/渐开线齿轮/导出 | `references/modeling.md` §3.4-§3.7 + 本文件 §3 导出 |
 | 装配（加组件/配对约束/组件阵列/引用集/装配质量属性/运动连接） | `references/assembly.md` |
 | 工程图（图纸/三视图/投影视图/局部放大/剖视图/PDF 导出/装配图路线） | `references/drafting.md` |
-| 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线/球标） | `references/drafting-annotation.md` |
-| **逆向重建**（原件+一句重建要求→面表→结构目录/圆角地图→结构表+过渡账本→测量链→按结构建特征→过渡→G7 双轨验收；构造配方在 `modeling.md`） | `references/reverse-engineering.md` |
+| 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线/球标） | `references/drafting-annotation.md`（前置 `references/drafting.md` §B.1-B.3） |
+| **逆向重建**（原件+一句重建要求→面表→结构目录/圆角地图→结构表+过渡账本→测量链→按结构建特征→过渡→G7 双轨验收） | `references/reverse-engineering.md`（前置 `references/modeling.md` + `references/fea.md`） |
 | **国标成套出图**（GB 图框/标题栏/技术要求/尺寸道位一张图到位） | `scripts/gb_drawing.py` + `references/gb-drawing.md`（验收=33 号用例） |
 | 有限元（CAD→FEM→SIM→求解→后处理；实体 CTETRA 与 2D 壳/PSHELL、模态 SOL103） | `references/fea.md` |
-| 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md` |
+| 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md`（前置本文件 §1 铁律、§3 骨架） |
 | 可编辑性验证 | `references/modeling.md` §6 + `scripts/tests/08_editability_probe.py` |
 | 交付件验证（STEP/STL/DXF/PMI/占用/PDF/离线索引） | `references/verification.md` + `scripts/deliverable.py`、`scripts/occupancy.py`、`scripts/check_deliverables.py` |
 
 - 纯修改已有部件通常只读本文件。
-- 跨域复合任务按依赖顺序读多个域文件；域文件之间不互相依赖，少量通用事实允许域内重复。
+- 跨域复合任务按前置图读：先读 §5 路由表标出的前置、再读目标域，按 §5 一次读齐；域文件可互相引用但不重复配方。
 - 载荷/边界数据可来自上游校核技能或手算结果；模型落在项目工作区固定目录。
 
 ## 6. 脚本与回归
@@ -252,9 +251,9 @@ scripts\tests\RUN_TESTS.bat
 
 改动 references、`check_journal.py`、`run_journal_batch.bat` 后，先跑 `RUN_TESTS.bat` 全绿再交付。
 
-**写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
+**写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`/`exchange`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现非 `TESTxx_FATAL` 的 `FATAL` 行。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`，见 `scripts/nxlib/testing.py:65`）。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现非 `TESTxx_FATAL` 的 `FATAL` 行。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 与 50-53 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`）。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
@@ -262,7 +261,7 @@ scripts\tests\RUN_TESTS.bat
 
 ## 7. 维护约定
 
-**入库模板**（所有新知识按此写；`check_repo.py` 的 CONCISE/ROUTE 组会拦截违规）：
+**入库模板**（写进 agent 文档的新知识按此写：`SKILL.md`、`references/*.md`、`scripts/tests/README.md` 是 CONCISE/ROUTE 的全部扫描范围；库 docstring 与脚本注释不占会话上下文、不在其列，不扩面）：
 1. 第一句写正确做法（祈使句），不写发现经过、验证过程或历史沿革。
 2. 失败观察只留一行判据：症状 → 怎么做。
 3. 数值只保留能当验收判据的（容差、阈值、比例），不写实验读数与日志。
@@ -294,6 +293,7 @@ nxopen-journal/
 ├── scripts/deliverable.py          ← 离线交付件普查/门（STEP/STL/DXF/PMI；三态 PASS/FAIL/NO_SIGNAL）
 ├── scripts/occupancy.py            ← 三轴切片 + 体积差 + 连通分量占用门
 ├── scripts/check_deliverables.py   ← 宿主侧交付件门 CLI
+├── scripts/stl_math.py          ← STL 读取 / 截面环 / 体积包盒（纯标准库；占用门与渲染共用）
 ├── scripts/api_index.py            ← pyi/运行期/hxx 三源索引（本地 oracle，数据不入库）
 ├── scripts/run_journal_checked.py  ← 输出标记包装器（token + FATAL/_FAIL）
 ├── scripts/render/                 ← 离线出图链（STL→着色渲染、PDF→PNG、PDF 文本层审计；用法=scripts/render/README.md）

@@ -271,7 +271,7 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 ```
 
 - `AskLinkTransfromForGivenFrame`：**只有 2 参形式** `(tag, frame)`；3 参 `(tag, frame, [0.0]*12)` **不存在**，传第三参抛 `SyntaxError: Function takes 2 arguments, 3 passed.`。`frame` 0..nfr-1，帧 0=t=0。
-- 16 值=4×4 **行主序**，平移 **3/7/11**；`r[10]` 只在**绕 Z 转的平面机构**里恒 1.0（绕 Y/X 时 ≈0，如 −2.7e-8），别当通用自检；`Tz`（11）同理只在平面机构为 0。绕轴角（相对设计位姿）：Z `atan2(r[4],r[0])`、Y `atan2(r[2],r[0])`、X `atan2(r[9],r[5])`；要绝对物理角，按 §M.4 取 `T·[设计点,1]` 再 `atan2`。
+- 16 值=4×4 **行主序**，平移 **3/7/11**；`r[10]` 只在**绕 Z 转的平面机构**里恒 1.0；绕 Y/X 时 `r[10]=cosθ`（本项目几何上恰读到 −2.7e-8），别按 0/1 判形态、别当通用自检；`Tz`（11）同理只在平面机构为 0。绕轴角（相对设计位姿）：Z `atan2(r[4],r[0])`、Y `atan2(r[2],r[0])`、X `atan2(r[9],r[5])`；要绝对物理角，按 §M.4 取 `T·[设计点,1]` 再 `atan2`。
 - 列主序（12/13/14）→ 杆长与铰点共点严重不符；行主序 → 一致。杆长/共点=判别器。
 - `AskVelocity/AccelerationResults(tag, MotionType.ROTATION|TRANSLATION, VC.MAGNITUDE, RF.ABSOLUTE)` 对 **Link 与 Joint tag 都返回逐帧值**（曲柄 ROTATION 6.28334 rad/s 对 360 °/s 指令；曲柄质心 TRANSLATION 62.83 mm/s = ωr；ω²r = 394.78 mm/s²），读数为 0 的只有**物理上就该为 0** 的情形——接地件与驱动关节。**四个实参缺一不可**：缺 `MotionType` 的 3 参写法抛 `type object 'NXOpen.UF.MotionVectorComponent' has no attribute 'ROTATION'`。帧变换中心差分可作交叉校验（见下），但不必当唯一路线。
 - 自算 ω/α：方位角中心差分，平面 `atan2(R[1,0],R[0,0])`；journal 内无 numpy，中心差分手写，端点用单边差分且不参与精度判据；宿主侧绘图可用 `np.gradient(..., edge_order=2)`。
