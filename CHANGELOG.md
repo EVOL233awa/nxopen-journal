@@ -52,6 +52,13 @@
 - `scripts/check_deliverables.py`、`scripts/render/pdf_audit.py`：`--pdf-min-words` 默认 20 → 3。
 - `SKILL.md`：CONCISE/ROUTE 只扫 agent 文档、库 docstring 不受约束；§5 路由表写前置、删「域文件互不依赖」；§8 补 `stl_math.py`。
 - `references/*.md`、`docs/wiki/*`、`scripts/tests/README.md`：面类型 18/23/43、宽度门槛 `R`、PDF 词数默认 3、gate 判决源、自包含用例 8 个、行数与 API 计数同步。
+- `scripts/nxlib/exchange.py`：`part_facts` 增 `instances/prototypes/nauo/products`；装配的 `solid_bodies/faces/edges` 按去重原型件各算一次；`scripts/deliverable.py` 的 `step_gate` 比较 NAUO/PRODUCT。
+- `scripts/tests/50_deliverable_gates.py`：补装配 STEP 结构正控（同件两实例 + 另一件：3 NAUO / 3 PRODUCT，几何按原型去重）。
+- `scripts/check_journal.py` 5.13：每个 `SaveAs` 各自要有同路径落盘校验，只校最后一次会漏掉前面写出的文件。
+- `scripts/deliverable.py`：ASCII DXF 在无 ezdxf 的宿主上走纯标准库解析（`$INSUNITS` 与 ENTITIES 实体计数），audit 记未检查；二进制 DXF 缺 ezdxf 仍 `NO_SIGNAL`。
+- `scripts/gb_drawing.py`：`linear_edges` 每条边只返回一次；`model_bbox` 的 `AskBoundingBox` 失败直接报错，不回退直边。
+- `references/verification.md`、`references/gb-drawing.md`、`docs/wiki/03-modules.md`：STEP 装配计数口径、PDF 词数语料边界、DXF 文本引擎、`linear_edges` 只覆盖直边、行数同步。
+- `scripts/tests/verify_check_rules.py`：补多路径 `SaveAs` 反例与两次 `SaveAs` 阴性样本（58 反例 / 12 阴性）。
 
 ### Removed
 
@@ -86,10 +93,12 @@
 - `scripts/nxlib/structure_inference.py`：删 `ROLE_TRANSITION`/`ROLE_UNKNOWN`。
 - `.gitignore`：删重复的 `scripts/__pycache__/`，补 `.ruff_cache/`。
 - `scripts/tests/10_assembly_constraints.py`：换行由 CRLF 改回 LF。
-- `references/assembly.md`：删 `869.6 m` 与 `J17_DRAG` 整行日志；`DragByTransform` 的转置句改为「未单独验证，判方向用模型点位移」。
+- `references/assembly.md`：删 `869.6 m` 与 `J17_DRAG` 整行日志；`DragByTransform` 的矩阵按转置应用（按列写法传 +90° 实际 −90°），`MoveComponent` 原样回存。
 - `references/drafting.md`：原生 `FrontTopRight` 在 FirstAngle 下 Right 排左侧（原写右侧）。
 - `scripts/nxlib/structures.py`、`references/reverse-engineering.md`、`scripts/tests/02_flange.py`：单次 360° 能吃单调的带台阶/凹陷轮廓（体积等于解析值），删「只吃凸轮廓」。
 - `references/verification.md`：通孔负控百分比按 `ΔV/V_ref` 写 1.3085%（原 1.3258% 用的是带孔件体积作分母）。
+- `scripts/gb_drawing.py` `model_bbox`：`AskBoundingBox` 失败时曾回退直边包盒，回转件带平面会得到偏小的假包盒 → 改为直接报错。
+- `scripts/nxlib/measure.py`：`SAME_RADIUS_TOL_MM=0.5` 注明是覆盖实测延续带、远离真支撑的带宽选择，不是几何边界。
 
 ## [1.4.0] - 2026-11-03
 

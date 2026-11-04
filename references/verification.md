@@ -25,13 +25,17 @@
 
 | 实体 | 应等于 |
 |---|---|
-| `MANIFOLD_SOLID_BREP` | 实体数 `len(part.Bodies)` |
-| `ADVANCED_FACE` | `Σ body.GetFaces()` |
-| `EDGE_CURVE` | `Σ body.GetEdges()` |
-| `NEXT_ASSEMBLY_USAGE_OCCURRENCE` | 组件实例数 |
-| `PRODUCT` | 零件数 + 1（装配根） |
+| `MANIFOLD_SOLID_BREP` | 去重后的原型实体数（单件=自身实体数） |
+| `ADVANCED_FACE` | Σ 每个原型件一次的面数 |
+| `EDGE_CURVE` | Σ 每个原型件一次的边数 |
+| `NEXT_ASSEMBLY_USAGE_OCCURRENCE` | 递归组件实例数（同件多实例按次） |
+| `PRODUCT` | 去重原型件数 + 1（装配根；单件为 1） |
 
-单件 1/7/14、双体 2/12/24、两件装配 2 solids/2 NAUO/3 PRODUCT 均严格相等。
+单件 1/7/14、双体 2/12/24、两件各一实例的装配 2 solids/2 NAUO/3 PRODUCT
+均严格相等。同件多实例只写一次几何、按实例写 NAUO：A×3 + B×1 为
+2 solids/4 NAUO/3 PRODUCT；嵌套 A×2 + B×1 + SUB(A×1) 为
+2 solids/5 NAUO/4 PRODUCT（P14）。`nxlib.exchange.part_facts` 的
+`solid_bodies/faces/edges` 按去重原型计，`nauo`/`products` 与上表同口径。
 `ValidationProperties` 在 NX12 不写体积/质心，开关两份文件除产品名外逐字节相同；
 不要把它当体积校验。
 
@@ -71,8 +75,10 @@
 
 实体分在 `Model` 与 `SHT1` 两个布局：几何线在 `Model`，`DIMENSION`/`VIEWPORT`/
 `INSERT`/`MTEXT` 在 `SHT1`。只数 `modelspace()` 会把尺寸数成 0；必须遍历
-`doc.layouts`。判据：`readfile` 成功、`audit_errors=0`、`$INSUNITS=4`、
-`DIMENSION` 数达到源图要求。
+`doc.layouts`。判据：`readfile` 成功、`$INSUNITS=4`、`DIMENSION` 数达到源图
+要求；ezdxf 可用时另查 `audit_errors=0`。ASCII DXF 在无 ezdxf 的宿主上走
+纯标准库解析（`$INSUNITS` 与 ENTITIES 实体计数与 ezdxf 一致），audit 记为
+未检查；二进制 DXF 缺 ezdxf 仍 `NO_SIGNAL`。
 
 ## 6. PMI 门
 
@@ -137,4 +143,5 @@ NX12 的 PDF 正文多为矢量轮廓：A3 页只有 8/12/16 个可提取词（�
    token 的图纸用 `--pdf-expect <token>`，命中即 `PASS`，不再看词数下限。
    纯矢量、0 词的图纸（标题栏/技术要求已由模型侧读回）显式传
    `--pdf-min-words 0` 放行词数阈值；此时门只剩空页与重叠检查，不能证明
-   版面正确。
+   版面正确。语料：满图 A3 14 词、A4 8 词、只出标题栏 5 词、空白页
+   0 词；默认 3 只证明"有文本层"，不判内容画全，内容必须靠 `--pdf-expect`。

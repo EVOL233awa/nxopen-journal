@@ -179,6 +179,11 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 | `dim_between(view,...)`、`dim_diameter(view,...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,centre,org,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
 | `map_point(view,model_xyz)`（模型点转图纸坐标一律走它，内部无回退，别改用仿射近似）、`sheet_part(sheet)`、`parent_ref(view)`、`view_bbox(view)`（含标签余量，仅供视图占位粗估）、`detail_rect(bx,by,half_w,half_h)`（局部放大选框） |
 
+`linear_edges` 每条边只返回一次，但只覆盖直边：用来挑轮廓边/尺寸端点，
+不能当零件包盒（回转件带平面时直边包盒只覆盖平面区域）。包盒一律
+`model_bbox`/`content_bbox`；`AskBoundingBox` 失败时 `model_bbox` 直接报错，
+不回退直边。
+
 ## 未覆盖范围
 
 A0/A1（c=10）、GB/T 10609.1 全格式标题栏未实现；剖视图部分已通（drafting.md B.4、31 号用例），"成套剖视 + 标注"未解；局部放大 `detail_rect` 的选框外扩系数 `DETAIL_CIRCLE_FACTOR=0.83` 是启发式、来源不可复现（`AskViewBorders` 对 detail 返回选框本身、量不到边界圆），边界圆是否覆盖目标区只能在出图上目视确认、选框须留余量（细则见 `drafting.md` B.4）。

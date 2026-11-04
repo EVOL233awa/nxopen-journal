@@ -147,7 +147,7 @@ net.SetMovingGroup([by["曲柄"]])            # 名单不决定谁动：谁动�
 net.DragByTransform(NXOpen.Vector3d(0.0, 0.0, 0.0), rot_z(5.0))
 net.Solve(); net.ApplyToModel(); net.EndDrag(); pos.ClearNetwork()
 ```
-- **拖动枢轴 = 约束铰轴线**（**不是**该件自身原点，也不是全局原点；与 §A.1 `MoveComponent` 绕全局原点**不是同一 API，不可混写**）：Fit 单铰下拖 90°，铰轴点原地不动、`dir` 不变、Fit 仍 `Solved`、DOF 仍 `1T+1R`，而组件原点绕铰轴划弧离开原位——若真绕自身原点转，孔轴必甩成水平、Fit 必破。`DragByTranslation` 是**纯平移**。`DragByTransform` 的矩阵方向未单独验证（`MoveComponent` 是原样存储）；判方向用模型点位移，不要按符号推断。
+- **拖动枢轴 = 约束铰轴线**（**不是**该件自身原点，也不是全局原点；与 §A.1 `MoveComponent` 绕全局原点**不是同一 API，不可混写**）：Fit 单铰下拖 90°，铰轴点原地不动、`dir` 不变、Fit 仍 `Solved`、DOF 仍 `1T+1R`，而组件原点绕铰轴划弧离开原位——若真绕自身原点转，孔轴必甩成水平、Fit 必破。`DragByTranslation` 是**纯平移**。`DragByTransform` 的矩阵按**转置**应用：用 §A.1 的按列写法传 +90°（`Xy=+1, Yx=-1`）实际得到 −90°（+X→−Y，P18）；要逆时针改用按行写法。`MoveComponent` 是原样回存，两者方向约定不同，不可混写。
 - 谁动**由约束连通性决定，不由移动组名单决定**：默认 `NonMovingGroupGrounded=False` 时单件组照样驱动机器（Bond 伙伴被一并带走、Touch 伙伴随动）。⚠ **置 True 不是"拖不动"的开关**——同一 flag 在两套几何里表现相反：Bond 组那套里 True 使整组（含组内件）原地不动，Fit 铰那套里 True 仍被驱动转动。本环境只有"**默认值为 False**"是实证结论，别把 True 当锁死手段。任意活动杆都能驱动整机。
 - GUI 路径：装配 → 组件位置 → 移动组件，类型「动态」。
 
