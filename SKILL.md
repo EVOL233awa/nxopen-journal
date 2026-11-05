@@ -284,7 +284,7 @@ nxopen-journal/
 ├── LICENSE                         ← MIT 许可证
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
-├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.4.0）
+├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.5.0）
 ├── docs/wiki/                      ← 维护者导览（架构/主执行流/模块/数据流/边界与风险；不进 agent 必读路径，与 SKILL.md 冲突以 SKILL.md 为准）
 ├── images/                         ← README 的实跑产物图（三维与装配由 STL 离线渲染，其余来自回放产物）
 ├── references/*.md                 ← 九个域文件；各自的域与覆盖范围见 §5 路由表

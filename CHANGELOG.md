@@ -3,7 +3,7 @@
 本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 
-## [Unreleased]
+## [1.5.0] - 2026-11-05
 
 交付件验证层落地，各门与文档口径对齐。
 

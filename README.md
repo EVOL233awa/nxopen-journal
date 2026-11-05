@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.4.0，另有未发布变更（见 [CHANGELOG.md](CHANGELOG.md) 的 Unreleased 段）。
+当前版本 1.5.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran
@@ -25,7 +25,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 
 ## 功能范围
 
-技能覆盖 NX 自动化的五个基础域，并提供逆向重建与测量。工作方式都是 agent 编写 journal、批处理执行、核对产物：
+技能覆盖 NX 自动化的五个基础域，并提供逆向重建、测量与交付件验证。工作方式都是 agent 编写 journal、批处理执行、核对产物：
 
 | 域 | 覆盖内容 |
 | --- | --- |
@@ -35,6 +35,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 | 有限元 | Nastran SOL101 静力、2D 壳网格、求解级标定、解算方案与边界条件描述符 |
 | 运动仿真 | 连杆、转动副、滑动副、齿轮连接件，驱动、求解与结果提取 |
 | 逆向重建 | 从无特征实体提取结构清单与截面，按结构特征重建为可编辑模型；用独立脚本复算截面轮廓、孔系、体积、包围盒、四视图和双向表面偏差 |
+| 交付件验证 | STEP 实体普查（实体/面/边、NAUO、PRODUCT、PMI 子类型、悬空引用）、STL 拓扑（水密、绕向、有符号体积、欧拉数）、DXF 布局与实体计数、三轴切片占用与连通分量、图纸 PDF 文本层；判决三态 `PASS`/`FAIL`/`NO_SIGNAL` |
 
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
 `scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
@@ -263,6 +264,8 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
   会抛内存访问违例（视图定向与渲染样式可以改）。需要图片时，工程图走 Drafting 导出 PDF，
   三维模型导出 STL 后在 NX 外渲染；README 里的模型图与装配图就是这样来的。
 - 用例 26 故意保留了一次原生崩溃，用来记录 `ThreadedHole` 的边界；这也是回归判定看日志里的预期输出、不看退出码的原因。崩溃发生在独立的 NX 进程里，不会影响本机 NX 安装或已有模型。
+- 交付件门在仪器看不见时给 `NO_SIGNAL` 而不是 `PASS`，原因随判决一起返回（缺 `ezdxf`、缺 `pymupdf`、站距粗于最小特征的一半、页面无可提取文本）。ASCII DXF 走纯标准库解析、无 `ezdxf` 也能验；二进制 DXF 缺库时只能给 `NO_SIGNAL`。
+- 图纸 PDF 门统计的是可提取 token（默认阈值 3 词），证明页面有文本层，不证明内容画全：标题栏与中文技术要求是矢量路径，由 NX 模型侧回读，内容完整度要看 `--pdf-expect`。
 - 阵列九个类型里，`Linear`、`Circular`、`AlongPath`、`Helix`、`Polygon`、`Spiral`、`General`、
   `Reference` 都能在 `PatternFeatureBuilder` 里生成实例（用例 01、02、22、28、32）；`Mirror`
   在提交阶段被 NX 拒绝，特征镜像改用 `Features.MirrorFeatureBuilder`（用例 03）。

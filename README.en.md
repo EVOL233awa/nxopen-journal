@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Current version 1.4.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Current version 1.5.0 (see [CHANGELOG.md](CHANGELOG.md)).
 
 An agent skill for Siemens NX 12. After installation, an agent can write NXOpen Python journal
 scripts from natural-language instructions, run them headlessly through NX 12 in batch mode, and
@@ -37,6 +37,7 @@ the agent reads. This page is the English entry point.
 | FEA | Nastran SOL101 static, 2D shell mesh, solve-level calibration, solution and boundary-condition descriptors |
 | Motion | links and joints (revolute, slider, gear coupler), drivers, solving, result extraction |
 | Reverse engineering | structure inventory and sections from a featureless solid, rebuild as an editable structure-feature model, independent recomputation of sections, holes, volume, bounding box, four-view silhouettes and two-way surface deviation |
+| Deliverable verification | STEP entity census (solids/faces/edges, NAUO, PRODUCT, PMI subtypes, dangling references), STL topology (watertight, winding, signed volume, Euler characteristic), DXF layout-aware entity counts, tri-axis occupancy and connected components, drawing PDF text layer; three-state `PASS`/`FAIL`/`NO_SIGNAL` |
 
 Five tools come with it: `scripts/check_journal.py` (static check of a journal against
 a rule base of measured NX 12 pitfalls), `scripts/run_journal_batch.bat` (headless replay),
@@ -48,6 +49,10 @@ skeletons, the structure library and auditing; regression cases import it instea
 copying their own), and the offline figure
 chain in `scripts/render/` (batch sessions cannot capture images, so solids are rendered
 from STL outside NX and drawing PDFs are rasterised on the host).
+
+Host-side gates run outside NX as well: `scripts/deliverable.py`, `scripts/check_deliverables.py`,
+the occupancy gate `scripts/occupancy.py`, the offline API index `scripts/api_index.py` and the
+marker wrapper `scripts/run_journal_checked.py`.
 
 ## Figures from real runs
 
@@ -301,6 +306,14 @@ the `SimpleInterference` route, for threaded holes use "pilot hole plus annotati
 - Case 26 keeps one native crash as a boundary record, which is why exit codes cannot be used as the
   verdict. The crash happens in its own NX process, and the skill never writes into the NX
   installation.
+- A deliverable gate reports `NO_SIGNAL` instead of `PASS` when the instrument cannot see the
+  artifact, and returns the reason with the verdict (missing `ezdxf`, missing `pymupdf`, station
+  pitch coarser than half the smallest feature, no extractable text on the page). ASCII DXF is
+  parsed with the standard library and needs no `ezdxf`; binary DXF without the library can only
+  report `NO_SIGNAL`.
+- The drawing PDF gate counts extractable tokens (default threshold 3 words): it proves the page has
+  a text layer, not that the content is complete. The title block and the Chinese technical notes
+  are vector paths and are read back from the NX model, so judge content with `--pdf-expect`.
 - Of the nine pattern types, `Linear`, `Circular`, `AlongPath`, `Helix`, `Polygon`, `Spiral`,
   `General` and `Reference` all produce instances through `PatternFeatureBuilder` (cases 01, 02, 22,
   28, 32); `Mirror` is rejected at commit, so mirrored features go through
