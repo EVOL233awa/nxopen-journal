@@ -56,10 +56,11 @@ marker wrapper `scripts/run_journal_checked.py`.
 
 ## Figures from real runs
 
-The six module images below come from batch replays on this machine. Six cold-start agents, each
-with no memory, ran the modules independently: each received only the skill documents and one task
-sentence, then designed its own part, wrote the journal, passed static checks, replayed in batch
-and verified the result; the coordinator only accepted the final figure.
+The six module images below come from batch replays on this machine (ZCode + GLM-5.3-Flash, max
+thinking effort). Six cold-start agents, each with no memory, ran the modules independently: each
+received only the skill documents and one task sentence, then designed its own part, wrote the
+journal, passed static checks, replayed in batch and verified the result; the coordinator only
+accepted the final figure.
 Solids and assemblies are rendered outside NX from STL exported by the same run (a batch session
 cannot capture an image, see limitations), the drawings are PDFs the run wrote directly, and both
 charts plot real solve data written to disk.
