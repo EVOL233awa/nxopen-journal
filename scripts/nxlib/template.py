@@ -32,7 +32,7 @@ import json
 
 import NXOpen
 
-from .session import _ufs
+from .session import _ufs, _mass_units
 
 
 def load_json(path):
@@ -46,7 +46,8 @@ def param_table(doc, include_data=False):
 
     接受两种布局：
       1) {"structures": [{"id":..., "parameters": [{name,value,unit,kind}, …]}]}
-         （`reverse.schema_skeleton` / extract_params.py 的输出）
+         （参数表文档；`reverse.schema_skeleton` 的 parameters 只有名字、
+         没有值，这些行跳过）
       2) {"name": value, ...}（手写的最小参数表，单位统一按 mm）
     列表/向量值跳过（轴向量不进表达式表，由调用方按几何用）。
 
@@ -58,7 +59,12 @@ def param_table(doc, include_data=False):
     units = {}
     if isinstance(doc, dict) and "structures" in doc:
         for st in doc["structures"]:
-            for rec in st.get("parameters", []):
+            rows = st.get("parameters", [])
+            if isinstance(rows, dict):
+                rows = [{"name": k, "value": v} for k, v in rows.items()]
+            for rec in rows:
+                if isinstance(rec, str):
+                    continue
                 if not include_data and rec.get("kind") not in (None, "design"):
                     continue
                 if not include_data and rec.get("derived_from"):
@@ -142,8 +148,8 @@ def structure_params(schema, sid):
 
     `parameters` 写成一列 dict（带 `name`/`value`）时返回 {名: 值}；写成
     一列名字（`schema_skeleton` 的形态）时返回 {名: None}——只有名字没有
-    值，取值请先过 `param_table`。两种形态都返回 dict，签名不再随 schema
-    布局变化。
+    值，值要回到参数候选表（`reverse.param_candidates`）取。两种形态都
+    返回 dict，签名不再随 schema 布局变化。
     """
     params = structure(schema, sid).get("parameters", [])
     out = {}
@@ -165,17 +171,20 @@ def structure_param_names(schema, sid):
 def validate_schema(schema, templates=None, param_table_doc=None):
     """schema 骨架的规范性校验。
 
-    返回 {errors, warnings}。硬错误：结构 id 重复；模板缺失或为
+    返回 {errors, warnings}。硬错误：结构 id 缺失/空/重复；模板缺失或为
     `unassigned`；`build_order` 未覆盖全部结构或含未知 id；`depends_on`
     指向未知结构；同一参数名同时出现在独立参数与派生/data 里（design 与
-    derived 混用）。warnings：没有任何参数的结构；参数表里有未被任何结构
-    引用的名字。
+    derived 混用，`derived_from` 非空的参数行也是）。warnings：没有任何
+    参数的结构；参数表里有未被任何结构引用的名字。
     """
     errors = []
     warnings = []
     structures = schema.get("structures") or []
     ids = [st.get("id") for st in structures]
-    dup = sorted(set(i for i in ids if ids.count(i) > 1))
+    missing = [n for n, st in enumerate(structures) if not st.get("id")]
+    if missing:
+        errors.append({"reason": "structure id missing", "indexes": missing})
+    dup = sorted(set(i for i in ids if i and ids.count(i) > 1))
     if dup:
         errors.append({"reason": "duplicate structure ids", "ids": dup})
     id_set = set(i for i in ids if i)
@@ -193,6 +202,18 @@ def validate_schema(schema, templates=None, param_table_doc=None):
                 errors.append({"structure": sid,
                                "reason": "depends_on unknown id %s" % dep})
         params = set(structure_params(schema, sid).keys())
+        recs = st.get("parameters", [])
+        derived = []
+        if not isinstance(recs, dict):
+            derived = sorted(rec.get("name") for rec in recs
+                             if isinstance(rec, dict)
+                             and rec.get("derived_from")
+                             and rec.get("name"))
+        if derived:
+            errors.append({"structure": sid,
+                           "reason": "derived_from parameter listed as "
+                                     "independent", "names": derived})
+            params -= set(derived)
         data = set(st.get("data") or [])
         both = sorted(params & data)
         if both:
@@ -219,7 +240,7 @@ def validate_schema(schema, templates=None, param_table_doc=None):
         declared = set()
         for st in param_table_doc["structures"]:
             for rec in st.get("parameters", []):
-                declared.add(rec.get("name"))
+                declared.add(rec if isinstance(rec, str) else rec.get("name"))
         used = set()
         for st in structures:
             used |= set(structure_params(schema, st.get("id")).keys())
@@ -262,10 +283,7 @@ def update_part(wp, tag):
 
 def snapshot(part):
     """体积/实体数/面数/包盒/告警的一次读数，用于编辑前后对比。"""
-    uc = part.UnitCollection
-    units = [uc.FindObject(n) for n in
-             ("SquareMilliMeter", "CubicMilliMeter", "Kilogram",
-              "MilliMeter", "Newton")]
+    units = _mass_units(part)
     vol = 0.0
     nfaces = 0
     lo = [1e18, 1e18, 1e18]
@@ -313,11 +331,13 @@ def edit_check(wp, expr, delta, tag="template_edit", probe=None):
     old = expr.RightHandSide
     base = snapshot(wp)
     expr.RightHandSide = "%.6f" % (float(old) + delta)
-    errs = update_part(wp, tag + "_e")
-    edited = snapshot(wp)
-    probe_result = probe(wp) if probe is not None else None
-    expr.RightHandSide = old
-    errs2 = update_part(wp, tag + "_r")
+    try:
+        errs = update_part(wp, tag + "_e")
+        edited = snapshot(wp)
+        probe_result = probe(wp) if probe is not None else None
+    finally:
+        expr.RightHandSide = old
+        errs2 = update_part(wp, tag + "_r")
     back = snapshot(wp)
     return {"param": expr.Equation.split("=")[0].strip(), "delta": delta,
             "probe_result": probe_result,
@@ -348,7 +368,8 @@ def clean_cells(cells):
     for c in cells:
         if c.get("missing_expression"):
             continue
-        if (c["update_errors"] == 0 and not c["edited_diff"].get("alerts")
+        if (c["update_errors"] == 0 and c["restore_errors"] == 0
+                and not c["edited_diff"].get("alerts")
                 and c["restored_volume_equal"] and c["restored_faces_equal"]
                 and not c["restored_alerts"]):
             ok += 1

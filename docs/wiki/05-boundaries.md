@@ -38,11 +38,11 @@ NX 12 内嵌解释器不可替换，3.7+ 的语法与标准库特性全部不可
 
 | 项 | 边界 | 替代 |
 |---|---|---|
-| 螺纹特征 | NX 12 无 `Features.Thread` / `CreateThreadBuilder` | HolePackage 螺纹选项或"底孔 + 标注" |
+| 螺纹特征 | NX 12 无 `Features.Thread` / `CreateThreadBuilder`；HolePackage 的 `ThreadedHole` 孔型提交抛内存访问违例 | 底孔 `GeneralHole`/`DrillSizeHole` + 螺纹标注（`references/modeling.md` §4.4） |
 | 特征镜像 | `PatternFeatureBuilder` 的 `Mirror` 提交被拒（`README.md` 的已知限制（阵列）） | `Features.MirrorFeatureBuilder` |
 | 位图导出 | 无批处理入口 | STL 离线渲染 |
 | STEP 导出 | 可能写出 0 实体但 Commit 成功（`SKILL.md` 的「导出 STEP」小节） | 落盘后数实体；不可用改 Parasolid |
-| 去参 | `RemoveParametersBuilder` 销毁特征树 | 不提供，违背历史模式铁律 |
+| 去参 | `RemoveParametersBuilder` 销毁特征树 | 交付件不要用；仅用户明确要求哑实体时按 `references/modeling.md` §3.6 执行 |
 | 剖切视图 | 必须先设父视图再 `AddCutSegment`（`references/drafting.md` §B.4） | 按 `drafting.md` §B.4 顺序 |
 
 ## 5. 判据判别力风险

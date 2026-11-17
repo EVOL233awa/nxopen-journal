@@ -96,7 +96,31 @@ jd.Name = "J_S"
 
 装配 `Constraint.Type.Slider` 不可用（`not valid for this operation`，与 `Hinge`/`Cylindrical`/`Ball` 一批 internal-only，见 assembly.md §A.2），铰链只在 Motion 域建。
 
-`JointDefine.Type` 另列 `Perpendicular`/`Atpoint`/`Cylindrical`/`Planar`/`Spherical`/`Universal` 等（文档原口径：`Perpendicular` 须给第二组，其余给齐两组可提交）——⚠ 整句**未全验**：`Perpendicular` 的三种给法（给齐两组 / 只给第二向量 / 给第二矩阵）均 `Commit` 成功，其余类型**未验证**。第二组本身**不是提交门槛**：`Perpendicular` 三种给法都能提交；Slider 不给 `SecondOrigin`/`SecondVector` 也能提交并求解（两处是不同对象，别合并读）。
+`JointDefine.Type` 运行期 16 个名字：`Revolute`/`Slider`/`Cylindrical`/`Screw`/`Universal`/`Spherical`/`Planar`/`Fixed`/`Constantvelocity`/`Atpoint`/`Inline`/`Inplane`/`Orientation`/`Parallel`/`Perpendicular`/`ValueOf`（`ValueOf` 是内建方法、不是枚举成员，赋值报 `TypeError`，与装配层同坑）。**全表无 `Hinge`/`Ball`**：铰链 = `Revolute`（16/18/36 已验运动学），球铰 = `Spherical`。
+
+23 号 gate 的 `AskSolverDofCount` 增量（2 link + 固定其中一件 + 1 副）：
+
+| 类型 | ΔDOF | 自由度 |
+|---|---|---|
+| `Revolute` / `Slider` | +1 | 1R / 1T |
+| `Cylindrical` | +2 | 1T+1R |
+| `Spherical` | +3 | 3R |
+| `Universal` | +2 | 2R |
+| `Planar` | +3 | 1R+2T |
+| `Fixed` | 0 | 固定 |
+| `Atpoint` | +3 | 3R（markers 始终重合） |
+| `Inline` | +4 | 3R+1T |
+| `Inplane` | +5 | 3R+2T |
+| `Orientation` | +3 | 3T |
+| `Parallel` | +4 | 1R+3T |
+| `Perpendicular` | +5 | 2R+3T |
+| `Constantvelocity` | +2 | 2R |
+
+- `Perpendicular` 的两轴必须**真的垂直**；两向量平行时 `Commit` 报 `A NULL value was encountered`。给 `FirstMatrix`/`SecondMatrix` 的三种写法都能提交。
+- `Constantvelocity` 的两轴必须**斜交**；同轴时建得出来，但 `AskSolverDofCount` 报 `The directions of CV joint do not comply with Simcenter Motion solver.`，30° 斜交时 DOF +2。
+- `Screw` 必须与 `Cylindrical` 建在**同一对 link** 上：Cylindrical +2，再加 Screw 后总 +1；`MethodType=Ratio`、`RatioType=Expression`、`ScrewRatioExpression` 为导程（mm/rev）。36 号 gate：导程 2、90°/s×1 s → 转角 −90.0°、轴向 −0.500 mm。
+- 驱动接受度是**类型相关**的：`Revolute` 的 `MotionEulerAngle1`/`MotionTranslationZ` 都能提交（提交 ≠ 该自由度存在）；`Atpoint`/`Perpendicular`/`Constantvelocity` 两种驱动都被拒（`Math function definition is invalid`）；`Spherical` 的 Euler 驱动也被拒，`Cylindrical` 的 Euler 驱动可用。
+- 第二组本身**不是提交门槛**：Slider 不给 `SecondOrigin`/`SecondVector` 也能提交并求解（两处是不同对象，别合并读）。
 
 关节定义这一族的 `A NULL value was encountered` 出自**矩阵入口** `FirstMatrix` 那一支，不是"缺第二组"（衬套缺 `Orientation` 会报同一文本，是另一处，见 §M.5a）。
 
@@ -121,7 +145,12 @@ jdb.Commit(); jdb.Destroy()
 
 ### M.4a 齿轮连接件（Gear Coupler）
 
-两转动副按传动比耦合（定轴轮系），不建齿面接触：
+两转动副按传动比耦合（定轴轮系），不建齿面接触。覆盖：本节建出与传动比输出
+（半径 20:40、`RatioExpression=-0.5` → 输出比 −0.5）由 18/36 号 gate；§M.5 的
+`ScalarTorque` 建出与力矩读数由 18 号 gate（`AskTorqueResults` 查力矩对象：
+`|M|` 与 Z 分量 = 10±0.01 N·mm、X/Y 分量 = 0）；§M.6 的 `MotionTranslationZ`
+建出由 23 号 gate、符号与幅值由 36 号 gate（局部 z=+X、10 mm/s×2 s → `Tx=-20`）；
+§M.7 的 `AskVelocity/AccelerationResults` 四参读数由 18 号 gate。
 
 ```python
 cb = mm.Couplers.CreateCouplerGearBuilder(M.CouplerGear.Null)
@@ -135,7 +164,7 @@ cb.ContactPoint = sim_part.Points.CreatePoint(NXOpen.Point3d(20.0, 0.0, 60.0))
 cb.Validate(); cb.Commit(); cb.Destroy()
 ```
 
-`FirstRadius`/`SecondRadius` = 分度圆半径；**半径比为准、`RatioExpression` 被忽略**：半径 20:40 时写 `-0.3`，输出仍按 −0.5 走；比值与自己给的不一致也不报错。仍建议两者写同一比，用输出转速判据。
+`FirstRadius`/`SecondRadius` = 分度圆半径；**半径比为准、`RatioExpression` 被忽略**：半径 20:40 时写 `-0.3`，输出仍按 −0.5 走；比值与自己给的不一致也不报错。仍建议两者写同一比，用输出转速判据（36 号：主动 360 °/s、从动 −180 °/s，比值 −0.5±0.01）。
 
 ### M.5 载荷：标量力矩（ScalarTorque）
 
@@ -151,6 +180,9 @@ stb.Commit(); stb.Destroy()
 ```
 
 - mm 件 `ValueExpression` 按 **N·mm** 解释，非 N·m。判据：反力与手算同量级；反力小 1000 倍先查此（`NM_TO_NMM=1000.0`）。
+- **必须在求解前建**：求解后再建的载荷不会进结果库（`AskTorqueResults` 报 solver error）。
+- 读数：`ufs.Motion.AskTorqueResults(torque.Tag, VC.MAGNITUDE, RF.ABSOLUTE)` 查**力矩对象自身**，返回逐帧施加值（18 号 gate：10 N·mm 常值 → `|M|=10.000±0.001`、`Z=±10`、`X=Y=0`）；改查关节 tag 得到的是**反力矩**（≈ 施加值 + 惯性项），不是载荷本身。
+- `TorqueType=Joint` 只接受 `Revolute`：挂 `Cylindrical` 报 `NXException: An invalid type was encountered`。
 - NX12 `ValueExpression` 不能引用运动状态函数：`WZ`/`IF`/`TANH`/`SGN` 报 syntax error → `τ=−Mf·sgn(ω)` 无法表达。`CreateFunction` 注册的函数取不到引用（`stb.Function` 为 `None`）。变通：按 ω 符号拆 ±sgn 两工况；精确符号载荷走外部静定解算器（§M.8）。
 
 ### M.5a 连接件：弹簧 / 阻尼 / 衬套
@@ -231,7 +263,7 @@ b.Validate(); b.Commit()
 
 `jdb.DriverMultiOperations` 用 `MotionEulerAngle1`/`MotionPointOnCurve`/`MotionTranslationZ`；其余驱动走 GUI 或运动状态函数（§M.5）。
 
-`MotionTranslationZ`：沿**关节局部 z 轴**，非全局 Z；正速度沿 **−z_joint**，单位 = 部件长度单位/秒。判据：局部 z 对齐 +X、`VelocityExpression=10.0` 跑 1 s → `Tx=-10.0`；沿 +X 传负值。
+`MotionTranslationZ`：沿**关节局部 z 轴**，非全局 Z；正速度沿 **−z_joint**，单位 = 部件长度单位/秒。判据（36 号 gate）：局部 z 对齐 +X、`VelocityExpression=10.0` 跑 2 s → `Tx=-20.0`；沿 +X 传负值。
 
 ### M.6 求解
 
@@ -273,7 +305,7 @@ r = ufs.Motion.AskLinkTransfromForGivenFrame(link.Tag, frame)
 - `AskLinkTransfromForGivenFrame`：**只有 2 参形式** `(tag, frame)`；3 参 `(tag, frame, [0.0]*12)` **不存在**，传第三参抛 `SyntaxError: Function takes 2 arguments, 3 passed.`。`frame` 0..nfr-1，帧 0=t=0。
 - 16 值=4×4 **行主序**，平移 **3/7/11**；`r[10]` 只在**绕 Z 转的平面机构**里恒 1.0；绕 Y/X 时 `r[10]=cosθ`（本项目几何上恰读到 −2.7e-8），别按 0/1 判形态、别当通用自检；`Tz`（11）同理只在平面机构为 0。绕轴角（相对设计位姿）：Z `atan2(r[4],r[0])`、Y `atan2(r[2],r[0])`、X `atan2(r[9],r[5])`；要绝对物理角，按 §M.4 取 `T·[设计点,1]` 再 `atan2`。
 - 列主序（12/13/14）→ 杆长与铰点共点严重不符；行主序 → 一致。杆长/共点=判别器。
-- `AskVelocity/AccelerationResults(tag, MotionType.ROTATION|TRANSLATION, VC.MAGNITUDE, RF.ABSOLUTE)` 对 **Link 与 Joint tag 都返回逐帧值**（曲柄 ROTATION 6.28334 rad/s 对 360 °/s 指令；曲柄质心 TRANSLATION 62.83 mm/s = ωr；ω²r = 394.78 mm/s²），读数为 0 的只有**物理上就该为 0** 的情形——接地件与驱动关节。**四个实参缺一不可**：缺 `MotionType` 的 3 参写法抛 `type object 'NXOpen.UF.MotionVectorComponent' has no attribute 'ROTATION'`。帧变换中心差分可作交叉校验（见下），但不必当唯一路线。
+- `AskVelocity/AccelerationResults(tag, MotionType.ROTATION|TRANSLATION, VC.MAGNITUDE, RF.ABSOLUTE)`：tag **取 Link** 才返回逐帧值（曲柄 ROTATION 6.28334 rad/s 对 360 °/s 指令；曲柄质心 TRANSLATION 62.83 mm/s = ωr；ω²r = 394.78 mm/s²）。tag 取关节时 `ROTATION` 读数为全零，**连驱动副 `J_A` 也是零**，不要用关节 tag 读速度。**四个实参缺一不可**：缺 `MotionType` 的 3 参写法抛 `type object 'NXOpen.UF.MotionVectorComponent' has no attribute 'ROTATION'`。帧变换中心差分可作交叉校验（见下），但不必当唯一路线。
 - 自算 ω/α：方位角中心差分，平面 `atan2(R[1,0],R[0,0])`；journal 内无 numpy，中心差分手写，端点用单边差分且不参与精度判据；宿主侧绘图可用 `np.gradient(..., edge_order=2)`。
 - 线速度：平移 3/7/11 差分；内部帧接近 0；**frame 1 含首步瞬态，判据从 frame 2 起**；端点单边差分不可判精度。
 - 用 `range(nfr)`；越界查 `nfr` 返回**设计态/单位阵**（不是末帧副本）、负索引返回垃圾值。勿用中位步长剔帧（会误删变速段）。
@@ -320,9 +352,7 @@ scripts\run_journal_batch.bat C:\abs\...\scripts\tests\36_motion_slider.py C:\ab
 
 ### 结果读取约束（跨域通用）
 
-- 帧索引 0 基 `0..nfr-1`，帧 0 = t=0；不要用 `range(1,nfr+1)`。
-- 位姿 16 值是 4×4 **行主序**，平移取 3/7/11；取 12/13/14 会得到与该连杆**设计原点距**同量级的偏差（40/60/63 mm 级，随杆长而变），不是固定的"14 mm 级"。
-- `MassCenter` 传 `NXOpen.Point`，不是 `Point3d`；被 try/except 吞掉会让质心落原点。
-- `AskVelocity/AccelerationResults` 对 Link/Joint 都返回逐帧值（接地件与驱动关节为 0 属物理正确）；4 参签名缺 `MotionType` 会 `AttributeError`（§M.7）。
-- 平面转动副静不定，反力不做强度判据；用静定解算器（§M.8）。
+帧索引、4×4 行主序位姿与平移列、`MassCenter` 的 `NXOpen.Point` 要求、
+`AskVelocity/AccelerationResults` 四参签名、平面转动副静不定口径，分别见
+§M.2 / §M.6 / §M.7 / §M.8，不再重抄。只保留一条跨步长的判据标定：
 - 步长扫描（0.5/1/2°）：摇杆摆角 60.0234/60.0282/60.0186°，极差 0.0096°，按 `60.02±0.05°` 判；反力 max 相对极差 J_A 60.7%、J_B 89.8%，跨步长不可比，只做 `NSTEP=360` 的同一步数快照（同一步数复跑 6 位小数一致）。

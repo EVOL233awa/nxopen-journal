@@ -122,7 +122,7 @@ def main():
           "the rollback must leave the body intact (bodies=%d)"
           % len(list(part.Bodies)))
 
-    bud = au.budget(part, 4)
+    bud = au.budget(part, [{"id": "S%d" % i} for i in range(4)])
     say("budget=%r" %
         dict((k, v) for k, v in bud.items() if not isinstance(v, (list, dict))))
     check("T44_BUDGET_LIMIT", abs(bud["feature_limit"] - 28.0) < 1e-9,

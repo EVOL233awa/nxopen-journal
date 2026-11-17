@@ -22,13 +22,14 @@ import bisect
 import math
 import os
 import random
-import struct
 import tempfile
 
 import NXOpen
 import NXOpen.UF
 
-from .session import _cross, _dot, _perp_dist, _sub, _ufs, _unit
+from .session import _cross, _dot, _perp_dist, _sub, _ufs, _unit, _mass_units
+from stl_math import (mesh_bbox as _stl_mesh_bbox,
+                      read_stl_triangles as _stl_read_triangles)
 
 CYLINDER = 16
 CONE = 17
@@ -39,6 +40,8 @@ BLEND = 23
 B_SURFACE = 43
 
 STL_CHORDAL_TOL = 0.01
+# 二进制 STL：80 字节头 + uint32 面数。0 面文件恰好 84 字节，<=84 即无几何。
+MIN_STL_BYTES = 84
 # 判定口径的切站偏移：切平面与模型平面共面时三角面求交会漏/重算，平面站
 # 必须离开面一个亚毫米量级；轴站也带同一偏移，避免擦到端面共面三角。
 SECTION_CUT_DEPTH = 0.0137
@@ -130,10 +133,7 @@ def open_part(path):
 
 def part_volume(part):
     """全部实体的体积和（mm³）。"""
-    uc = part.UnitCollection
-    units = [uc.FindObject(n) for n in
-             ("SquareMilliMeter", "CubicMilliMeter",
-              "Kilogram", "MilliMeter", "Newton")]
+    units = _mass_units(part)
     total = 0.0
     for b in part.Bodies:
         total += float(part.MeasureManager.NewMassProperties(
@@ -572,7 +572,8 @@ def fillet_map(faces, radii=None, tol=0.002, max_ratio=0.25,
     if radii is None:
         hist = {}
         for f in usable:
-            r = abs(f.get("radius", 0.0))
+            r = (abs(f.get("rad_data", 0.0)) if f["type"] == TORUS
+                 else abs(f.get("radius", 0.0)))
             hist[round(r, 3)] = hist.get(round(r, 3), 0) + 1
         rmax = max(hist) if hist else 0.0
         radii = sorted(r for r, n in hist.items()
@@ -763,6 +764,14 @@ def fillet_run_samples(part, faces, radii, tol=0.002, grid=3,
             pts.extend(ps)
         supporter = {}
         member_tags = set(m["tag"] for m in members)
+        degree = {}
+        for m in members:
+            nb = set()
+            for e in m.get("edges", []):
+                for t in e.get("faces", []):
+                    if t in member_tags and t != m["tag"]:
+                        nb.add(t)
+            degree[m["tag"]] = len(nb)
         for m in members:
             for e in m.get("edges", []):
                 for t in e.get("faces", []):
@@ -775,11 +784,18 @@ def fillet_run_samples(part, faces, radii, tol=0.002, grid=3,
                         nf["type"], abs(nf.get("radius", 0.0)),
                         abs(nf.get("rad_data", 0.0)))
                     supporter[key] = supporter.get(key, 0) + 1
+        # 闭合整圆：跑道面在自身的邻接图里每个都恰好两个邻居（环），且
+        # 外侧至少两条支撑。单个面铺满整圈时邻接图没有边，这一档识别不到，
+        # 仍由 face_blend/roll_edge 处理；`roll_general` 只用在多段拼成的环上。
+        closed = (len(members) >= 3
+                  and all(d == 2 for d in degree.values())
+                  and len(supporter) >= 2)
         runs.append({"radius": members[0].get(
             "rad_data") if members[0]["type"] == TORUS
             else members[0].get("radius"),
             "faces": [m["tag"] for m in members],
             "nfaces": len(members),
+            "closed": closed,
             "bbox": _bbox_union(members),
             "centers": centers, "samples": pts,
             "supports": sorted(supporter.items(),
@@ -915,11 +931,12 @@ def g7_reachability(ref_runs, built_faces, radius_tol=0.025,
     ceilings = [g["ceiling"] for g in groups.values()]
     ceiling = min(ceilings) if ceilings else 1.0
     # `evidence` is the only thing that may set BLOCKED: an empty list means the
-    # ceiling ratio is a diagnostic, not a verdict.  Per-runway unreachability
-    # (support width below 2R+0.5, dihedral outside 20-160 deg, or an edge that
-    # a previous blend consumed) is filled in by the transition planner
-    # (references/reverse-engineering.md section 9); the ratio alone cannot
-    # prove a runway unreachable.
+    # ceiling ratio is a diagnostic, not a verdict.  Per-runway topological
+    # unreachability (dihedral outside 20-160 deg, or an edge that a previous
+    # blend consumed) is filled in by the transition planner
+    # (references/reverse-engineering.md section 9); support-width shortage is
+    # a build-only estimate there, because the face-table width is not an upper
+    # bound.  The ratio alone cannot prove a runway unreachable.
     return {
         "groups": sorted(groups.values(), key=lambda r: -r["ref_faces"]),
         "ceiling": ceiling,
@@ -947,8 +964,8 @@ def g4_blocked_reason(part, axis_index, side, delta, limit,
     """G4 不可达证据：极值顶点是否落在三面短边锐角上。
 
     只有当极值点同时邻接 ≥3 个面、最短邻边小于 0.5×R 时才记 BLOCKED；
-    否则返回 blocked=False，让调用方继续判 FAIL。`projection_reduction_mm`
-    是滚边能带来的包盒降低量；短边小于 0.5R 时按 0 记。
+    否则返回 blocked=False，让调用方继续判 FAIL。证据只报几何事实
+    （顶点/邻面/最短边/二面角/半径依据），不报未实现的包盒降低量。
 
     `corner_radius` 不给（None）时**不猜**：判据里那个 0.5R 需要真实的参考
     圆角半径，编一个零件常数（如 3.175 = 25.4/8）会把公制件判歪。此时返回
@@ -1029,7 +1046,6 @@ def g4_blocked_reason(part, axis_index, side, delta, limit,
         "corner_radius_mm": corner_radius,
         "corner_radius_basis": basis,
         "dihedral_angles_deg": angles,
-        "projection_reduction_mm": 0.0 if blocked else None,
         "reason": reason,
     }
 
@@ -1059,13 +1075,12 @@ def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
                  type_share=0.50, max_depth=8, min_features_share=8):
     """G9 特征树结构：特征数/结构数同量级，禁止逐层截面站栈。
 
-    `structures` 可以是结构数（int，调用方自证）或冻结结构表（list of
-    {id,...}/`schema_skeleton` 的 dict）。给表时每个结构 id 必须至少有一个
-    以该 id 开头的特征名，且特征不得为空名——只报特征数的 G9 会放过“74 个
+    `structures` 只接受冻结结构表（list of {id,...}/`schema_skeleton` 的
+    dict）；传 int 直接 ValueError。给表时每个结构 id 必须至少有一个以该
+    id 开头的特征名，且特征不得为空名——只报特征数的 G9 会放过“74 个
     无名 extrude”的交付件。
     """
     ids = []
-    source = "caller-int"
     if isinstance(structures, dict):
         ids = [s.get("id") for s in (structures.get("structures") or [])
                if s.get("id")]
@@ -1077,7 +1092,8 @@ def g9_structure(part, structures, feature_factor=4.0, feature_offset=12,
         n_structures = len(ids)
         source = "structure_table"
     else:
-        n_structures = int(structures)
+        raise ValueError("g9_structure: pass the structure table (list/dict), "
+                         "not a count")
     feats = list(part.Features)
     by_type = {}
     parents = {}
@@ -1461,12 +1477,14 @@ def _interval_touch(a, b, gap=1.0):
 
 
 def hole_audit(measure, part):
-    """G2 分母审计：功能孔 + 独立锥孔 + 未分类凹面组。
+    """G2 分母审计：功能孔 + 独立锥孔 + 锥口 + 未分类凹面组。
 
     `functional_hole_groups` 只收“凹面且截面有内环”的组，截面退化时会漏
     掉锥孔/盲孔。这里把同一根轴上的锥面先并到功能孔的口部（mouth_cone），
-    没有对应圆柱的锥组记 tapered_hole（独立锥孔，必须计入 G2 分母），
-    其余凹面圆柱/锥组记 unclassified（必须人工说明，不能静默丢掉）。
+    没有对应圆柱的锥组记 tapered_hole（独立锥孔）；两者都带 kind/point/
+    extent/half_angle_deg，并与功能孔一起进 G2 分母，`compare_parts` 才能
+    按种类和半角匹配。其余凹面圆柱/锥组记 unclassified（必须人工说明，
+    不能静默丢掉）。
     """
     all_groups = list(measure.get("cylinders", [])) + \
         list(measure.get("cones", []))
@@ -1486,8 +1504,11 @@ def hole_audit(measure, part):
                 if _same_hole_axis(g, f) and _interval_touch(g, f):
                     host = f
                     break
-            rec = {"radius": g["radius"], "axis": g["axis"],
-                   "center": g["center"], "length": g["length"],
+            rec = {"kind": g["kind"], "radius": g["radius"],
+                   "axis": g["axis"], "point": g["point"],
+                   "center": g["center"],
+                   "half_angle_deg": g["half_angle_deg"],
+                   "extent": g["extent"], "length": g["length"],
                    "faces": g["faces"]}
             if host is not None:
                 rec["attached_faces"] = host["faces"]
@@ -1504,7 +1525,7 @@ def hole_audit(measure, part):
                 functional_tags.update(g["faces"])
             else:
                 unclassified.append(rec)
-    denominator = list(functional) + list(tapered)
+    denominator = list(functional) + list(tapered) + list(mouth)
     return {
         "functional": functional,
         "mouth_cones": mouth,
@@ -1590,7 +1611,8 @@ def _scale_group(group, scale):
     for key in ("radius", "length"):
         out[key] = group[key] * scale
     for key in ("point", "center", "bbox", "extent"):
-        out[key] = [v * scale for v in group[key]]
+        if key in group:
+            out[key] = [v * scale for v in group[key]]
     out["faces"] = list(group["faces"])
     out["segments"] = [{"faces": list(s.get("faces", [])),
                         "extent": [s["extent"][0] * scale,
@@ -1699,15 +1721,18 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
 
     匹配条件：半径差 ≤2×radius_tol、轴角 ≤axis_tol_deg、孔心（垂直于轴的
     平面内）≤center_tol。逐项判定：圆柱看半径/孔心/轴/长度/分段，圆锥再加
-    半角。`pass` 要求原件功能组没有未匹配项且每个 pair 都过阈值；
-    `unmatched_a` 是“原件有、自建件没有”的结构，必须逐项建或写入简化清单；
-    `strict_pass` 才要求双向都无未匹配项，`unmatched_b`（多出的圆角/凸台）
-    只作复核。
+    半角。`pass` 要求 ref_a 的组都测到、原件功能组没有未匹配项且每个 pair
+    都过阈值；`unmatched_a` 是“原件有、自建件没有”的结构，必须逐项建或写入
+    简化清单；`strict_pass` 才要求双向都无未匹配项，`unmatched_b`（多出的
+    圆角/凸台）只作复核。
 
-    ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单；不传时用
-    `hole_audit` 的分母（功能孔 + 独立锥孔），不是只按 `_inner_ring` 筛的
-    功能孔。筛选按几何键，不按 faces tag；ref 里有、建件里找不到的组会
-    补进原件侧并记 unmatched_a，不会因为 tag 顺序变化变成 N/A。
+    ref_a/ref_b 传入上一轮 measure_part 的组列表作为比对清单；ref_a 不传时
+    用 `hole_audit` 的分母（功能孔 + 锥孔 + 锥口），不是只按 `_inner_ring`
+    筛的功能孔。ref_b 不传时按同一分母筛建件侧；两侧组都按各自
+    `length_scale` 先换到毫米再比。筛选按几何键，不按 faces tag；ref_a 里
+    有、原件里找不到的组记 `missing_groups` 并判失败，ref_b 里没找到的组
+    不补进建件侧（缺结构由 unmatched_a 暴露），不会因为 tag 顺序变化变成
+    N/A。
 
     `applicable=False` 只在 ref_a 显式为空或原件确实没有孔时成立；此时
     `pass` 为 True，报告按 `verdict` 写 N/A 而不是通过。
@@ -1730,37 +1755,33 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
     ref_b_con = [r for r in ref_b if r.get("kind") == CONE]
 
     a_cyl, miss_a_cyl = _subset_by_geometry(
-        a["cylinders"], ref_a_cyl, a["length_scale"], radius_tol, center_tol,
-        axis_tol_deg)
+        [_scale_group(g, a["length_scale"]) for g in a["cylinders"]],
+        ref_a_cyl, a["length_scale"], radius_tol, center_tol, axis_tol_deg)
     a_con, miss_a_con = _subset_by_geometry(
-        a["cones"], ref_a_con, a["length_scale"], radius_tol, center_tol,
-        axis_tol_deg)
-    b_cyl, miss_b_cyl = _subset_by_geometry(
-        b["cylinders"], ref_b_cyl, b["length_scale"], radius_tol, center_tol,
-        axis_tol_deg)
-    b_con, miss_b_con = _subset_by_geometry(
-        b["cones"], ref_b_con, b["length_scale"], radius_tol, center_tol,
-        axis_tol_deg)
+        [_scale_group(g, a["length_scale"]) for g in a["cones"]],
+        ref_a_con, a["length_scale"], radius_tol, center_tol, axis_tol_deg)
+    b_cyl, _ = _subset_by_geometry(
+        [_scale_group(g, b["length_scale"]) for g in b["cylinders"]],
+        ref_b_cyl, b["length_scale"], radius_tol, center_tol, axis_tol_deg)
+    b_con, _ = _subset_by_geometry(
+        [_scale_group(g, b["length_scale"]) for g in b["cones"]],
+        ref_b_con, b["length_scale"], radius_tol, center_tol, axis_tol_deg)
     a_cyl = list(a_cyl) + [_scale_group(r, a["length_scale"])
                            for r in miss_a_cyl]
     a_con = list(a_con) + [_scale_group(r, a["length_scale"])
                            for r in miss_a_con]
-    if ref_b:
-        b_cyl = list(b_cyl) + [_scale_group(r, b["length_scale"])
-                               for r in miss_b_cyl]
-        b_con = list(b_con) + [_scale_group(r, b["length_scale"])
-                               for r in miss_b_con]
     cyl = _match_groups(a_cyl, b_cyl, CYLINDER, radius_tol, center_tol,
                         axis_tol_deg, length_tol, half_angle_tol)
     cones = _match_groups(a_con, b_con, CONE, radius_tol, center_tol,
                           axis_tol_deg, length_tol, half_angle_tol)
-    applicable = bool(ref_a)
-    groups_pass = (not cyl["unmatched_a"] and not cones["unmatched_a"] and
-                   all(p["pass"] for p in cyl["pairs"] + cones["pairs"]))
     missing = [{"kind": r["kind"], "radius": r["radius"],
                 "axis": list(r["axis"]), "center": list(r["center"]),
                 "length": r["length"], "faces": list(r["faces"])}
                for r in miss_a_cyl + miss_a_con]
+    applicable = bool(ref_a)
+    groups_pass = (not missing and not cyl["unmatched_a"] and
+                   not cones["unmatched_a"] and
+                   all(p["pass"] for p in cyl["pairs"] + cones["pairs"]))
     return {
         "a": {"path": a["path"], "units": a["units"],
               "length_scale": a["length_scale"],
@@ -1801,11 +1822,47 @@ def compare_parts(path_a, path_b, radius_tol=0.025, center_tol=0.05,
     }
 
 
-def export_mesh(part, stl_path=None, chordal_tol=STL_CHORDAL_TOL):
-    """把部件全部实体导出为二进制 STL；返回路径。只写 STL，不存部件。"""
+def _tree_bodies(comp, out=None):
+    """组件树 → 实例体列表（Prototype.Bodies + FindOccurrence，递归孙件）。"""
+    out = out if out is not None else []
+    proto = getattr(comp, "Prototype", None)
+    if proto is None:
+        return out
+    for b in proto.Bodies:
+        occ = comp.FindOccurrence(b)
+        if occ is not None:
+            out.append(occ)
+    ca = getattr(proto, "ComponentAssembly", None)
+    root = getattr(ca, "RootComponent", None)
+    if root is not None:
+        for ch in root.GetChildren():
+            _tree_bodies(ch, out)
+    return out
+
+
+def export_mesh(part, stl_path=None, chordal_tol=STL_CHORDAL_TOL, scope="bodies"):
+    """把部件实体导出为二进制 STL；返回路径。只写 STL，不存部件。
+
+    scope：
+      "bodies"      只导 `part.Bodies`（默认；空部件报错）
+      "entire_part" 自有实体 + 整棵组件树的实例体（`_tree_bodies`）。调用方
+                    须先 `assembly.preload_tree`，否则未载入的组件体为 0
+      "auto"        有自有实体按 bodies，否则 entire_part（渲染导出入口）
+    写出的文件必须大于 84 字节（0 面 STL 恰好 84 字节，等于没有几何）。
+    """
+    if scope not in ("bodies", "entire_part", "auto"):
+        raise ValueError("scope must be bodies/entire_part/auto: %r" % (scope,))
     bodies = list(part.Bodies)
+    if scope == "auto":
+        scope = "bodies" if bodies else "entire_part"
+    if scope == "entire_part":
+        ca = getattr(part, "ComponentAssembly", None)
+        root = getattr(ca, "RootComponent", None)
+        if root is not None:
+            bodies = bodies + _tree_bodies(root)
     if not bodies:
-        raise ValueError("part has no solid body to export")
+        raise ValueError("part has no solid body to export (scope=%s; "
+                         "preload_tree first for assemblies)" % scope)
     if stl_path is None:
         _MESH_SEQ[0] += 1
         stl_path = os.path.join(
@@ -1821,40 +1878,20 @@ def export_mesh(part, stl_path=None, chordal_tol=STL_CHORDAL_TOL):
     sc.ExportSelectionBlock.SetArray(bodies)
     sc.Commit()
     sc.Destroy()
-    if not (os.path.exists(stl_path) and os.path.getsize(stl_path) > 0):
-        raise RuntimeError("STL export produced no file: %s" % stl_path)
+    if not (os.path.exists(stl_path)
+            and os.path.getsize(stl_path) > MIN_STL_BYTES):
+        raise RuntimeError("STL export produced no geometry: %s (scope=%s)"
+                           % (stl_path, scope))
     return stl_path
 
 
 def read_stl(path):
-    """读二进制/ASCII STL，返回 [(法向, v0, v1, v2)]；法向缺失时由顶点补。"""
-    with open(path, "rb") as fh:
-        data = fh.read()
-    tris = []
-    if len(data) >= 84:
-        count = struct.unpack("<I", data[80:84])[0]
-        if count > 0 and 84 + 50 * count <= len(data):
-            off = 84
-            for _ in range(count):
-                vals = struct.unpack("<12f", data[off:off + 48])
-                tris.append((list(vals[0:3]), list(vals[3:6]),
-                             list(vals[6:9]), list(vals[9:12])))
-                off += 50
-            return _fix_normals(tris)
-    text = data.decode("utf-8", "replace").splitlines()
-    nrm, verts = None, []
-    for line in text:
-        parts = line.split()
-        if not parts:
-            continue
-        if parts[0].lower() == "facet" and len(parts) >= 5:
-            nrm = [float(parts[2]), float(parts[3]), float(parts[4])]
-        elif parts[0].lower() == "vertex" and len(parts) >= 4:
-            verts.append([float(parts[1]), float(parts[2]), float(parts[3])])
-            if len(verts) == 3:
-                tris.append((nrm or [0.0, 0.0, 0.0], verts[0], verts[1], verts[2]))
-                verts = []
-    return _fix_normals(tris)
+    """读二进制/ASCII STL，返回 [(法向, v0, v1, v2)]；法向缺失时由顶点补。
+
+    解析走 `stl_math.read_stl_triangles`（与占用门/交付件门同一份读取器），
+    这里只补 NX 侧需要的法向归一化。
+    """
+    return _fix_normals(_stl_read_triangles(path))
 
 
 def _fix_normals(tris):
@@ -1870,14 +1907,7 @@ def mesh_bbox(mesh):
     """三角网格的轴对齐包盒 [xmin,ymin,zmin,xmax,ymax,zmax]（G4 口径）。"""
     if not mesh:
         raise ValueError("empty mesh")
-    lo = [1e300, 1e300, 1e300]
-    hi = [-1e300, -1e300, -1e300]
-    for _, v0, v1, v2 in mesh:
-        for v in (v0, v1, v2):
-            for i in range(3):
-                lo[i] = min(lo[i], v[i])
-                hi[i] = max(hi[i], v[i])
-    return [lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]]
+    return _stl_mesh_bbox(mesh)
 
 
 def basis(normal):
@@ -2129,8 +2159,8 @@ def _tri_span(tri, y):
 def view_iou(mesh_a, mesh_b, view="top", step=None):
     """两网格沿 view 方向的轮廓 IoU（三角面投影并集，扫描线）。
 
-    view 取 "top"（u=x,v=y）、"front"（u=x,v=z）、"side"（u=y,v=z），
-    或一个法向三元组（按该方向投影）。面积单位随部件。
+    view 取 "top"（u=x,v=y）、"front"（u=x,v=z）、"side"（u=y,v=z），或
+    一个法向三元组（按该方向投影）。面积单位随部件；并集面积为 0 时 iou=None。
     """
     if isinstance(view, str):
         key = view.lower()
@@ -2180,7 +2210,7 @@ def view_iou(mesh_a, mesh_b, view="top", step=None):
     area_inter = inter * step
     area_union = union * step
     return {
-        "iou": (area_inter / area_union) if area_union > 0.0 else 1.0,
+        "iou": (area_inter / area_union) if area_union > 0.0 else None,
         "area_a": area_a * step,
         "area_b": area_b * step,
         "area_inter": area_inter,
@@ -2967,11 +2997,12 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
 
     G0 要求两件都是单实体且面表可读；G1 默认走 STL 截面口径（平面站与轴站
     都按 `cut_plan` 偏 13.7 µm），空站表/两侧皆空的站判失败或 N/A，
-    `max_stations` 预算截断只报 `budget_skipped`/`plan_complete`，但
-    `plan_complete=false` 时 G1 **不通过**（未覆盖不等于覆盖）；`section_mode`
+    `plan_complete=false`、`plan_measured_complete=false` 或
+    `instrument_errors` 非空时 G1 **不通过**（未覆盖/仪器误差不等于覆盖）；
+    `max_stations` 预算截断只报 `budget_skipped`/`plan_complete`；`section_mode`
     可选 `"brep"` 走面表平面站的 B-rep 精确截面（见 `station_report_hybrid`
     的闭合限制，仅在自己件上证明可闭合时使用）；G2 用
-    `hole_audit` 的分母（功能孔 + 独立锥孔），按几何键匹配；G3–G6 按毫米
+    `hole_audit` 的分母（功能孔 + 锥孔 + 锥口），按几何键匹配；G3–G6 按毫米
     换算；G7 默认 `auto`（参考件有环面才计算，纯圆柱半径组只进
     `unjudged_radii`，需要判圆柱圆角时显式传 `g7_radii`），状态先看可达性
     证据再判覆盖，无逐跑道证据时不记 BLOCKED；G8 逐条改命名表达式量体积
@@ -3011,7 +3042,9 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
         sec["pass"] = False
         sec["reasons"].append("unit mismatch %s vs %s" %
                               (mo["units"], mb["units"]))
-    if not sec.get("plan_complete", True):
+    if (not sec.get("plan_complete", True) or
+            not sec.get("plan_measured_complete", True) or
+            sec.get("instrument_errors")):
         sec["pass"] = False
         sec["status"] = "FAIL"
         sec["reasons"] = list(sec.get("reasons", [])) + [
@@ -3037,7 +3070,8 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     for name in ("top", "front", "side"):
         views[name] = view_iou(mesh_o_mm, mesh_b_mm, name)
     views["iso"] = view_iou(mesh_o_mm, mesh_b_mm, [1.0, 1.0, 1.0])
-    views_pass = all(v["iou"] >= view_iou_min for v in views.values())
+    views_pass = all(v["iou"] is not None and v["iou"] >= view_iou_min
+                     for v in views.values())
     dev = mesh_deviation(mesh_o_mm, mesh_b_mm, samples, 0,
                          rms_max, p95_max)
 
@@ -3072,8 +3106,10 @@ def verify_parts(orig, built, samples=4000, max_stations=48,
     if ref_radii:
         ref_runs = fillet_run_samples(part_o, mo["faces"], ref_radii,
                                       fillet_only=True)
+        # 建件面按 `fillet_coverage` 的半径判定容差入池：0.002 的紧分组
+        # 会在覆盖计算之前丢掉 0.002–0.025 mm 的合法半径偏差。
         built_runs = fillet_run_samples(part_b, mb["faces"], ref_radii,
-                                        fillet_only=True)
+                                        tol=0.025, fillet_only=True)
     if g7 == "off" or not ref_runs:
         g7_gate = {"status": "N/A", "pass": True, "blocked": False,
                    "ref_radii": ref_radii,

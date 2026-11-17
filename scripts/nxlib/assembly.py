@@ -4,14 +4,13 @@
 覆盖：组件添加（AddComponent 固定参数口径）、单位阵、原型面按轴查找、
 Touch 约束网络（10 号 s3 决定性配方：约束必须先 DoUpdate 再进网络求解）。
 
-已知限制（10 号实测）：Constraint.Type 属性只读（用 ConstraintType）；
+已知限制（10 号实测）：约束类型赋值用 con.ConstraintType（ComponentConstraint 无 Type 成员）；
 Distance 偏置用 con.Expression.RightHandSide = "50"（实测生效并回读 50），
 con.OffsetRightHandSide setter 不可用（传 str 报 Not yet implemented、
 传 float 报类型错）。定位仍走 AddComponent placement 或 Touch 对。
 """
 import NXOpen
 import NXOpen.Positioning
-import NXOpen.UF
 
 from .session import _ufs
 
@@ -44,14 +43,15 @@ def add_component(assy, part_path, origin, layer=1):
 
 
 def preload_components(session, assy):
-    """预载装配全部子件。
+    """预载装配的**直接子件**（`RootComponent.GetChildren()`）。
 
     组件体惰性加载：重开装配后 component.Prototype 下的实例体不自动进入
     上下文，干涉检查/约束读回前不预载则 SimpleInterference 空跑
-    （实测 inst_bodies=0）。返回子件 .prt 路径列表；已加载的子件再 Open 抛
-    "File already exists"，按幂等跳过。载入成功与否只能看 Parts.Open 的
-    loadStatus.NumberUnloadedParts（component.Prototype 对未加载组件也返回
-    占位对象且不抛异常），非 0 即抛错，不让调用方在空跑上继续。
+    （实测 inst_bodies=0）。返回已打开的子件 .prt 路径列表；已加载的子件再
+    Open 抛 "File already exists"，按幂等跳过。载入成功与否只能看
+    Parts.Open 的 loadStatus.NumberUnloadedParts（component.Prototype 对未
+    加载组件也返回占位对象且不抛异常），非 0 即抛错，不让调用方在空跑上继续。
+    嵌套子装配的孙件不在本函数范围，整棵树用 `preload_tree`。
     """
     opened = []
     children = assy.ComponentAssembly.RootComponent.GetChildren()
@@ -77,6 +77,34 @@ def preload_components(session, assy):
     return opened
 
 
+def preload_tree(session, assy, _seen=None):
+    """递归预载整棵组件树；返回本次新打开的 .prt 路径。
+
+    先按直接子件预载，再对每个已加载的子装配原型递归。`_seen` 按部件路径
+    去重，重复引用的同一子装配只进一次，循环引用不会无限递归。
+    """
+    seen = _seen if _seen is not None else set()
+    own = getattr(assy, "FullPath", None)
+    if own:
+        seen.add(own.lower())
+    opened = preload_components(session, assy)
+    root = getattr(getattr(assy, "ComponentAssembly", None), "RootComponent", None)
+    if root is None:
+        return opened
+    for c in root.GetChildren():
+        proto = c.Prototype
+        fp = getattr(proto, "FullPath", None) if proto is not None else None
+        if not (fp and fp.lower().endswith(".prt")):
+            continue
+        ca = getattr(proto, "ComponentAssembly", None)
+        if getattr(ca, "RootComponent", None) is None:
+            continue
+        if fp.lower() in seen:
+            continue
+        opened += preload_tree(session, proto, seen)
+    return opened
+
+
 def find_proto_face(part, axis, sign):
     """在部件原型体上找指定轴+符号的法线平面（10 号口径；axis="X"/"Y"/"Z"）。"""
     u = ufs()
@@ -95,13 +123,17 @@ def touch_pair(session, assy, comp_movable, face_movable, comp_base, face_base, 
     """Touch 约束对 + 网络求解（10 号 s3 决定性配方）。
 
     约束必须先 DoUpdate 提交再进网络求解，否则 solve 返回 OK 但组件不动。
-    Invisible 标记在 finally 内删除，与 SKILL.md §3 的配对要求一致。
+    Invisible 标记在 finally 内删除；异常分支先 UndoToMark 再 DeleteUndoMark，
+    调用方无需拿标记自行回滚。Solve 返回非 None 即求解失败，跳过 ApplyToModel
+    并把 err 返回给调用方。
     """
     occ_movable = comp_movable.FindOccurrence(face_movable)
     occ_base = comp_base.FindOccurrence(face_base)
     pos = assy.ComponentAssembly.Positioner
     pos.BeginAssemblyConstraints()
     mark = None
+    net = None
+    ok = False
     try:
         mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, "nxlib_touch")
         con = pos.CreateConstraint(True)
@@ -112,13 +144,20 @@ def touch_pair(session, assy, comp_movable, face_movable, comp_base, face_base, 
         net = pos.EstablishNetwork()
         net.AddConstraint(con)
         err = net.Solve()
-        net.ApplyToModel()
+        if err is None:
+            net.ApplyToModel()
         con.SetName(name)
-        pos.ClearNetwork()
+        ok = True
     finally:
         try:
-            pos.EndAssemblyConstraints()
+            if net is not None:
+                pos.ClearNetwork()
         finally:
-            if mark is not None:
-                session.DeleteUndoMark(mark, "nxlib_touch")
+            try:
+                pos.EndAssemblyConstraints()
+            finally:
+                if mark is not None:
+                    if not ok:
+                        session.UndoToMark(mark, "nxlib_touch")
+                    session.DeleteUndoMark(mark, "nxlib_touch")
     return err

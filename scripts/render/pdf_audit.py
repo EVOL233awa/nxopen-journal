@@ -88,6 +88,11 @@ def pdf_gate(path, expect=None, min_words=3):
     if not pages:
         return {"verdict": FAIL, "codes": ["DELIV_E_PDF_EMPTY"],
                 "notes": ["no page"]}
+    blank = [i for i, p in enumerate(pages)
+             if p["words"] == 0 and p["drawings"] == 0]
+    if blank:
+        return {"verdict": FAIL, "codes": ["DELIV_E_PDF_EMPTY"],
+                "notes": ["blank page(s): " + ",".join(str(i) for i in blank)]}
     all_tokens = [t for p in pages for t in p["tokens"]]
     codes, notes = [], []
     if expect:

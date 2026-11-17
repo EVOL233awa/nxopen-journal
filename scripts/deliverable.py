@@ -17,7 +17,9 @@ import math
 import os
 import re
 
-from stl_math import read_stl_triangles
+from stl_math import (mesh_bbox as _stl_mesh_bbox,
+                      mesh_volume as _stl_mesh_volume,
+                      read_stl_triangles, topology)
 
 # ---------------------------------------------------------------- 通用
 
@@ -86,11 +88,7 @@ def step_census(path):
 
     pmi_types = {}
     for typ in counts:
-        if typ.endswith("_TOLERANCE") or typ in (
-                "GEOMETRIC_ITEM_SPECIFIC_USAGE", "DRAUGHTING_MODEL",
-                "DIMENSIONAL_SIZE", "DIMENSIONAL_LOCATION",
-                "SHAPE_DIMENSION_REPRESENTATION", "DATUM_FEATURE",
-                "DATUM_SYSTEM", "DATUM_TARGET"):
+        if typ.endswith("_TOLERANCE") or typ in PMI_TYPE_NAMES:
             pmi_types[typ] = counts[typ]
 
     empty_draughting = len(re.findall(
@@ -175,38 +173,13 @@ def _vnorm(a):
     return math.sqrt(_vdot(a, a))
 
 
-def _weld_key(v, digits=6):
-    return (round(v[0], digits), round(v[1], digits), round(v[2], digits))
+def stl_census(path, weld_digits=5):
+    """STL 拓扑体检：水密/绕向/欧拉数/体积/分量/包盒/退化面。
 
-
-class _UnionFind(object):
-    def __init__(self):
-        self.parent = {}
-
-    def find(self, x):
-        root = x
-        while self.parent[root] != root:
-            root = self.parent[root]
-        while self.parent[x] != root:
-            nxt = self.parent[x]
-            self.parent[x] = root
-            x = nxt
-        return root
-
-    def add(self, x):
-        if x not in self.parent:
-            self.parent[x] = x
-
-    def union(self, a, b):
-        self.add(a)
-        self.add(b)
-        ra, rb = self.find(a), self.find(b)
-        if ra != rb:
-            self.parent[rb] = ra
-
-
-def stl_census(path, weld_digits=6):
-    """STL 拓扑体检：水密/绕向/欧拉数/体积/分量/包盒/退化面。"""
+    焊接、分量、欧拉数与体积/包盒全部走 `stl_math`：同一 STL 在
+    `stl_census` 与占用门里必须得到同一组分量数。焊合位数默认 5；
+    4e-6 级顶点差是导出噪声，按 6 位会把一个实体拆成两个分量。
+    """
     tris = read_stl_triangles(path)
     if not tris:
         return {"path": os.path.abspath(path), "triangles": 0,
@@ -216,79 +189,37 @@ def stl_census(path, weld_digits=6):
                 "degenerate": 0, "vertices": 0, "edges": 0,
                 "notes": ["no triangle"]}
 
-    verts = {}
-    faces = []
     degenerate = 0
     area = 0.0
-    volume_signed = 0.0
-    uf = _UnionFind()
     for _, v0, v1, v2 in tris:
-        keys = []
-        for v in (v0, v1, v2):
-            k = _weld_key(v, weld_digits)
-            if k not in verts:
-                verts[k] = len(verts)
-            keys.append(verts[k])
-        faces.append(keys)
         cr = _vcross(_vsub(v1, v0), _vsub(v2, v0))
         a2 = _vnorm(cr)
         if a2 <= 1e-12:
             degenerate += 1
         area += 0.5 * a2
-        # 有符号体积：divergence theorem，闭合且外法向时为正。
-        volume_signed += _vdot(v0, _vcross(v1, v2)) / 6.0
-        uf.add(keys[0])
-        uf.union(keys[0], keys[1])
-        uf.union(keys[1], keys[2])
 
-    edges = {}
-    for keys in faces:
-        for a, b in ((keys[0], keys[1]), (keys[1], keys[2]),
-                     (keys[2], keys[0])):
-            edges[(a, b)] = edges.get((a, b), 0) + 1
-
-    watertight = True
-    winding = True
-    for a, b in edges:
-        if a > b:
-            continue
-        ab, ba = edges.get((a, b), 0), edges.get((b, a), 0)
-        if ab + ba != 2:
-            watertight = False
-        if ab != 1 or ba != 1:
-            winding = False
-
-    roots = set(uf.find(k) for keys in faces for k in keys)
-    n_components = len(roots)
-    n_vertices = len(verts)
-    n_edges = len(edges) // 2
-    euler = n_vertices - n_edges + len(faces)
+    topo = topology(tris, weld_digits)
+    volume_signed = _stl_mesh_volume(tris)
+    n_components = topo["components"]
+    euler = topo["euler"]
     genus = None
     if n_components and (2 * n_components - euler) % 2 == 0:
         genus = (2 * n_components - euler) // 2
 
-    lo = [1e300, 1e300, 1e300]
-    hi = [-1e300, -1e300, -1e300]
-    for _, v0, v1, v2 in tris:
-        for v in (v0, v1, v2):
-            for i in range(3):
-                lo[i] = min(lo[i], v[i])
-                hi[i] = max(hi[i], v[i])
-
     return {
         "path": os.path.abspath(path),
         "triangles": len(tris),
-        "vertices": n_vertices,
-        "edges": n_edges,
-        "watertight": watertight,
-        "winding_consistent": winding,
+        "vertices": topo["vertices"],
+        "edges": topo["edges"],
+        "watertight": topo["watertight"],
+        "winding_consistent": topo["winding_consistent"],
         "euler": euler,
         "components": n_components,
         "genus": genus,
         "volume": abs(volume_signed),
         "volume_signed": volume_signed,
         "area": area,
-        "bbox": [lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]],
+        "bbox": _stl_mesh_bbox(tris),
         "degenerate": degenerate,
         "notes": [],
     }
@@ -491,10 +422,29 @@ def dxf_gate(census, expect_units=4, expect_dims=None):
 
 # ---------------------------------------------------------------- PMI
 
+# `--pmi` 只判实体类型计数：值类判据（如 `LENGTH_MEASURE(0.05)`）可能被写成
+# 内联 `MEASURE_WITH_UNIT(...)`，实体计数看不到，须在用例里按 STEP 原文断言。
+PMI_TYPE_NAMES = frozenset((
+    "GEOMETRIC_ITEM_SPECIFIC_USAGE", "DRAUGHTING_MODEL",
+    "DIMENSIONAL_SIZE", "DIMENSIONAL_LOCATION",
+    "SHAPE_DIMENSION_REPRESENTATION", "DATUM_FEATURE",
+    "DATUM_SYSTEM", "DATUM_TARGET"))
+
+
 def pmi_gate(census, expected):
-    """按 STEP 子类型族统计；泛型 GEOMETRIC_TOLERANCE 在 NX 输出里恒为 0。"""
+    """按 STEP 子类型族统计；泛型 GEOMETRIC_TOLERANCE 在 NX 输出里恒为 0。
+
+    只接受实体类型名（`*_TOLERANCE` 与 `PMI_TYPE_NAMES`）。值类写法
+    （`LENGTH_MEASURE` 等）不在 census 的 `pmi` 字典里，传进来会直接报错，
+    不再静默判 `DELIV_E_PMI_MISSING`。
+    """
     codes, notes = [], []
     for typ, want in sorted(expected.items()):
+        if not (typ.endswith("_TOLERANCE") or typ in PMI_TYPE_NAMES):
+            raise ValueError(
+                "pmi_gate: %r is not an entity type; use one of *_TOLERANCE "
+                "or %s (value assertions belong in the journal test)"
+                % (typ, ", ".join(sorted(PMI_TYPE_NAMES))))
         got = census["pmi"].get(typ, 0)
         if got < want:
             codes.append("DELIV_E_PMI_MISSING")

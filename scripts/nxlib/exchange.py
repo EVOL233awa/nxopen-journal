@@ -5,7 +5,7 @@
 
 1. `StepCreator` 的 `ObjectTypes` 默认全 False；不设 `Solids=True` 会写出
    合法但零 B-rep 的空骨架，日志仍报成功。`export_step` 默认打开实体。
-2. AP214 默认同样写空骨架；必须显式给 NX 自带的 `step214ug.def`。
+2. AP214 默认同样写空骨架；必须显式给 NX 自带的 `ugstep214.def`。
 3. 导入 `NewPart` 必须给 `SettingsFile`（242/214 各自导入向 def）与完整
    `.prt` OutputFile；def 缺失或路径不存在时静默写约 40 KB 空壳（0 bodies），
    `Commit` 不抛异常。判定必须另起进程重开文件，不能在同一次 Commit 后读
@@ -31,22 +31,22 @@ def settings_path(schema, direction="export"):
     """
     root = nx_home()
     if schema == "ap214":
-        names = ("ugstep214.def", "step214ug.def") if direction == "export" \
-            else ("step214ug.def", "ugstep214.def")
+        names = ("ugstep214.def",) if direction == "export" \
+            else ("step214ug.def",)
         for name in names:
             p = os.path.join(root, "STEP214UG", name)
             if os.path.exists(p):
                 return p
     elif schema == "ap242":
-        names = ("ugstep242.def", "step242ug.def") if direction == "export" \
-            else ("step242ug.def", "ugstep242.def")
+        names = ("ugstep242.def",) if direction == "export" \
+            else ("step242ug.def",)
         for name in names:
             p = os.path.join(root, "TRANSLATORS", "step242", name)
             if os.path.exists(p):
                 return p
     elif schema == "ap203":
-        names = ("ugstep203.def", "step203ug.def") if direction == "export" \
-            else ("step203ug.def", "ugstep203.def")
+        names = ("ugstep203.def",) if direction == "export" \
+            else ("step203ug.def",)
         for name in names:
             p = os.path.join(root, "STEP203UG", name)
             if os.path.exists(p):
@@ -55,15 +55,24 @@ def settings_path(schema, direction="export"):
 
 
 def export_step(part, path, schema="ap242", bodies=None, pmi=False,
-                annotations=False, surfaces=False, curves=False,
+                annotations=None, surfaces=False, curves=False,
                 settings=None, input_file=None, solids=True,
                 strict_settings=True):
     """导出 STEP；返回 {path, size, schema, settings}。
 
     bodies 为 None 时导出 EntirePart；给列表时只导出选中体。
     AP214 找不到 SettingsFile 直接抛错——默认设置会静默写空骨架。
+    `annotations=None` 跟随 `pmi`：PMI 子类型要求 `PmiData` 与 `Annotations`
+    同时打开，只开一个不会产生公差子类型（`references/verification.md` §6）。
+    显式传 `pmi=True, annotations=False` 是合法但静默降级的组合，这里打一行
+    警告而不是替调用方改语义。
     """
     schema = schema.lower()
+    if annotations is None:
+        annotations = bool(pmi)
+    elif pmi and not annotations:
+        print("WARN export_step: pmi=True with annotations=False exports "
+              "PmiData only; no tolerance subtype will be written")
     path = os.path.abspath(path)
     if input_file is None:
         input_file = part.FullPath
@@ -72,12 +81,10 @@ def export_step(part, path, schema="ap242", bodies=None, pmi=False,
         raise ValueError("part file not saved: %s" % input_file)
     # 只有 AP214/AP203 必须给 def；AP242 给 step242ug.def 反而会把
     # ExportAs 覆盖成 AUTOMOTIVE_DESIGN 并丢掉 PMI 子类型。
-    if settings is None and schema in ("ap214", "ap203"):
+    if strict_settings and settings is None and schema in ("ap214", "ap203"):
         settings = settings_path(schema, "export")
     if schema in ("ap214", "ap203") and strict_settings and not settings:
-        raise ValueError("AP214 needs NX step214ug.def under %s" % nx_home())
-    if not strict_settings:
-        settings = None
+        raise ValueError("AP214 needs NX ugstep214.def under %s" % nx_home())
     if os.path.exists(path):
         os.remove(path)
 
@@ -124,13 +131,31 @@ def export_step(part, path, schema="ap242", bodies=None, pmi=False,
             "settings": settings}
 
 
+def _body_count(part):
+    return len(list(part.Bodies)) if part is not None else 0
+
+
+def _import_into_work(path):
+    """UF_PART_import 兜底：把 .prt 中间件并入当前工作件。
+
+    DEX 的 `ImportTo=WorkPart` 在部分 NX 12 安装上把几何写进 OutputFile
+    中间件、工作件却不增实体且 `Commit()` 不抛异常，只能按实体数增量发现。
+    默认模式 = 原图层、不建组、不导视图/CAM；不改工作件原有实体。
+    """
+    modes = NXOpen.UF.Part.ImportPartModes()
+    NXOpen.UF.UFSession.GetUFSession().Part.Import(
+        os.path.abspath(path), modes,
+        [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0], 1.0)
+
+
 def import_step(path, schema="ap242", target="work", output_part=None,
                 settings=None):
     """导入 STEP。target='work' 进当前工作件；'new' 落 OutputFile。
 
     两种 target 都必须给 OutputFile。'new' 的产物约 8 s 后才落盘，调用方
     必须另起进程重开验证；242/214 的纯实体均能重开，带 PMI 的 242 另按
-    PMI 普查判定。
+    PMI 普查判定。'work' 在 Commit 后实体数没增加时，用 UF_PART_import
+    把 OutputFile 中间件并入工作件（DEX 空转兜底，正常环境不触发）。
     """
     schema = schema.lower()
     path = os.path.abspath(path)
@@ -167,6 +192,7 @@ def import_step(path, schema="ap242", target="work", output_part=None,
                 os.remove(output_part)
             imp.OutputFile = output_part
             work = sess.Parts.Work
+            before = _body_count(work)
             if work is not None:
                 NXOpen.UF.UFSession.GetUFSession().Part.SetDisplayPart(
                     work.Tag)
@@ -180,8 +206,10 @@ def import_step(path, schema="ap242", target="work", output_part=None,
             imp.OutputFile = output_part
             if settings is None:
                 settings = settings_path(schema, "import")
-            if settings:
-                imp.SettingsFile = settings
+            if not settings:
+                raise ValueError("%s import needs NX def under %s"
+                                 % (schema, nx_home()))
+            imp.SettingsFile = settings
         else:
             raise ValueError("target must be 'work' or 'new'")
         imp.Commit()
@@ -191,7 +219,11 @@ def import_step(path, schema="ap242", target="work", output_part=None,
         except Exception:
             pass
     if target == "work":
-        return sess.Parts.Work
+        work = sess.Parts.Work
+        if work is not None and _body_count(work) == before \
+                and os.path.exists(output_part):
+            _import_into_work(output_part)
+        return work
     return None
 
 

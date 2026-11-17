@@ -77,13 +77,16 @@ def main():
 
     def hole_circles():
         """Near-end circle of every Ø8 hole: match p1 == p2 (a full circle
-        reports its centre twice), keep the larger z of the two wall circles."""
+        reports the same vertex twice). p1 is a reference point on the circle,
+        not the centre; the centre comes from AskFaceData(face)[1]."""
         by_xy = {}
         for face in body.GetFaces():
             if face.SolidFaceType != NXOpen.Face.FaceType.Cylindrical:
                 continue
             try:
-                r = abs(ufs.Modeling.AskFaceData(face.Tag)[4])
+                fd = ufs.Modeling.AskFaceData(face.Tag)
+                r = abs(fd[4])
+                cx, cy = float(fd[1][0]), float(fd[1][1])
             except Exception:
                 continue
             if abs(r - HOLE_R) > 0.01:
@@ -92,9 +95,9 @@ def main():
                 p1, p2 = e.GetVertices()
                 if abs(p1.X - p2.X) > 0.05 or abs(p1.Y - p2.Y) > 0.05:
                     continue
-                key = (round(p1.X, 3), round(p1.Y, 3))
+                key = (round(cx, 3), round(cy, 3))
                 if key not in by_xy or p1.Z > by_xy[key][0].Z:
-                    by_xy[key] = (p1, e)
+                    by_xy[key] = (NXOpen.Point3d(cx, cy, p1.Z), e)
         items = [by_xy[k] for k in sorted(by_xy)]
         print("HOLE_CIRCLES=%d" % len(items))
         if len(items) != 4:

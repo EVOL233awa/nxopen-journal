@@ -35,9 +35,12 @@ HOLE_R = 5.0
 BIG_D = 20.0
 BIG_R = 10.0
 
-# 死路 1：NXOpen.xml 标注 For internal use only 的运动副枚举
-DEAD_TYPES = ("Hinge", "Cylindrical", "Ball", "Screw", "Gear",
-              "RackPinion", "Cable")
+# 死路 1：NXOpen.xml 标注 For internal use only 的定位枚举。
+# 名单与 assembly.md §A.2 的 13 项逐字一致：只验 7 项会让“13 项全拒”缺 6 项证据。
+DEAD_TYPES = ("Hinge", "Slider", "Cylindrical", "Ball", "Screw", "Gear",
+              "RackPinion", "Cable", "CommonOffsetTransform",
+              "LinearPattern", "CircularPattern", "Linear2dPattern",
+              "RadiantPattern")
 
 # 组件放置：接地件在原点，被约束件故意移开（falsify 基线）
 PLACE = {"m17_small": (0.0, 0.0, 0.0),
@@ -331,6 +334,58 @@ def main():
         print("CONC_EDGE_MOVED dev=%.4f (status alone would not show this)"
               % moved["m17_big"])
     stage("conc_edge", stage_edge_concentric)
+
+    # ---- A.2b AlignLock：建得出来，但解算静默 CannotSolve（不可用项）----
+    def stage_alignlock():
+        c_fix = None
+        con = None
+        st = "?"
+        try:
+            c_fix = pos.CreateConstraint(True)
+            c_fix.ConstraintType = NXOpen.Positioning.Constraint.Type.Fix
+            c_fix.CreateConstraintReference(
+                comp["m17_small"], comp["m17_small"], False, False, False)
+            c_fix.SetName("AL_FIX")
+            con = pos.CreateConstraint(True)
+            con.ConstraintType = NXOpen.Positioning.Constraint.Type.AlignLock
+            for c, g in ((comp["m17_small"], e_small),
+                         (comp["m17_big"], e_big)):
+                faces = [f for f in g.GetFaces()
+                         if f.SolidFaceType == NXOpen.Face.FaceType.Cylindrical]
+                if not faces:
+                    raise RuntimeError("no cylindrical face on the hole edge")
+                occ = c.FindOccurrence(faces[0])
+                if occ is None:
+                    raise RuntimeError("FindOccurrence(cyl face) returned None")
+                con.CreateConstraintReference(c, occ, False, False, False)
+            con.SetName("ALIGNLOCK")
+            mark = session.SetUndoMark(
+                NXOpen.Session.MarkVisibility.Invisible, "al17")
+            session.UpdateManager.DoUpdate(mark)
+            net = pos.EstablishNetwork()
+            net.AddConstraint(c_fix)
+            net.AddConstraint(con)
+            net.Solve()
+            net.ApplyToModel()
+            pos.ClearNetwork()
+            st = solve_status(con)
+        finally:
+            for c in (c_fix, con):
+                if c is not None:
+                    try:
+                        c.Persistent = False
+                    except Exception:
+                        pass
+            try:
+                pos.DeleteNonPersistentConstraints()
+            except Exception:
+                pass
+        print("ALIGNLOCK status=%s" % st)
+        if st != "CannotSolve":
+            raise RuntimeError(
+                "AlignLock status %s != CannotSolve; the documented "
+                "'buildable but unusable' route changed" % st)
+    stage("alignlock_cannot_solve", stage_alignlock)
 
     # ---- A2) 拖动复验：圆边 Concentric 是不是一个真转动副（0T+1R）？
     #      按本技能自己的方法学，静态 DOF 读数不算数 —— 必须拖动后量几何。

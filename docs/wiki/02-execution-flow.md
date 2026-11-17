@@ -37,13 +37,14 @@ graph TD
 
 ## 动态门：run_journal_batch.bat + RUN_TESTS.bat
 
-批处理入口做三件事，都不是可选的：
+批处理入口做四件事，都不是可选的：
 
 1. `NX_HOME` 解析，找不到 `run_journal.exe` 就打 `ERROR: run_journal.exe not found under NX_HOME=...` 并以 2 退出（`scripts/run_journal_batch.bat` 的 `:rj_no_nx` 分支）。
-2. 工作目录 `pushd` 与无条件回显 `=== RUN_JOURNAL workdir=... ===`——workdir 建失败时 `pushd` 不报错，journal 会在调用者 CWD 里落盘（`scripts/run_journal_batch.bat` 的 workdir 注释）。
+2. 工作目录 `mkdir` + `pushd` 与无条件回显 `=== RUN_JOURNAL workdir=... ===`——建目录或进入失败打 `ERROR: cannot enter workdir: ...` 并以 2 退出；只有未给 workdir 时才用调用者 CWD（`scripts/run_journal_batch.bat` 的 workdir 分支）。
 3. `call ugiicmd.bat` 后跑 `run_journal.exe`，回显退出码（`scripts/run_journal_batch.bat` 调用 `ugiicmd.bat` 处）。
+4. `run_journal.exe` 的 stdin 隔离（`.bat` 的 `< NUL`，包装器的 `stdin=subprocess.DEVNULL`）：DEX 的 `step214ug.cmd` 在转换器失败时执行 `pause`，不隔离就是静默挂死。
 
-套件的判决在 `:gate` 子过程：优先用 `scripts/run_journal_checked.py` 判 ok（token + `_FAIL`/`STAGE_FAIL`/`FATAL`/`Traceback`；`memory access violation` 只对 `GATE_ALLOW_CRASH` 登记的 26/28 放行）；宿主无 python 时回退 `findstr` 三连（token + `_FAIL` + 非 `TESTxx_FATAL` 的 `FATAL`）。退出码不参与判决，原因写在文件头：`run_journal` 只把未捕获异常变成非零，journal 按 SKILL.md §3 逐步 try/except 后继续，失败被吞时退出码仍是 0；反过来用例 26 故意复现原生崩溃，日志写 successful 而退出码是 1（`scripts/tests/RUN_TESTS.bat` 文件头的 26 号崩溃说明）。
+套件的判决在 `:gate` 子过程：优先用 `scripts/run_journal_checked.py` 判 ok（token + `_FAIL`/`STAGE_FAIL`/`FATAL`/`Traceback`；`memory access violation` 只对 `GATE_ALLOW_CRASH` 登记的 26/28 放行）；宿主无 python 时回退同一组 `findstr` 标记（token、`_FAIL`、任意 `FATAL`、`Traceback`；`SystemExit: 0` 干净块与 26/28 的崩溃文本除外）。退出码不参与判决，原因写在文件头：`run_journal` 只把未捕获异常变成非零，journal 按 SKILL.md §3 逐步 try/except 后继续，失败被吞时退出码仍是 0；反过来用例 26 故意复现原生崩溃，日志写 successful 而退出码是 1（`scripts/tests/RUN_TESTS.bat` 文件头的 26 号崩溃说明）。
 
 ## 套件的三个收尾段
 

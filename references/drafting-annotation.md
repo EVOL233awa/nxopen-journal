@@ -44,13 +44,13 @@ def set_global_prefs(wp):
 
 道位算法（图纸坐标）：① 第一道距轮廓 10mm、道距 7mm（GB 间距 5~10 且 ≥7）；② 大在外、小在内（否则界线交叉；孔距 80 内道、总长 100 外道）；③ 高度链同道相接（板厚 12 + 凸台 8 内道，总体 20 外道）；④ 每尺寸只标一次；⑤ 直径标非圆投影或圆上直接引出；⑥ 不封闭链（一环不标或括号）；⑦ 集中标在特征最清晰视图，孔位从 ARC_CENTER 引出；⑧ 界线超出 ~2mm、箭头长≈6×宽、中心线超出 2~5mm（NX 自动，pos-gap/past-arrow 设 0）。
 
-视图映射（org 与 dwg 点都要用；sheet = ref + proj(p) − proj(中心)）：
+视图映射（org 与 dwg 点都要用；`s` = `ufs.Draw.AskViewScale(view.Tag)` 第 2 项（绝对比例），`sheet = ref + s*(proj(p) − proj(中心))`）：
 
 | 视图 | 投影 | 图纸坐标（ref 为视图中心） |
 | --- | --- | --- |
-| Front | (x, z) | (fx + x−cx, fy + z−cz) |
-| Top   | (x, y) | (tx + x−cx, ty + y−cy) |
-| Right | (y, z) | (rx + y−cy, ry + z−cz) |
+| Front | (x, z) | (fx + s*(x−cx), fy + s*(z−cz)) |
+| Top   | (x, y) | (tx + s*(x−cx), ty + s*(y−cy)) |
+| Right | (y, z) | (rx + s*(y−cy), ry + s*(z−cz)) |
 
 org：`Create*Dim` = 尺寸线名义位置（吸附 2~3mm）；`Tabnot.Create` origin = **左上角**、向下生长（吸附 ~2mm）。
 
@@ -90,7 +90,7 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 - **`AssocDwgPos` 必须显式给，且恰 2 个 double**；留 `[0,0]` 不会画到别的视图（按自身 origin 正常渲染，无残影），长度 3 报 `Array length mismatch`。显式点渲染 ~1.5mm 关联符号，关不掉，接受。
 - 字段名 PascalCase（`ObjectAssocType`）；枚举传成员（`getattr(NXOpen.UF.Drf.AssocType, "ARC_CENTER")`），传 int 报类型错；`NXOpen.UF.Drf` 是属性容器，不可 `import NXOpen.UF.Drf`。
 - **线性尺寸两关联对象挂两条不同的边**；同边两个 END_POINT → `ComputedSize=0.0`。
-- ⚠ **装配实例边 + 剖视图，异边也不保证真值**（偏差可达零点几毫米）：PDF 文本层逐值对账，不符则删尺寸、外形写进技术要求。
+- ⚠ **装配实例边 + 剖视图，异边也不保证真值**（偏差可达数毫米，140 → 136.3）：PDF 文本层逐值对账，不符则删尺寸、外形写进技术要求。
 - **竖直尺寸显式 `TextOrientation.Aligned`**：`prefs = dim.GetDimensionPreferences(); prefs.TextOrientation = NXOpen.Annotations.TextOrientation.Aligned; dim.SetDimensionPreferences(prefs)`；UF tag → .NET 用 `for d in part.Dimensions: if int(d.Tag) == int(tag)`。角度尺寸例外（数字须水平）。
 - `ufs.Drf.Text()` 无参 = 自动关联值；**公差后缀**走 part.Dimensions + Get/改/Set AppendedText（§5）。
 - **尺寸别走 .NET**：`part.Dimensions.Create*Dimension(...)` 无头下一律 `Internal error: memory access violation`；.NET builder 报 `Unable to infer a dimension type`。
@@ -100,8 +100,8 @@ ufs.Drf.CreateVerticalDim(o1, o2, ufs.Drf.Text(), [155.0, 191.0, 0.0])
 | `CreateDiameterDim` | 可用，返回 tag；出现 `DiameterDimension` |
 | `CreateHoleDim` | 可用（3 参）；出现 `HoleDimension` |
 | `CreateRadiusDim` | 可用：圆弧/整圆边，`ComputedSize` 取半径（非直径）；直线边报 `NXException: The input object is invalid.`；按 `Edge.SolidEdgeType == EdgeType.Circular` 筛，不按面半径 |
-| `CreateVertical/HorizontalChainDimension` | **3 参**（`List[NXOpen.UF.Drf.Object]`, `int`, `NXOpen.UF.DrfText_Struct`） |
-| `CreateHorizontal/VerticalBaselineDimension` | 同上 3 参 |
+| `CreateVertical/HorizontalChainDimension` | **3 参**，第 3 参 `dimension3dOrigin: list[float]`（绝对坐标 3D 原点）；`objectSet` 纵向为 `List[NXOpen.UF.Drf.Object]`、横向为单个 `NXOpen.UF.Drf.Object` |
+| `CreateHorizontal/VerticalBaselineDimension` | **3 参**（`List[NXOpen.UF.Drf.Object]`, `int`, `list[float]`） |
 | `CreateOrdinateDim` | **12 参**；`CreateOrdinateOrigin` **7 参** |
 | `CreateCylindricalDim` | **4 参** |
 
@@ -238,7 +238,7 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 
 ## 7. 中心线与中心标记
 
-- 圆心十字：`Centerlines.CreateCenterMarkBuilder(CenterMark.Null)`，`Locations.Add(圆边, view, Point3d(圆心))`。⚠ 一个 builder 的 location **上限是 2**，第 3 个起被拒（复测 n=3、n=4 → `Error number: 1175305`；`07_center_marks.py` 头注记同样 `n=3/n=4 → 1175305`、`n=8 → 1175307`；子代理台账记 `n=3 → 1175307` 与本地不符，以**"≥3 被拒"**为准，别断言具体码）；稳妥仍是一个 builder 一个 location、批量循环建（`scripts/tests/07_center_marks.py`）。
+- 圆心十字：`Centerlines.CreateCenterMarkBuilder(CenterMark.Null)`，`Locations.Add(圆边, view, Point3d(圆心))`。⚠ 一个 builder 的 location **上限是 2**，第 3 个起被拒（`07_center_marks.py` 头注记 `n=3/n=4 → 1175305`、`n=8 → 1175307`；报码随规模不同，按**"≥3 被拒"**判，别断言具体码）；稳妥仍是一个 builder 一个 location、批量循环建（`scripts/tests/07_center_marks.py`）。
 - 通孔圆柱面两个等半径圆（近端可见、远端隐藏），`ARC_CENTER` 挂哪个都成功；按 `p1 == p2` 识别整圆、按半径筛孔壁、取 z 大者。
 - 轴线：`CreateCenterline2dBuilder(Centerline2d.Null)`，`Type = Types.ByPoints`，`Point1/Point2.SetValue(关联边, view, 模型点)`；两点取对称要素两心。
 - 回转体三视图都画对称轴（Front/Right 竖直 + Top 十字）。
@@ -257,7 +257,7 @@ ufs.Drf.CreateIdSymbol(NXOpen.UF.Drf.IdSymbolType.SYM_CIRCLE, "1", "",
 9. 表格在图框内，不压标题栏。
 10. 尺寸链留一环不标或加括号，不封闭。
 
-## 9. 高发约束（跨域通用） <!-- trap-list -->
+## 9. 标注域高发约束 <!-- trap-list -->
 
 - `CenterMarkBuilder` 一个 builder 最多 2 个 location、第 3 个起被拒（§7）；`CreateParallelDim` 线性边禁用，用 hdim/vdim（§4）。
 - `AssocDwgPos` 必须显式给（恰 2 个 double），关联点即图纸落点（§4）。

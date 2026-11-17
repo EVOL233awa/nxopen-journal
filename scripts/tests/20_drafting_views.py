@@ -73,6 +73,7 @@ from nxlib.drafting import (
     cell_text, export_pdf, new_table,
     pin_table_geometry, read_cell, view_by_prefix, view_names, visible_count,
 )
+import gb_drawing as gb
 
 PLATE = os.path.abspath("m20_plate.prt")
 PDF_FULL = os.path.abspath("m20_full.pdf")
@@ -141,6 +142,19 @@ def main():
         print("BLANKED_DATUMS=%d" % n)
         return n
     stage("blank_datums", s_blank)
+
+    # Save a named model view BEFORE any sheet exists: Views.SaveAs raises
+    # "Internal error" once a drawing view is open (gb-drawing.md 未覆盖范围).
+    # gb.base_view consumes it below, so this also gates the documented order.
+    def s_model_view():
+        gb.save_model_view(part, "VFRONT",
+                           ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+                            (0.0, 0.0, 1.0)))
+        v = part.Views.FindObject("VFRONT")
+        if v is None:
+            raise RuntimeError("save_model_view did not persist VFRONT")
+        print("MODEL_VIEW=%s" % v.Name)
+    stage("save_model_view", s_model_view)
 
     sheet = None
     empty_sheet = None
@@ -326,6 +340,38 @@ def main():
               % ",".join("%s:%d" % (n, visible_count(
                   view_by_prefix(sheet, n.split("@")[0]))[0]) for n in new))
     stage("projected_views", s_projected)
+
+    # ------------------------------------ 3b. gb_drawing base/projected route
+    # The module wrappers (save_model_view -> base_view -> projected_views) are
+    # the documented route for views that View.Base cannot orient; gate both
+    # the base view and the two orthographic projections with content counts.
+    def s_gb_views():
+        sheet.Open()
+        bv = gb.base_view(part, sheet, "VFRONT")
+        bv.SetDrawingReferencePoint(NXOpen.Point3d(60.0, 120.0, 0.0))
+        ufs.Draw.UpdateOneView(sheet.Tag, bv.Tag)
+        sheet.Open()
+        cnt, err = visible_count(bv)
+        if cnt < 1:
+            raise RuntimeError("gb.base_view content empty (%s)" % err)
+        made = gb.projected_views(part, sheet, bv, dx=0.0, dy=-60.0)
+        sheet.Open()
+        counts = {}
+        for name, tag in made.items():
+            v = [x for x in sheet.GetDraftingViews()
+                 if int(x.Tag) == int(tag)]
+            if not v:
+                raise RuntimeError("gb.projected_views view %s not on sheet"
+                                   % name)
+            n, err = visible_count(v[0])
+            counts[name] = n
+            if n < 1:
+                raise RuntimeError("gb projected view %s empty (%s)"
+                                   % (name, err))
+        print("GB_BASE_VISIBLE=%d GB_PROJECTED=%s"
+              % (cnt, ",".join("%s:%d" % kv for kv in sorted(counts.items()))))
+        return counts
+    stage("gb_base_and_projected_views", s_gb_views)
 
     # ---------------------------------------------------- 4. detail view
     def s_detail():

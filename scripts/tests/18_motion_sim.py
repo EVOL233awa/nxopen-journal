@@ -10,6 +10,10 @@
 #   * 运动求解（MotionSolutionBuilder Normal/Dynamic + Step + TimeExpression）
 #   * 结果提取：AskNumberOfAnimationFrames / AskForceResults /
 #     AskLinkTransfromForGivenFrame（只有 2 参形式；3 参回退不存在）
+#   * 结果接口：AskVelocityResults / AskAccelerationResults（Link tag，四参）
+#   * 连接件/载荷/后处理：CouplerGear 建出；ScalarTorque 求解前建出并用
+#     AskTorqueResults 读回施加值（力矩对象 tag，非关节 tag）；
+#     PostProcess.CreateSequence 的失败形态
 #
 # 检查只卡「运动学」（可靠）：曲柄恒速特性（每帧转角恒定）、摇杆摆角 60.02°、
 #   每转换向 2 次。
@@ -20,9 +24,9 @@
 #   本用例只校验反力 API 通路（返回条数、数值有限非空）。物理可信的反力须改用
 #   静定平面刚体动力学模型另解 —— 见 references/motion.md §M.8。
 # ⚠ 速度/加速度口径：AskVelocity/AccelerationResults(tag, MotionType, VC.MAGNITUDE,
-#   RF.ABSOLUTE) —— **四个实参缺一不可**（缺 MotionType 抛 AttributeError）；对 Link 与
-#   Joint tag 都返回逐帧值，接地件与驱动关节读 0 属物理正确。本用例的速度判据走帧变换
-#   差分 + 外部解析解，未用该接口。
+#   RF.ABSOLUTE) —— **四个实参缺一不可**（缺 MotionType 抛 AttributeError）；tag 取 Link
+#   才返回逐帧值，关节 tag 的 ROTATION 读数为全零（驱动副亦然）。7b 用该接口读曲柄角速度
+#   与质心加速度，与帧变换差分互为交叉校验。
 #
 # 解析预期由本文件外的整周独立扫描算出（Grashof: 20+70=90 ≤ 60+40=100，AB 为曲柄）。
 #
@@ -70,6 +74,7 @@ GROUND = "机架"
 LAM = 0.5                      # kg/m 等效线密度（等效均质细杆）
 
 OMEGA_DEG_S = 360.0            # 曲柄恒速 1 转/秒
+OMEGA_RAD_S = OMEGA_DEG_S * math.pi / 180.0
 T_END = 1.0
 NSTEP = 360
 
@@ -217,6 +222,24 @@ def _main():
     jdb.Destroy()
     say("DRIVER OK %.1f deg/s" % OMEGA_DEG_S)
 
+    # ---- 5b. 标量力矩：必须在求解前建，否则不进结果库 ----
+    # NX12 实测：TorqueType=Joint 只接受 Revolute（挂 Cylindrical 报
+    # "An invalid type was encountered"）；读数用 AskTorqueResults 查
+    # 力矩对象本身，MAGNITUDE/Z 分量 = 施加值，X/Y 分量 = 0。
+    n_tq0 = len(list(mm.ScalarTorques))
+    stb = mm.ScalarTorques.CreateScalarTorqueBuilder(M.ScalarTorque.Null)
+    stb.Name = "ST_JOINT_B"
+    stb.TorqueType = M.ScalarTorqueBuilder.ScalarTorqueType.Joint
+    stb.Joint.Value = joints["J_B"]
+    stb.ValueType = M.ForceValueTypes.Constant
+    stb.ApplicationType = M.ScalarTorqueBuilder.AppType.ActionReaction
+    set_expr(sim_part, stb.ValueExpression, "10.0")
+    stb.Validate()
+    torque_obj = stb.Commit()
+    stb.Destroy()
+    say("SCALAR_TORQUE_BUILD %d->%d value=10.0 N·mm on J_B"
+        % (n_tq0, len(list(mm.ScalarTorques))))
+
     # ---- 6. 求解 ----
     sb = mm.MotionSolutions.CreateSolutionBuilder(M.MotionSolution.Null)
     sb.Name = "SOL_TEST18"
@@ -316,6 +339,106 @@ def _main():
         % (rocker_span, EXP_ROCKER_SPAN, TOL_SPAN))
     say("ROCKER_REVERSALS=%d  (解析预期 %d)" % (revs, EXP_REVERSALS))
 
+    # ---- 7b. UF 结果接口四参口径（AskVelocity/AccelerationResults）----
+    # tag 取 Link（关节 tag 读速度为全零，NX12 实测）。
+    MT = ufs.Motion.MotionType
+    vel_ok = False
+    vel_detail = ""
+    try:
+        r = ufs.Motion.AskVelocityResults(
+            links["曲柄"].Tag, MT.ROTATION, VC.MAGNITUDE, RF.ABSOLUTE)
+        vals = [float(v) for v in r[1]]
+        vmax = max(abs(v) for v in vals) if vals else -1.0
+        vel_ok = (len(vals) == nfr and
+                  abs(vmax - OMEGA_RAD_S) <= 0.02 * OMEGA_RAD_S)
+        vel_detail = "n=%d |w|max=%.5f vs %.5f rad/s" % (
+            len(vals), vmax, OMEGA_RAD_S)
+    except Exception as exc:
+        vel_detail = "%s: %s" % (type(exc).__name__,
+                                 str(exc).splitlines()[0][:80])
+    say("UF_VELOCITY ok=%s %s" % (vel_ok, vel_detail))
+
+    acc_ok = False
+    acc_detail = ""
+    ACC_EXPECT = OMEGA_RAD_S * OMEGA_RAD_S * 10.0   # mass centre r=10 mm
+    try:
+        r = ufs.Motion.AskAccelerationResults(
+            links["曲柄"].Tag, MT.TRANSLATION, VC.MAGNITUDE, RF.ABSOLUTE)
+        vals = [float(v) for v in r[1]]
+        amax = max(abs(v) for v in vals) if vals else -1.0
+        acc_ok = (len(vals) == nfr and abs(amax - ACC_EXPECT)
+                  <= 0.05 * ACC_EXPECT)
+        acc_detail = "n=%d |a|max=%.3f vs %.3f mm/s^2" % (
+            len(vals), amax, ACC_EXPECT)
+    except Exception as exc:
+        acc_detail = "%s: %s" % (type(exc).__name__,
+                                 str(exc).splitlines()[0][:80])
+    say("UF_ACCELERATION ok=%s %s" % (acc_ok, acc_detail))
+
+    # ---- 7c. 连接件/载荷/后处理：建得出来 + 失败形态 ----
+    coupler_ok = False
+    coupler_detail = ""
+    try:
+        n0 = len(list(mm.Couplers))
+        cb = mm.Couplers.CreateCouplerGearBuilder(M.CouplerGear.Null)
+        cb.Name = "GEAR_AB"
+        cb.FirstJoint.Value = joints["J_A"]
+        cb.SecondJoint.Value = joints["J_B"]
+        cb.FirstRadiusExpression.RightHandSide = "20.0"
+        cb.SecondRadiusExpression.RightHandSide = "40.0"
+        cb.RatioExpression.RightHandSide = "-0.5"
+        cb.ContactPoint = sim_part.Points.CreatePoint(
+            NXOpen.Point3d(60.0, 0.0, 0.0))
+        cb.Validate()
+        cb.Commit()
+        cb.Destroy()
+        n1 = len(list(mm.Couplers))
+        coupler_ok = n1 == n0 + 1
+        coupler_detail = "couplers %d->%d" % (n0, n1)
+    except Exception as exc:
+        coupler_detail = "%s: %s" % (type(exc).__name__,
+                                     str(exc).splitlines()[0][:90])
+    say("COUPLER ok=%s %s" % (coupler_ok, coupler_detail))
+
+    torque_ok = False
+    torque_detail = ""
+    try:
+        def torque_vals(comp):
+            r = ufs.Motion.AskTorqueResults(
+                torque_obj.Tag, getattr(VC, comp), RF.ABSOLUTE)
+            return [float(v) for v in r[1]]
+
+        mag = torque_vals("MAGNITUDE")
+        rx = torque_vals("XCOMPONENT")
+        ry = torque_vals("YCOMPONENT")
+        rz = torque_vals("ZCOMPONENT")
+        mag_dev = max(abs(v - 10.0) for v in mag)
+        z_dev = max(abs(abs(v) - 10.0) for v in rz)
+        xy = max(max(abs(v) for v in rx), max(abs(v) for v in ry))
+        torque_ok = (len(mag) == nfr and mag_dev <= 0.01
+                     and z_dev <= 0.01 and xy <= 1e-6)
+        torque_detail = ("n=%d |M|-10 dev=%.6f |Z|-10 dev=%.6f XY=%.1e"
+                         % (len(mag), mag_dev, z_dev, xy))
+    except Exception as exc:
+        torque_detail = "%s: %s" % (type(exc).__name__,
+                                    str(exc).splitlines()[0][:90])
+    say("SCALAR_TORQUE ok=%s %s" % (torque_ok, torque_detail))
+
+    post_ok = False
+    post_detail = ""
+    try:
+        pp = NXOpen.Session.GetSession().MotionSession.PostProcess
+        try:
+            pp.CreateSequence()
+            post_detail = "CreateSequence did NOT raise"
+        except Exception as exc:
+            post_ok = True
+            post_detail = "%s: %s" % (type(exc).__name__,
+                                      str(exc).splitlines()[0][:70])
+    except Exception as exc:
+        post_detail = "PostProcess unreachable: %s" % type(exc).__name__
+    say("POSTPROCESS_RAISES ok=%s %s" % (post_ok, post_detail))
+
     # ---- 8b. 落盘逐帧曲线数据（供人查看与出图，不作判据）----
     # 曲线图要看的是「从动件怎么动」，判据看的是上面的数值；两者同源但用途不同，
     # 所以这里只落盘，不参与 PASS/FAIL。
@@ -346,6 +469,11 @@ def _main():
          "%d vs %d" % (revs, EXP_REVERSALS)),
         ("反力数据通路", force_finite and nforce == 4 * len(joints),
          "ok=%d/%d finite=%s" % (nforce, 4 * len(joints), force_finite)),
+        ("UF 速度读数（四参）", vel_ok, vel_detail),
+        ("UF 加速度读数（四参）", acc_ok, acc_detail),
+        ("齿轮连接件可建", coupler_ok, coupler_detail),
+        ("标量力矩读数", torque_ok, torque_detail),
+        ("后处理失败形态", post_ok, post_detail),
     ]
     allok = True
     for name, ok, detail in checks:

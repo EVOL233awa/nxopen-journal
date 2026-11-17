@@ -214,7 +214,18 @@ def mesh_bbox(mesh):
 
 # ---------------------------------------------------------------- 连通分量
 
-def components(mesh, weld=1e-5):
+def components(mesh, weld_digits=5):
+    """连通分量数；顶点按 round(坐标, weld_digits) 焊合。"""
+    return topology(mesh, weld_digits)["components"]
+
+
+def topology(mesh, weld_digits=5):
+    """焊接顶点 → 有向边计数 → 连通分量 + 欧拉数。
+
+    STL 的“拓扑体检”只有这一份实现：`deliverable.stl_census` 与
+    `occupancy` 都调这里。焊合按 `round(坐标, weld_digits)`，默认 5 位；
+    4e-6 级导出噪声在 5 位下合并，6 位会把它拆成两个分量。
+    """
     parent = {}
 
     def find(x):
@@ -243,7 +254,8 @@ def components(mesh, weld=1e-5):
     for tri in mesh:
         cur = []
         for v in (tri[1], tri[2], tri[3]):
-            k = (round(v[0], 5), round(v[1], 5), round(v[2], 5))
+            k = (round(v[0], weld_digits), round(v[1], weld_digits),
+                 round(v[2], weld_digits))
             if k not in ids:
                 ids[k] = len(ids)
             cur.append(ids[k])
@@ -251,4 +263,35 @@ def components(mesh, weld=1e-5):
         add(cur[0])
         union(cur[0], cur[1])
         union(cur[1], cur[2])
-    return len(set(find(t[0]) for t in tri_ids))
+
+    edges = {}
+    for keys in tri_ids:
+        for a, b in ((keys[0], keys[1]), (keys[1], keys[2]),
+                     (keys[2], keys[0])):
+            edges[(a, b)] = edges.get((a, b), 0) + 1
+
+    watertight = True
+    winding = True
+    for a, b in edges:
+        if a > b:
+            continue
+        ab, ba = edges.get((a, b), 0), edges.get((b, a), 0)
+        if ab + ba != 2:
+            watertight = False
+        if ab != 1 or ba != 1:
+            winding = False
+
+    roots = set(find(k) for keys in tri_ids for k in keys)
+    n_components = len(roots)
+    n_vertices = len(ids)
+    n_edges = len(edges) // 2
+    euler = n_vertices - n_edges + len(tri_ids)
+    return {
+        "vertices": n_vertices,
+        "edges": n_edges,
+        "faces": len(tri_ids),
+        "components": n_components,
+        "euler": euler,
+        "watertight": watertight,
+        "winding_consistent": winding,
+    }

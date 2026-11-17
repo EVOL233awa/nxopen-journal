@@ -13,7 +13,7 @@ import NXOpen
 import NXOpen.Features
 import NXOpen.UF
 
-from .session import _cross as _session_cross, _dot, _sub as _session_sub, _ufs, _unit as _session_unit
+from .session import _cross as _session_cross, _dot, _sub as _session_sub, _ufs, _unit as _session_unit, _mass_units
 
 NULL = NXOpen.NXObject.Null
 VIEW_REORIENT_FALSE = NXOpen.Sketch.ViewReorient.FalseValue
@@ -92,18 +92,14 @@ def face_collector(wp, faces):
 
 def volume(wp, body):
     """质量属性体积 mm³（14/15 号口径）。"""
-    uc = wp.UnitCollection
-    units = [uc.FindObject(n) for n in
-             ("SquareMilliMeter", "CubicMilliMeter", "Kilogram", "MilliMeter", "Newton")]
-    return wp.MeasureManager.NewMassProperties(units, [0.99], [body]).Volume
+    return wp.MeasureManager.NewMassProperties(
+        _mass_units(wp), [0.99], [body]).Volume
 
 
 def centroid(wp, body):
     """质量属性质心 (X, Y, Z)（22 号口径）。"""
-    uc = wp.UnitCollection
-    units = [uc.FindObject(n) for n in
-             ("SquareMilliMeter", "CubicMilliMeter", "Kilogram", "MilliMeter", "Newton")]
-    c = wp.MeasureManager.NewMassProperties(units, [0.99], [body]).Centroid
+    c = wp.MeasureManager.NewMassProperties(
+        _mass_units(wp), [0.99], [body]).Centroid
     return (c.X, c.Y, c.Z)
 
 
@@ -865,10 +861,8 @@ def extrude_subtract(wp, target_body, curves, distance_expr):
 # modeling.md §4.1 硬限制）；齿顶/齿根 = 三点弧；齿根连接 = 径向线；
 # 全齿闭合轮廓一次 UF 拉伸成体；轴孔负向拉伸求差。
 
-import math as _math  # noqa: E402  （函数内 import 亦可，这里模块级一次）
-
-_D2R = _math.pi / 180.0
-_A2R = 180.0 / _math.pi
+_D2R = math.pi / 180.0
+_A2R = 180.0 / math.pi
 
 
 def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
@@ -885,25 +879,25 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
     """
     u = ufs()
     rp = m * z / 2.0
-    rb = rp * _math.cos(alpha_deg * _D2R)
+    rb = rp * math.cos(alpha_deg * _D2R)
     ra = rp + m
     rf = rp - 1.25 * m
-    psi_b = 180.0 / (2.0 * z) + (_math.tan(alpha_deg * _D2R) - alpha_deg * _D2R) * _A2R
+    psi_b = 180.0 / (2.0 * z) + (math.tan(alpha_deg * _D2R) - alpha_deg * _D2R) * _A2R
     pitch = 360.0 / z
-    umax = _math.sqrt((ra / rb) ** 2 - 1.0)
+    umax = math.sqrt((ra / rb) ** 2 - 1.0)
     smax = umax * _A2R
     # 两套参数域不可混用：flank_xy 走 u 参数域（s∈[0,smax]），
     # 规律曲线表达式 r=rb/cos(p_s) 走压力角域（p_s∈[0,alpha_a]），
     # p_smax 必须给 alpha_a；给成 smax 齿面越过齿顶圆、与齿顶弧端点错开，
     # UF 拉伸报 "Section curves are not connected each other"
-    alpha_a = _math.degrees(_math.atan(umax))
+    alpha_a = math.degrees(math.atan(umax))
 
     def flank_xy(s, center_deg, side):
         uu = s * _D2R
-        r = rb * _math.sqrt(1.0 + uu * uu)
-        off = s - _math.degrees(_math.atan(uu))
+        r = rb * math.sqrt(1.0 + uu * uu)
+        off = s - math.degrees(math.atan(uu))
         phi = center_deg + side * (psi_b - off)
-        return [r * _math.cos(phi * _D2R), r * _math.sin(phi * _D2R), 0.0]
+        return [r * math.cos(phi * _D2R), r * math.sin(phi * _D2R), 0.0]
 
     # 1) 参数表达式（Number 无量纲，公式链可改值联动）
     for nm, val in [("p_gear_m", m), ("p_gear_z", float(z)),
@@ -961,13 +955,13 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
         th = i * pitch
         for side in (+1, -1):
             p0 = _phi0(th, side)
-            lo = [rf * _math.cos(p0 * _D2R), rf * _math.sin(p0 * _D2R), 0.0]
+            lo = [rf * math.cos(p0 * _D2R), rf * math.sin(p0 * _D2R), 0.0]
             hi = flank_xy(0.0, th, side)
             aux_tags.append(wp.Curves.CreateLine(
                 NXOpen.Point3d(lo[0], lo[1], 0.0),
                 NXOpen.Point3d(hi[0], hi[1], 0.0)).Tag)
         t_start = flank_xy(smax, th, -1)
-        t_mid = [ra * _math.cos(th * _D2R), ra * _math.sin(th * _D2R), 0.0]
+        t_mid = [ra * math.cos(th * _D2R), ra * math.sin(th * _D2R), 0.0]
         t_end = flank_xy(smax, th, +1)
         tip = u.Curve.CreateArcThru3pts(1, t_start, t_mid, t_end)
         tip_tags.append(tip)
@@ -977,9 +971,9 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
         g_mid = th + pitch / 2.0
         root = u.Curve.CreateArcThru3pts(
             1,
-            [rf * _math.cos(p_r0 * _D2R), rf * _math.sin(p_r0 * _D2R), 0.0],
-            [rf * _math.cos(g_mid * _D2R), rf * _math.sin(g_mid * _D2R), 0.0],
-            [rf * _math.cos(p_e * _D2R), rf * _math.sin(p_e * _D2R), 0.0])
+            [rf * math.cos(p_r0 * _D2R), rf * math.sin(p_r0 * _D2R), 0.0],
+            [rf * math.cos(g_mid * _D2R), rf * math.sin(g_mid * _D2R), 0.0],
+            [rf * math.cos(p_e * _D2R), rf * math.sin(p_e * _D2R), 0.0])
         root_tags.append(root)
         aux_tags.append(root)
 
@@ -997,7 +991,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
     circ = wp.Curves.CreateArc(
         NXOpen.Point3d(0.0, 0.0, 0.0),
         NXOpen.Vector3d(1.0, 0.0, 0.0), NXOpen.Vector3d(0.0, 1.0, 0.0),
-        bore_d / 2.0, 0.0, 2.0 * _math.pi)
+        bore_d / 2.0, 0.0, 2.0 * math.pi)
     u.Modl.CreateExtruded(
         [circ.Tag], "0.0", [repr(z_offset - 1.0), repr(z_offset + b_width + 1.0)],
         [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], NXOpen.UF.ModlFeatureSigns.NEGATIVE)
@@ -1012,7 +1006,7 @@ def involute_gear(wp, m, z, alpha_deg, b_width, bore_d, hub_d=0.0,
             c = wp.Curves.CreateArc(
                 NXOpen.Point3d(0.0, 0.0, 0.0),
                 NXOpen.Vector3d(1.0, 0.0, 0.0), NXOpen.Vector3d(0.0, 1.0, 0.0),
-                radius, 0.0, 2.0 * _math.pi)
+                radius, 0.0, 2.0 * math.pi)
             u.Modl.CreateExtruded(
                 [c.Tag], "0.0", [repr(z0), repr(z1)],
                 [0.0, 0.0, 0.0], [0.0, 0.0, 1.0],

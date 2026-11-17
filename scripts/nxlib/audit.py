@@ -240,15 +240,23 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
                 e.RightHandSide = "%.6f" % (val * fac)
                 rollback = None
                 try:
-                    ms.do_update("loc_%s_%d" % (name, int(fac * 100)))
+                    errs = ms.do_update("loc_%s_%d" % (name, int(fac * 100)))
+                    if errs:
+                        rollback = ["%d update errors" % errs]
                 except Exception as exc:
                     rollback = str(exc).splitlines() or [""]
                 if rollback is not None:
                     e.RightHandSide = rhs
                     try:
-                        ms.do_update("loc_restore_%s" % name)
-                    except Exception:
-                        pass
+                        rerrs = ms.do_update("loc_restore_%s" % name)
+                    except Exception as rexc:
+                        raise RuntimeError(
+                            "locality restore failed for %s: %s"
+                            % (name, rexc))
+                    if rerrs:
+                        raise RuntimeError(
+                            "locality restore failed for %s: %d update errors"
+                            % (name, rerrs))
                     row["error"] = "update rolled back: %s" % rollback[0]
                     row["factor_used"] = fac
                     row["inconclusive"] = True
@@ -272,7 +280,11 @@ def locality(part, design, plan, factor=None, area_tol=1.0, rel_tol=0.005,
                                       if r["iou"] is not None else None)]
                 # restore before deciding, and verify the part is intact
                 e.RightHandSide = rhs
-                ms.do_update("loc_restore_%s" % name)
+                rerrs = ms.do_update("loc_restore_%s" % name)
+                if rerrs:
+                    raise RuntimeError(
+                        "locality restore failed for %s: %d update errors"
+                        % (name, rerrs))
                 st_after = _state(part, bsx[0] if len(bsx) == 1 else None)
                 if not _state_matches(st_after, base_state):
                     raise RuntimeError(
@@ -386,19 +398,32 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
                 continue
             e.RightHandSide = "%.6f" % (val * (1.0 + float(min_fraction)))
             try:
-                ms.do_update("scr_%s" % name)
+                errs = ms.do_update("scr_%s" % name)
+                if errs:
+                    raise RuntimeError("update rolled back: %d update errors"
+                                       % errs)
                 moved = _mesh(part)
             except Exception as exc:
                 e.RightHandSide = rhs
                 try:
-                    ms.do_update("scr_restore_%s" % name)
-                except Exception:
-                    pass
+                    rerrs = ms.do_update("scr_restore_%s" % name)
+                except Exception as rexc:
+                    raise RuntimeError(
+                        "locality_screen restore failed for %s: %s"
+                        % (name, rexc))
+                if rerrs:
+                    raise RuntimeError(
+                        "locality_screen restore failed for %s: %d update errors"
+                        % (name, rerrs))
                 out.append({"expr": name, "structure": sid,
                             "error": (str(exc).splitlines() or [""])[0][:160]})
                 continue
             e.RightHandSide = rhs
-            ms.do_update("scr_restore_%s" % name)
+            rerrs = ms.do_update("scr_restore_%s" % name)
+            if rerrs:
+                raise RuntimeError(
+                    "locality_screen restore failed for %s: %d update errors"
+                    % (name, rerrs))
             touched = []
             for i, st in enumerate(plan.get("stations", [])):
                 key = (tuple(st["origin"]), tuple(st["normal"]))
@@ -433,27 +458,22 @@ def locality_screen(part, plan, structures, primary=None, min_fraction=0.02,
 def budget(part, structures, feature_factor=4.0, feature_offset=12):
     """G9 特征树预算 + 特征名到结构 id 的映射。
 
-    `structures` 可以是冻结结构表（list of {id, ...}）或 `schema_skeleton`
-    的输出 dict，也可以仍是结构数（int）。给表时除数量外还校验：
-    每个结构 id 至少有一个以该 id 开头的特征名；空特征名一律记错。
-    只传数字时结构数是调用方自证，报告里记 `structure_count_source=
-    "caller-int"`，不当作已校验。
+    `structures` 只接受冻结结构表（list of {id, ...}）或 `schema_skeleton`
+    的输出 dict；传 int 直接 ValueError。给表时除数量外还校验：每个结构 id
+    至少有一个以该 id 开头的特征名；空特征名一律记错。
     """
-    ids = []
-    source = "caller-int"
     if isinstance(structures, dict):
         rows = structures.get("structures") or []
         ids = [s.get("id") for s in rows if s.get("id")]
-        n = len(ids)
         source = "structure_table"
     elif isinstance(structures, (list, tuple)):
         ids = [s.get("id") for s in structures
                if isinstance(s, dict) and s.get("id")]
-        n = len(ids)
         source = "structure_table"
     else:
-        n = int(structures)
-    g9 = ms.g9_structure(part, n, feature_factor, feature_offset)
+        raise ValueError("budget: pass the structure table (list/dict), "
+                         "not a count")
+    g9 = ms.g9_structure(part, structures, feature_factor, feature_offset)
     names = []
     unnamed = []
     for f in part.Features:

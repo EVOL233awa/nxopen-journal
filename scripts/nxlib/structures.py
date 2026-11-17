@@ -308,8 +308,8 @@ def _expr_number(wp, v):
 
     轮廓点必须落成实际坐标，回转而特征参数可以吃名字（`Diameter.
     RightHandSide = "D_HOLE"`）。因此轮廓里的设计量只能在建体时求值：
-    体建成后它仍由表达式驱动，改动会跟着重算，但 builder 当下需要数字。
-    未知名字直接报错，不猜成 0。
+    轮廓落成哑曲线，建后改表达式不会移动轮廓，改值要重建；公式右值
+    直接报错。未知名字直接报错，不猜成 0。
     """
     if isinstance(v, str):
         try:
@@ -338,7 +338,8 @@ def revolved_profile(wp, profile_tr, axis_pt=(0.0, 0.0, 0.0),
     """(轴向 t, 半径 r) 轮廓 → 分段凸锥台 → 回转并合并成一个体。
 
     profile_tr: [(t, r)]，t 沿 axis_dir、r 为到轴的垂直距离；两项都可以是
-    数值或表达式名（表达式在建体时求值，之后仍由它驱动几何）；
+    数值或数字右值的表达式名（表达式在建体时求值，轮廓落成哑曲线；公式右值
+    不支持，改值要重建）；
     r == 0 的点在轴上（锥尖），相邻两点可都在轴上（该段跳过）。
 
     为什么按段回转：360° 也能吃单调的带台阶/凹陷整条轮廓（体积等于解析值），
@@ -576,20 +577,25 @@ def fillet_feasible(edge, radius_mm, min_len_factor=0.5,
     try:
         verts = [_pt3(v) for v in edge.GetVertices()]
         if len(verts) >= 2:
-            d = _unit3(verts[0], verts[-1])
+            d = _dir_between(verts[0], verts[-1])
             widths = [_face_width(f, d, verts[0]) for f in faces]
             width = min(widths) if widths else None
     except Exception:
         width = None
     dihedral = None
-    if len(normals) == 2:
+    if types == [22, 22]:
+        # 只有平面面的 AskFaceData dir 是法向；圆柱/圆锥/环面的 dir 是轴，
+        # 拿它算二面角会把轴平行于支撑面的凸台根部判成 180°。
         dp = sum(normals[0][i] * normals[1][i] for i in range(3))
         dp = max(-1.0, min(1.0, dp))
         dihedral = 180.0 - math.degrees(math.acos(dp))
     reason = ""
     if length is None or width is None:
-        reason = "edge or face geometry unreadable"
-    elif length < min_len_factor * radius_mm:
+        return {"ok": None, "reason": "edge or face geometry unreadable",
+                "length": length, "width_mm": width,
+                "dihedral_deg": dihedral, "support_radii": radii,
+                "support_types": types}
+    if length < min_len_factor * radius_mm:
         reason = ("edge %.3f too short for R%.3f (needs >= %.3f)"
                   % (length, radius_mm, min_len_factor * radius_mm))
     elif radius_mm > width + 1e-9:
@@ -626,7 +632,8 @@ def _dist3(a, b):
                      + (a[2] - b[2]) ** 2)
 
 
-def _unit3(a, b):
+def _dir_between(a, b):
+    """两点间单位方向；命名与 modeling._unit3（向量归一化）区分，避免同名不同义。"""
     d = _dist3(a, b)
     if d < 1e-9:
         raise ValueError("degenerate segment: p0 == p1")
@@ -680,7 +687,7 @@ def hole_chain(wp, target, segments, name="HOLECHAIN", back=1.5, tol=0.05,
     for i, seg in enumerate(segments):
         kind = str(seg.get("kind", "cylinder"))
         p0, p1 = _pt3(seg["p0"]), _pt3(seg["p1"])
-        d = _unit3(p0, p1)
+        d = _dir_between(p0, p1)
         length = _dist3(p0, p1)
         before = face_signature(target) if verify else {}
         if kind == "cylinder":
@@ -866,6 +873,7 @@ def trim_planes(wp, target, trims, name="TRIM", span=1000.0):
     也不该什么都没切掉（方向选反）或把整件切光。返回 `checks` 逐刀给证据。
     """
     feats, checks = [], []
+    session = NXOpen.Session.GetSession()
     for i, t in enumerate(trims):
         # 体数必须在造刀具**之前**数：刀具是独立体，布尔求差后才被吞并，
         # 造完再数会把"工具体还在"读成"修边多出一个体"。
@@ -882,11 +890,17 @@ def trim_planes(wp, target, trims, name="TRIM", span=1000.0):
         half = float(span) / 2.0
         rect = [(-half, -half), (half, -half), (half, half), (-half, half)]
         direction = (sign * n[0], sign * n[1], sign * n[2])
+        tag = "%s_%02d" % (name, i)
+        # 刀具与求差要一起回滚：布尔被拒时刀具体留在部件里（体数 +1），
+        # 下次读体数就会把"上次失败的刀具体"算成本次的成功
+        mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible,
+                                   tag)
         tool = prism(wp, sk.loop_uv(wp, frame, rect), direction, "0.0",
                      "%.6f" % float(span), help_pt=frame.pt(0.0, 0.0, 0.0))
-        _named(tool["features"][0], "%s_%02d" % (name, i))
+        _named(tool["features"][0], tag)
         try:
             cut(wp, target, tool["features"][0])
+            session.DeleteUndoMark(mark, tag)
             n_after = len(list(wp.Bodies))
             # 方向选反会把整件切掉：那时体已不存在，体积按 0 记，别去读死体
             v_after = mdl.volume(wp, target) if n_after else 0.0
@@ -907,6 +921,11 @@ def trim_planes(wp, target, trims, name="TRIM", span=1000.0):
             # 目标体整个落在刀具里时布尔直接拒绝——"Target body completely
             # inside tool body" 就是保留侧选反的指纹，原文照记，不吞不重试
             first = (str(exc).splitlines() or [""])[0][:200]
+            try:
+                session.UndoToMark(mark, tag)
+                session.DeleteUndoMark(mark, tag)
+            except Exception:
+                pass
             checks.append({
                 "index": i, "keep": keep, "removed": 0.0,
                 "bodies": len(list(wp.Bodies)), "ok": False,
@@ -955,9 +974,9 @@ def sweep_trim(wp, target, frame, profile_uz, v_span, name="SWEEPTRIM",
     台阶，就得用轮廓。做法：侧视轮廓 (u, z) 在 v=0 平面上闭合成环，沿 ±V
     拉成棱柱，再从 target 上求差。
 
-    profile_uz 是**要保留的一侧**的边界轮廓（(u,z)，逆时针），
-    `keep="above"` 表示轮廓围住的区域保留、棱柱体是刀；`keep="below"` 反过来
-    用一个大矩形减去轮廓得到刀具。v_span 给 [v0, v1]，两端各外伸 extra_mm，
+    profile_uz 是 (u,z) 平面内的闭合轮廓（逆时针）：`keep="above"` 时棱柱体
+    就是 profile 本身，求差切掉轮廓围住的区域；`keep="below"` 保留轮廓围住
+    的区域，刀具是大矩形减去轮廓。v_span 给 [v0, v1]，两端各外伸 extra_mm，
     保证切透；外伸量不要太大——刀具越长，NX 在窄壁处的求交越容易报
     intersection gaps。
 
@@ -976,6 +995,10 @@ def sweep_trim(wp, target, frame, profile_uz, v_span, name="SWEEPTRIM",
     v_lo = float(v_span[0]) - float(extra_mm)
     v_hi = float(v_span[1]) + float(extra_mm)
     direction = sk.normalize(frame.V)
+    session = NXOpen.Session.GetSession()
+    # 刀具（keep="below" 时还有内轮廓）与求差要一起回滚：布尔被拒时
+    # 刀具体留在部件里（体数 +1），污染后续体数/体积读数
+    mark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, name)
     if str(keep).lower() == "above":
         if profile_segs is not None:
             # 混合段剖面：圆弧段保持解析，端壁才是曲面
@@ -1012,11 +1035,17 @@ def sweep_trim(wp, target, frame, profile_uz, v_span, name="SWEEPTRIM",
     _named(tool["features"][0], name)
     try:
         cut(wp, target, tool["features"][0])
+        session.DeleteUndoMark(mark, name)
     except Exception as exc:
         # 刀具整个在目标体外 = 轮廓没盖住料：这是"端壁位置选错"的指纹，
         # 原文照记，不吞不重试
         first = (str(exc).splitlines() or [""])[0][:200]
-        return {"features": list(tool["features"]), "bodies": [],
+        try:
+            session.UndoToMark(mark, name)
+            session.DeleteUndoMark(mark, name)
+        except Exception:
+            pass
+        return {"features": [], "bodies": [],
                 "checks": {"removed": 0.0, "bodies": len(list(wp.Bodies)),
                            "ok": False, "added_types": [],
                            "reason": "boolean rejected: %s" % first},
@@ -1207,8 +1236,9 @@ def window_cut(wp, target, frame, plan_uv, z0, z1, name="WINDOW",
     角度不设类型在 NX12 是静默无效，所以这里不提供"只给角度"的入口。
 
     为什么不在这里做口部圆角：圆角必须在减料之后按支撑面宽度前置判定
-    （`fillet_feasible`），且支撑面宽度 < 2R 时会失败；把它塞进这个函数
-    会让失败原因和窗口本身混在一起。调用方在 `cut` 之后单独跑 `fillet_run`。
+    （`fillet_feasible`），且支撑面宽度 < R 时会失败（两邻面各吃一个 R，
+    单面门槛就是 R）；把它塞进这个函数会让失败原因和窗口本身混在一起。
+    调用方在 `cut` 之后单独跑 `fillet_run`。
 
     `checks` 记：单实体、去掉的体积、新增面类型（平面窗口应只多平面与锥面）。
     """

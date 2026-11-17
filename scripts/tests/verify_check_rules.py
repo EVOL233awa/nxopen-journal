@@ -97,11 +97,17 @@ COUNTER_EXAMPLES = [
      _WP + "    bad = NXOpen.UF.UFMotion\n", 1),
     ("5.8 ComponentAssembly.Components", "ComponentAssembly.Components 不存在",
      _WP + "    xs = wp.ComponentAssembly.Components\n", 1),
+    ("5.8 allow-probes 不豁免", "ComponentAssembly.Components 不存在",
+     _WP + "    # check_journal: allow-probes\n"
+           "    xs = wp.ComponentAssembly.Components\n", 1),
     ("5.9 Block builder 的 BooleanOption", "BooleanOption",
      _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
            "    blk.BooleanOption = 1\n", 1),
     ("5.10 NX12 无螺纹特征 builder", "CreateThreadBuilder",
      _WP + "    th = wp.Features.CreateThreadBuilder(NXOpen.Features.Feature.Null)\n", 1),
+    ("5.10 Features.Thread.Null", "Features.Thread",
+     _WP + "    t = NXOpen.Features.Thread.Null\n"
+           "    print(t)\n", 1),
     ("5.11 StepCreator 未设 ProcessHoldFlag", "ProcessHoldFlag",
      "import NXOpen\n"
      "\n"
@@ -133,9 +139,28 @@ COUNTER_EXAMPLES = [
     ("5.14b DraftBuilder 未设 AngleTolerance", "AngleTolerance",
      _WP + "    db = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
            "    db.Commit()\n", 1),
+    ("5.14b DraftBuilder 显式设 0.0", "显式设 0.0",
+     _WP + "    db = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
+           "    db.AngleTolerance = 0.0\n"
+           "    db.Commit()\n", 1),
+    ("5.14a AnnAssign 绑定与注解属性", "只读属性",
+     _WP + "    db: object = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
+           "    db.Method: int = 1\n"
+           "    db.AngleTolerance = 0.5\n", 1),
     ("5.15 ShellBuilder 未设 Tolerance", "Tolerance",
      _WP + "    sb = wp.Features.CreateShellBuilder(NXOpen.Features.Feature.Null)\n"
            "    sb.Commit()\n", 1),
+    ("5.15 ShellBuilder 显式设 0.0", "显式设 0.0",
+     _WP + "    sb = wp.Features.CreateShellBuilder(NXOpen.Features.Feature.Null)\n"
+           "    sb.Tolerance = 0.0\n"
+           "    sb.Commit()\n", 1),
+    ("5.7 from NXOpen.UF import UFDraw", "UFDraw",
+     "import NXOpen\n"
+     "from NXOpen.UF import UFDraw\n"
+     "\n"
+     "\n"
+     "def main():\n"
+     "    pass\n", 1),
     ("5.16 from math import dist", "3.6.1",
      "from math import dist\n"
      "import NXOpen\n"
@@ -145,6 +170,13 @@ COUNTER_EXAMPLES = [
      "    print(dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
     ("5.16 math.dist 属性访问", "3.6.1",
      _WP + "    import math\n"
+           "    print(math.dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
+    ("5.16 import math as m 别名", "3.6.1",
+     _WP + "    import math as m\n"
+           "    print(m.dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
+    ("5.16 allow-probes 不豁免", "3.6.1",
+     _WP + "    # check_journal: allow-probes\n"
+           "    import math\n"
            "    print(math.dist((0.0, 0.0), (3.0, 4.0)))\n", 1),
     ("5.16 math.prod", "3.6.1",
      _WP + "    import math\n"
@@ -265,6 +297,17 @@ EXTRA_CLEAN = [
      "\n"
      "def main():\n"
      "    save_checked(\"x.prt\")\n"),
+    ("点号 nxlib.session.save_checked 通过落盘校验",
+     _WP + "    wp.Save()\n"
+           "    import nxlib.session\n"
+           "    nxlib.session.save_checked(\"x.prt\")\n"),
+    ("显式设非零容差通过 5.14b/5.15",
+     _WP + "    sb = wp.Features.CreateShellBuilder(NXOpen.Features.Feature.Null)\n"
+           "    sb.Tolerance = 0.01\n"
+           "    sb.Commit()\n"
+           "    db = wp.Features.CreateDraftBuilder(NXOpen.Features.Feature.Null)\n"
+           "    db.AngleTolerance = 0.5\n"
+           "    db.Commit()\n"),
     ("2 参 ReplaceRules 传 True 合法（第二参是 createRulesWoUpdate）",
      _WP + "    sc = wp.ScCollectors.CreateCollector()\n"
            "    sc.ReplaceRules([], True)\n"),

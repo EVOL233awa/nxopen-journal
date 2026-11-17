@@ -2,6 +2,63 @@
 
 本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
+记录从 1.1.0 起；查 1.0.0 的变更用 `git tag v1.0.0` 与对应 GitHub Release。
+
+## [Unreleased]
+
+### Added
+
+- `scripts/tests/verify_runner_markers.py`：新增 stdin 隔离正反例与批处理 `< NUL` 检查。
+- `scripts/tests/33_gb_sheet.py`：补 `set_cjk_font` 字体 id 与 `dim_diameter` 增量断言。
+- `scripts/tests/49_structure_inference.py`：补闭合跑道 `roll_general` 与宽度粗筛不置不可达的断言。
+- `scripts/tests/verify_check_rules.py`：补 0.0 容差、`nxlib.session.save_checked` 点号、`UFDraw` from-import 样本。
+- `scripts/nxlib/measure.py`：`fillet_run_samples` 输出 `closed`（面邻接环 + 至少两条支撑）。
+- `scripts/tests/35_assembly_preload.py`：补嵌套子装配孙件、`LoadOptions.Save` 写回、装配图 `standard_views(bbox=)` 三视图。
+- `scripts/tests/20_drafting_views.py`：补 `save_model_view`/`base_view`/`projected_views` 回归。
+- `scripts/tests/10_assembly_constraints.py`：补组件阵列份数、`MoveComponent` 增量与全局枢轴断言。
+- `scripts/tests/16_motion_constraints.py`：补 Fit 铰拖 90°/轴向滑 5 mm/`1T+1R` 枢轴断言（孔轴偏置 100 mm 的臂）。
+- `scripts/tests/18_motion_sim.py`：补 UF 四参速度/加速度、`Coupler` 可建、`ScalarTorque` 求解前建出并与 `AskTorqueResults` 读数对账、`PostProcess` 失败形态。
+- `scripts/tests/23_motion_connectors.py`：补 `MotionTranslationZ` 驱动、14 种关节的 `AskSolverDofCount` 增量、无 `Hinge`/`Ball` 与 `ValueOf` 内建方法断言、Atpoint/Perpendicular/Constantvelocity 驱动全拒、Screw 与 Cylindrical 同对的 DOF 2→1。
+- `scripts/tests/17_motion_deadends.py`：补 `Fix`+`AlignLock` 静不定负例。
+- `scripts/tests/verify_load_options.py`：两进程 `UGII_LOAD_OPTIONS` 差分 gate（AsSaved 载入 / FromDirectory 缺件）。
+- `scripts/tests/10_assembly_constraints.py`：`Fix`+两平面 `Touch` 滑块（DOF `1T+0R`、Y/Z 拉回、X 放行）与 `NonMovingGroupGrounded` 默认/可写。
+- `scripts/tests/36_motion_slider.py`：`MotionTranslationZ` 符号/幅值、齿轮副输出比与主动速率、Screw+Cylindrical 导程耦合（2 mm/rev、90°→−0.5 mm）。
+- `scripts/tests/35_assembly_preload.py`：装配件 `export_mesh(scope=auto)`、`LoadOptions` 同会话 `Restore`。
+
+### Changed
+
+- `scripts/gb_drawing.py`：`standard_views` 按 GB 第一角摆位（RIGHT 在 FRONT 左侧、TOP 在下方），钉位后逐视图校验内容框不越图框；新增 `bbox=` 供装配图一次到位。
+- `scripts/nxlib/measure.py`、`scripts/nxlib/audit.py`：G9 与 `budget` 只接受结构表，传 `structure_count` 整数直接 `ValueError`。
+- `scripts/nxlib/reverse.py`：`interface_table` 行补 `half_angle_deg`。
+- `scripts/nxlib/exchange.py`：`export_step` 的 `annotations=None` 跟随 `pmi`；显式只开 PMI 打警告。
+- `scripts/deliverable.py`：`pmi_gate` 只收实体类型名，值类判据传进 `--pmi` 直接 `ValueError`；STL 焊点默认改 5 位。
+- `scripts/nxlib/transitions.py`：支撑面宽度改为构建警告（`width_suspect`），不再置 `reachable=False`；`_dot/_unit` 委托 `session`。
+- `scripts/nxlib/audit.py`：局部性还原路径读 `do_update` 返回值，失败即抛。
+- `scripts/gb_drawing.py`、`scripts/tests/07_center_marks.py`：整圆边孔心改取 `AskFaceData(face)[1]`，`p1` 只作圆周参考点。
+- `scripts/nxlib/assembly.py`：`preload_components` 文档改为直接子件，嵌套子装配由调用方递归。
+- `scripts/nxlib/session.py`、`modeling.py`、`measure.py`、`template.py`：质量属性单位列表收进 `_mass_units`。
+- `scripts/nxlib/structures.py`、`modeling.py`、`rolling.py`：`_unit3` 同名不同义改名 `_dir_between`；删重复 import。
+- `scripts/check_repo.py`：references 名册行数纳入核对；scripts 名册递归 `render/`。
+- `scripts/tests/23_motion_connectors.py`：阻尼不设 `CoefficientType` 也能提交；补 `AttachmentType` 可读、赋值只读断言。
+- `scripts/tests/51_exchange_matrix.py`：新增非空工作件（2 体/12 面/5000）与 `UF_PART_import` 兜底断言。
+- `scripts/stl_math.py`：新增 `topology()`（焊接/有向边/分量/欧拉数），STL 拓扑唯一实现。
+- `scripts/nxlib/measure.py`：`read_stl`/`mesh_bbox` 委托 `stl_math`，删本地解析副本。
+- `scripts/deliverable.py`：`stl_census` 改用 `stl_math.topology`，删 `_weld_key`/`_UnionFind`。
+- `scripts/nxlib/measure.py`：`export_mesh` 增 `scope=bodies|entire_part|auto`，装配实例体走 `Prototype.Bodies+FindOccurrence`，`<=84` 字节判无几何。
+- `scripts/nxlib/assembly.py`：新增 `preload_tree` 递归预载整棵组件树（路径去重）。
+- `scripts/render/export_stl.py`：删本地 `STLCreator`，委托 `measure.export_mesh` 与 `assembly.preload_tree`。
+- `scripts/tests/RUN_TESTS.bat`：加 `:loadopt` 宿主步骤，跑两次新 NX 进程做跨会话差分。
+- `SKILL.md`、`references/*.md`、`docs/wiki/*.md`、`scripts/tests/README.md`：同步第一角、PMI 开关、占用门、回退口径与 `set_cjk_font`/`dim_diameter` 覆盖说明。
+- `references/assembly.md`、`references/motion.md`、`scripts/tests/README.md`：同步 Fit 铰 90°/`1T+1R` 枢轴、14 种关节 DOF 增量与驱动接受度、Screw 导程、`ScalarTorque` 读数与 `Hinge`/`Ball` 枚举口径。
+
+### Fixed
+
+- `scripts/run_journal_checked.py`、`scripts/run_journal_batch.bat`：隔离 `run_journal` 的 stdin，DEX `step214ug.cmd` 的 `pause` 不再把失败路径变成永久挂死。
+- `scripts/nxlib/exchange.py`：`import_step(target="work")` 在实体数未增加时用 `UF_PART_import` 并入中间件，DEX 空转的安装不再返回 0 实体工作件。
+- `scripts/tests/17_motion_deadends.py`：internal-only 枚举 7 项补到 13 项，与 `assembly.md` 的“全拒”逐字一致。
+- `scripts/tests/36_motion_slider.py`：补 `nfr == NSTEP + 1` 帧数断言。
+- `scripts/tests/07_center_marks.py`：中心标记改用面心，不再用圆周参考点 `p1` 定位。
+- `references/assembly.md`：`DragByTranslation`+`Solve` 不回收越界位移（约束仍报 Solved），判据改为 `MoveComponent`+重建网络求解；滑块路线补 `Fix(导轨)` 前提。
 
 ## [1.5.0] - 2026-11-05
 

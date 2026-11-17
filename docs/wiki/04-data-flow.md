@@ -58,7 +58,7 @@ graph LR
 
 - 四态判定。`BLOCKED` 只用于几何不可达且已给出上限与残差分解的项，不等于通过（`references/reverse-engineering.md` §4.1（四态判定））。
 - 分母不能是自选站。G1 用原件结构分界全集，G7 用同半径跑道数，G9 用结构表行数，三者都不是"我建了几个面/几个特征"。
-- G8/G9 默认开启且只能来自结构表：G9 缺结构表直接 FAIL（不拿逐面组数当分母），G8 只看设计参数（`data`/派生量不进分母），声明了没建出的参数进 `missing` 而不是被当成通过（`references/reverse-engineering.md` §12.5）。
+- G8/G9 默认开启且只能来自结构表：G9 缺结构表直接 FAIL（不拿逐面组数当分母），G8 设计上 `data` 不建表达式、实现无 design/data 过滤（分母取 `survey.named` 全集），`data` 进 `survey.named` 即分层违规、需人工对账，声明了没建出的参数进 `missing` 而不是被当成通过（`references/reverse-engineering.md` §12.2、§12.5）。
 
 ## 4. FEA 链
 
@@ -102,7 +102,7 @@ graph TD
 
 这条链的判据不是"改得动"，而是"改对地方"：单参数扰动后 DoUpdate 零回滚零告警、还原逐位复原、无关结构不动（`references/reverse-engineering.md` §11）。
 
-分层是这条链的核心机制：`design` 参数（工程师会给的量）必须落成命名表达式并被特征按名字引用；`data` 参数（测量轮廓、实测轴）只能是字面值，写成表达式就是死参数（`references/reverse-engineering.md` §12.2）。G8 的分母只含 design 参数。
+分层是这条链的核心机制：`design` 参数（工程师会给的量）必须落成命名表达式并被特征按名字引用；`data` 参数（测量轮廓、实测轴）只能是字面值，写成表达式就是死参数（`references/reverse-engineering.md` §12.2）。G8 的实现没有 design/data 过滤，分母取 `survey.named` 全集：设计上 `data` 不建表达式，`data` 进 `survey.named` 即分层违规、需人工对账。
 
 ## 六条链的共同点
 

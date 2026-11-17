@@ -33,10 +33,6 @@ def _bbox_union(rows):
     return box
 
 
-def _face_tags(rows):
-    return [int(f["tag"]) for f in rows]
-
-
 def _group_by_coaxial(groups, axis_tol_deg=0.5, line_tol=2.0):
     """并查集：同轴（方向夹角 + 点到轴线距离）的柱/锥组归一族。"""
     parent = list(range(len(groups)))
@@ -230,7 +226,6 @@ def param_candidates(directory):
             rec = seen[name]
             if structure not in rec["structures"]:
                 rec["structures"].append(structure)
-            rec["alias_of"] = rec.get("alias_of") or []
             return rec
         rec = {"name": name, "value": value, "unit": unit, "kind": kind,
                "source": source, "confidence": confidence,
@@ -418,6 +413,7 @@ def interface_table(measure, part, audit=None):
             "axis": [round(float(x), 6) for x in g["axis"]],
             "center": [round(float(x), 6) for x in g["center"]],
             "length": round(float(g["length"]), 6),
+            "half_angle_deg": round(float(g.get("half_angle_deg", 0.0)), 6),
             "faces": [int(x) for x in g["faces"]],
             "confidence": "high",
         })
@@ -429,6 +425,7 @@ def interface_table(measure, part, audit=None):
             "axis": [round(float(x), 6) for x in g["axis"]],
             "center": [round(float(x), 6) for x in g["center"]],
             "length": round(float(g["length"]), 6),
+            "half_angle_deg": round(float(g.get("half_angle_deg", 0.0)), 6),
             "faces": [int(x) for x in g["faces"]],
             "confidence": "low",
         })

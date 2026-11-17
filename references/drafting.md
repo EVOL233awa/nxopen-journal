@@ -35,7 +35,7 @@ svb.Commit(); svb.Destroy()
 拆件零件的构造曲线即使建视图前 `Blank()` 仍会投影，保留即可（都在图纸内）。
 
 ⚠ **视图排布与剖视语义**：
-1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图**左侧**（内容中心 x 更小），与 GB 第一角一致；`gb_drawing.standard_views` 另行把 RIGHT 钉到主视图右侧，成套出图按该模块的钉位核对。
+1. `FrontTopRight` 在 FirstAngle 下把 Right 视图排在主视图**左侧**（内容中心 x 更小），与 GB 第一角一致；`gb_drawing.standard_views` 按同一摆位（RIGHT 左、TOP 下），并在钉位后自查内容框不越图框。
 2. 全剖剖切线过轴线；**切点须落在父视图的投影平面内**（阶梯剖把 Z 形路径挂 Front(XZ) 第 3 点被拒、挂 Top(XY) 才通过）。挂哪个父视图不是硬条件——同一个 Y=0 切面挂主视图作父视图同样成功（vis=10、Hatch=1）；剖切腿平面恒 ⊥ 父视图图面。
 3. 关联尺寸前确认目标边投影非退化（轴向边挂横剖圆环视图会渲染成 "0"）；局部放大源视图须含目标细节，detail 标注比例。
 
@@ -51,7 +51,7 @@ svb.Commit(); svb.Destroy()
 pt = ufs.View.MapModelToDrawing(view.Tag, [35.0, -20.0, 9.0])   # 返回图纸坐标数组
 ```
 
-**装配图纸的边解析**：`Prototype.Bodies` 为空 → 先 `s.Parts.Open(子件)` 预载，再 `comp.FindOccurrence(body).GetFaces()` 取实例边，按顶点坐标匹配（TOL 0.02）。圆边两顶点重合（`GetVertices` 相等）即整圆，其顶点=圆上参考点（非圆心；孔心=上下两 rim 中点）。
+**装配图纸的边解析**：`Prototype.Bodies` 为空 → 先 `s.Parts.Open(子件)` 预载，再 `comp.FindOccurrence(body).GetFaces()` 取实例边，按顶点坐标匹配（TOL 0.02）。圆边两顶点重合（`GetVertices` 相等）即整圆，其顶点=圆上参考点（在圆周上，非圆心）；孔心取该圆柱面 `AskFaceData(face.Tag)[1]` 的 x/y（轴线上一点），不要拿顶点当圆心。
 
 **视图坐标映射**：`sheet = ref + s*(proj(p) - proj(bbox中心))`，proj：Front=(x,z)、Right=(y,z)、Top=(x,y)；孔轴线向 z 的回转面在 Front/Right 呈矩形轮廓（Ø 标其上属惯例），真实形状/角度在 Top。**角度尺寸须在两线延长线交点落图内的视图上**，交点在图外改用注记文本。
 
@@ -61,7 +61,7 @@ pt = ufs.View.MapModelToDrawing(view.Tag, [35.0, -20.0, 9.0])   # 返回图纸�
 
 `PrintPDFBuilder`（`part.PlotManager.CreatePrintPdfbuilder()`，在 **part** 上）正常出图；**一次 `SetSheets([...])` 出一份多页 PDF**（多张图纸合成一份文件，不是每 sheet 一份）。
 
-PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（`SizeOption` 只读）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 传外来图纸时 NX12 在 `Commit` 抛 `One or more sheets are not in the displayed part.`，仍须在调用前自查 `sheet.OwningPart`，让错误在 builder 创建前以稳定文本出现；`gb_drawing.export_pdf` 与 `nxlib.drafting.export_pdf` 都已加校验。
+PrintPDFBuilder 陷阱（NX12）：`Filename`（**小写 n**，无 `FileName`）；尺寸属性是 **`Size`**（类型 `PrintPDFBuilder.SizeOption`，取 `FullScale`/`ScaleFactor`/`Dimension`；无 `SizeOption` 属性）；`Action` 是 Teamcenter 语义（Native/New/Append/Overwrite）；`Color` = BlackOnWhite/AsDisplayed/ColorsByWidth/CustomPalette/LegacyColors/PartColors。`SetSheets` 传外来图纸时 NX12 在 `Commit` 抛 `One or more sheets are not in the displayed part.`，仍须在调用前自查 `sheet.OwningPart`，让错误在 builder 创建前以稳定文本出现；`gb_drawing.export_pdf` 与 `nxlib.drafting.export_pdf` 都已加校验。
 
 **交付形态**：`run_journal.exe` 批处理一键（`.bat` 用 **GBK + CRLF**；Python 3.6 的 UTF-8 输出重定向进日志）。图纸 A3 三视图（第一角），**不含尺寸与中心线**。
 

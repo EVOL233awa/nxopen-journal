@@ -160,7 +160,7 @@ def enum_artifacts(runtime):
 
 
 def signature_check(pyi, sig_path):
-    """运行期签名 JSON：[{class, member, args|arity, ok}]；返回覆盖率。"""
+    """运行期签名 JSON：[{class, member, args|arity, signature_ok|ok}]；返回覆盖率。"""
     with open(sig_path, encoding="utf-8") as fh:
         rows = json.load(fh)
     stats = {"rows": len(rows), "have_args": 0, "have_arity": 0,
@@ -168,7 +168,8 @@ def signature_check(pyi, sig_path):
     for row in rows:
         cls = row.get("class")
         member = row.get("member")
-        if row.get("signature_ok") and row.get("args") is not None:
+        if (row.get("signature_ok", row.get("ok"))
+                and row.get("args") is not None):
             stats["have_args"] += 1
             want = method_overloads(pyi, cls, member)
             if want is not None:

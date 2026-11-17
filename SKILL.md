@@ -12,7 +12,7 @@ NX 自动化唯一入口是 NXOpen API。本技能生成可在 NX 12 回放的 P
 
 ## 1. 铁律
 
-本节收跨域通用且高发的陷阱（静默失败/崩溃）；单域负面事实写在对应路线里。带 `<!-- trap-list -->` 标记的清单受 `check_repo.py` 的 8 条上限约束。
+本节收跨域通用且高发的陷阱（静默失败/崩溃）；单域负面事实写在对应路线里。本节固定 9 条，**不参与** `check_repo.py` 的 8 条上限；只有带 `<!-- trap-list -->` 标记的清单才受该上限约束。
 
 1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实（`search_api` / `get_class` / `get_member`）。
 2. **MCP 核实“存在” ≠ Python 封装“可调用”**：新 API 必须先最小批处理验证，通过后才写入本技能。
@@ -39,6 +39,7 @@ def say(msg):
 - **NX 安装根 = 环境变量 `NX_HOME`，默认 `D:\UG-NX12`**；换位置只设该变量。`run_journal_batch.bat` 解析不到 `run_journal.exe` 时打印 `ERROR: run_journal.exe not found under NX_HOME=...` 并以 2 退出。
 - NX 12.0.0.27；NXOpen .NET 程序集与 XML 文档在 `%NX_HOME%\NXBIN\managed\`。
 - 批处理：`scripts\run_journal_batch.bat <journal.py> [workdir]`，自动加载 `ugiicmd.bat` 后调 `run_journal.exe`；每次启动新进程，不能注入已打开的 UG 会话。workdir 不存在会自动创建，并打印 `=== RUN_JOURNAL workdir=<绝对路径> ===`。
+- **包装 `run_journal.exe` 的入口必须隔离 stdin**（`.bat` 用 `< NUL`，Python 用 `stdin=subprocess.DEVNULL`）：DEX 的 `step214ug.cmd` 在转换器非零返回时执行 `pause`，继承控制台 stdin 会把失败路径变成永久挂死。
 - 批处理无已打开部件：`Parts.Work` 为 `None`；`UI.GetUI()` 与 `Parts.Display` 仅交互回放有意义。
 - mm 模板：`%NX_HOME%\UGII\templates\model-plain-1-mm-template.prt`。
 - nxopen MCP 嵌入端点 = `http://127.0.0.1:11436`（llama-server + bge-m3）。服务未起时 `search_api`/`find_builder` 直接报错，改用 `get_class`/`get_member`。
@@ -80,9 +81,12 @@ part = fileNew.Commit(); fileNew.Destroy()
 ### 打开 / 保存 / 修改已有部件
 
 ```python
-part, loadStatus = theSession.Parts.Open(r"C:\path\part.prt")   # 1 个参数，返回元组
+import os
+part_path = r"C:\path\part.prt"
+part, loadStatus = theSession.Parts.Open(part_path)               # 1 个参数，返回元组
 NXOpen.UF.UFSession.GetUFSession().Part.SetDisplayPart(part.Tag)  # 修改前必须设显示部件
 NXOpen.UF.UFSession.GetUFSession().Part.Save()                    # 无参 UF 保存
+assert os.path.exists(part_path) and os.path.getsize(part_path) > 0  # 落盘才算数
 ```
 
 带阶段校验的保存：
@@ -174,7 +178,7 @@ sc.InputFile  = workPart.FullPath                          # 先保存；只给 
 sc.OutputFile = r"C:\path\out.stp"
 sc.ProcessHoldFlag = True                                  # 必设，否则 Commit 返回时文件还没写盘（约 5 秒后才出现）
 # AP214 才需要下一行；不给 def 也是空骨架：
-# sc.SettingsFile = r"D:\UG-NX12\STEP214UG\ugstep214.def"
+# sc.SettingsFile = os.path.join(os.environ.get("NX_HOME", r"D:\UG-NX12"), "STEP214UG", "ugstep214.def")
 sc.Commit(); sc.Destroy()
 ```
 
@@ -188,9 +192,11 @@ sc.Commit(); sc.Destroy()
 
 回读：`ImportTo=WorkPart` 也必须设 `OutputFile`（任意可写 `.prt`），否则 Commit 不报错、
 工作件仍 0 bodies；`ImportTo=NewPart` 的产物约 8 s 后才落盘，判定要另起进程
-`Parts.OpenBaseDisplay` 重开读 `Bodies`。
+`Parts.OpenBaseDisplay` 重开读 `Bodies`。部分安装上 WorkPart 只把几何写进
+`OutputFile`、工作件不增实体：Commit 前后比 `len(list(part.Bodies))`，没增加就按
+`references/verification.md` §3 的实体增量兜底并入；`nxlib.exchange.import_step(target="work")` 已封装。
 
-普查不可用时才回退 Parasolid：
+先用普查；普查失败再回退 Parasolid：
 
 ```python
 ufs = NXOpen.UF.UFSession.GetUFSession()
@@ -242,7 +248,7 @@ python scripts/check_journal.py path/to/journal.py
 scripts\run_journal_batch.bat C:\abs\path\journal.py [workdir]
 
 # 全量回归（53 例 = 50 个批处理令牌校验 + 11-13 三个一次性探针）
-# 逐例覆盖内容与令牌名只维护在 tests/README.md
+# 逐例覆盖内容在 tests/README.md；gate 令牌以 RUN_TESTS.bat 的 call :gate 为准，两处同改
 # 09 含 Nastran 求解较慢；跑完默认清理 parts\，KEEP_PARTS=1 保留
 # 末尾先跑 check_journal 规则自检（宿主 python），再用 pymupdf 复核 19 号 PDF 文本层
 scripts\tests\RUN_TESTS.bat
@@ -253,7 +259,7 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`/`exchange`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现非 `TESTxx_FATAL` 的 `FATAL` 行。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 与 50-53 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`）。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现 `FATAL` 行（主门 `run_journal_checked.py` 对 `TESTxx_FATAL` 同样判失败；无宿主 python 的 `findstr` 回退才放行 `TESTxx_FATAL`，缺成功 token 仍判失败）。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 与 50-53 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`）。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
@@ -269,10 +275,10 @@ scripts\tests\RUN_TESTS.bat
 5. 新条目先查重：已有条目能覆盖就改那一句，不追加新段；结论变更时直接改掉旧句，不保留新旧并存。
 6. 落位：跨域会话/部件层 → 本文件 §3；单域完整成功路径 → 域文件正文。负面事实只作为路线里的一句约束（“用 X；Y 会…”），不新开坑位清单；只有跨域通用且高发（静默失败/进程崩溃）的才进本文件 §1 铁律。
 7. 入库门槛 = 铁律 2：MCP 核实 + 批处理验证双通过。
-8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|路线约束 [0-9]"`。
+8. 新增/重排小节后核对交叉引用：`grep -rn "§[0-9A-Z]" SKILL.md references/` 与 `grep -rn "铁律 [0-9]\|路线约束 [0-9]"`；逐条确认目标文件有对应 `§X` 标题，字母编号（`§A`/`§B`）同样核对。
 9. 吸收外部技能/项目时先在本机 NX12 验证；与本机冲突处以本机结果为准并注明。
 10. `CHANGELOG.md` 只记 diff：一行一条（位置 + 改了什么），不写验证过程、实验读数、归因沿革、影响分析；理由与证据留在报告或域文件正文。它是人类文档，不参与 CONCISE/ROUTE 扫描，这条约定靠人工守，没有机器门。
-11. 改动 nxlib 模块、域文件、`scripts/` 工具或会话流程后，同一次改动里更新 `docs/wiki/`：新增/改名项补进对应 roster 表（`<!-- roster: nxlib|scripts|references -->` 标记下的表格首列），受影响页面的描述与计数一并改。`check_repo.py` 的 WIKI 组会拦：名册缺项、索引页漏链接、用例/gate 计数过期、行号锚点、以及指向已不存在的符号或 §章节。
+11. 改动 nxlib 模块、域文件、`scripts/` 工具或会话流程后，同一次改动里更新 `docs/wiki/`：新增/改名项补进对应 roster 表（`<!-- roster: nxlib -->`、`<!-- roster: scripts -->`、`<!-- roster: references -->` 三个独立标记，各管一组，表格首列），受影响页面的描述与计数一并改。`check_repo.py` 的 WIKI 组会拦：名册缺项、索引页漏链接、用例/gate 计数过期、行号锚点、以及指向已不存在的符号或 §章节。
 
 **增长纪律**：不设体积硬上限。新增条目先查重并合并，同一主题不新开小节；每次版本发布前跑 `check_repo.py`。文件明显膨胀时，优先把坑位并回路线、删旧条目、压重复；只有两个独立任务域被迫共读一个文件时才按域拆分（装配/工程图即此例），不要靠拆文件掩盖重复。域文件不设坑位表；负面事实写进对应路线的约束句。
 

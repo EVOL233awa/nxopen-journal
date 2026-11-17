@@ -29,7 +29,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 
 | 域 | 覆盖内容 |
 | --- | --- |
-| 三维建模 | 草图、拉伸与旋转、布尔、抽壳与拔模、阵列（线性、圆周、沿路径、螺旋、正多边形、目标点、引用已有阵列）、孔包三种非螺纹孔型（螺纹用底孔+标注）、图层与类别、STL 导出 |
+| 三维建模 | 草图、拉伸与旋转、布尔、抽壳与拔模、阵列（线性、圆周、沿路径、螺旋、正多边形、螺线、目标点、引用已有阵列）、孔包三种非螺纹孔型（螺纹用底孔+标注）、图层与类别、STL 导出 |
 | 装配 | 装配结构、配对约束、可拖动机构、转动副两条路线、干涉检查两条几何路线 |
 | Drafting | 三视图与投影视图、局部放大、剖视（阶梯剖、半剖、旋转剖）、尺寸与中心线标注、半径尺寸 |
 | 有限元 | Nastran SOL101 静力、2D 壳网格、求解级标定、解算方案与边界条件描述符 |
@@ -114,37 +114,20 @@ Drafting 图取自一次独立的出图运行：9 道尺寸都关联在几何上
 | 5 | NX Nastran 解算授权 | 求解日志开头打印 `NASTRAN LICENSE:` 行，本机环境为 `DESKTOP BUNDLE`，授权来自本机许可服务 | 用例 09 与 25 无法运行，其余照常；这两个用例会实际调用求解器，不能跳过 |
 | 6 | nxopen MCP | 见下一节 | 不装也能用，但写 API 时要靠 `dir()` 和 UGOPEN 头文件核实 |
 
-### nxopen MCP 与嵌入服务
+### nxopen MCP
 
 nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github.com/mingfeng6684/nxopen-mcp)），
 需要单独安装。它直接查 NX 自己的 API 文档，是这个技能避免 API 幻觉的主要手段。其中
-`get_class` 和 `get_member` 只用本地索引；`search_api` 和 `find_builder` 还依赖本机的嵌入服务，
-服务没起时会直接报错，不会退化成关键词检索。
+`get_class` 和 `get_member` 只用本地索引；`search_api` 和 `find_builder` 在进程内用 BGE-M3
+编码查询，首次语义查询要等模型加载（约 1–2 分钟），模型加载失败直接报错，不会退化成
+关键词检索。
 
 上游已发布 v0.2.0（最新）与 v0.1.0，带 tag 和 release。安装方式：
 `pip install "nxopen-mcp[embed,reflect]"`（上游 `requires-python` 为 >=3.11），或按上游 README 用
-`uvx nxopen-mcp` 免安装运行。本机为源码可编辑安装，本地版本 0.2.0，下面的
-`NXOPEN_MCP_*` 环境变量按该版本编写。安装后要对着本机的 NX 安装目录建一次索引，
-索引和查询必须使用同一个嵌入模型。
-
-嵌入服务只要提供 OpenAI 兼容的 `/v1/embeddings` 即可。llama.cpp 的 `llama-server --embedding`、
-Ollama、LM Studio 都能加载 `bge-m3`（1024 维）。本机使用 llama-server，参数如下，仅作示例：
-
-```
-llama-server --model <bge-m3.gguf> --embedding --pooling cls --embd-normalize 2 --host 0.0.0.0 --port 11436 --ctx-size 8196
-```
-
-在 MCP 侧按实际使用的服务填三个环境变量，`NXOPEN_MCP_EMBEDDER` 选 `llama`（llama.cpp、
-LM Studio 这类 OpenAI 兼容接口）或 `ollama`：
-
-```
-NXOPEN_MCP_EMBEDDER=llama
-NXOPEN_MCP_OLLAMA_URL=<嵌入服务地址，例如 http://127.0.0.1:11436>
-NXOPEN_MCP_OLLAMA_MODEL=bge-m3
-```
-
-服务就绪的判据是模型列表里能看到 `bge-m3`：llama.cpp 查 `GET {url}/v1/models`，Ollama 查
-`GET {url}/api/tags`。走 `llama` 通道连 LM Studio 的兼容性未验证。
+`uvx nxopen-mcp` 免安装运行。`[embed]` 拉入 FlagEmbedding，首次使用时下载约 2GB 的
+`BAAI/bge-m3` 模型，索引与查询共用这一个模型。安装后要对着本机的 NX 安装目录建一次索引：
+`nxopen-mcp index --nx-path <NX 安装根>`。上游 v0.2.0 没有嵌入服务相关的配置项：模型在 MCP
+进程内加载，不需要另起服务，也没有要设的环境变量。
 
 ## 安装与使用
 
@@ -175,16 +158,15 @@ NXOPEN_MCP_OLLAMA_MODEL=bge-m3
 3. 运行静态检查与回归
    - 执行 python scripts\check_repo.py，确认输出 CHECK_REPO_OK。
    - 执行 scripts\tests\RUN_TESTS.bat，逐条报告用例结果。
-   - 判定标准：日志出现各用例的预期标记，且不出现 _FAIL；最后一行是 === ALL TESTS PASSED ===。
+   - 判定标准：日志出现各用例的预期标记，且不出现 _FAIL 与 SKIP；最后一行是 === ALL TESTS PASSED ===。
    - 若失败，报告用例号、失败项、日志末尾 50 行；不要只报告退出码。
 
 4. 配置 nxopen MCP（可选）
    - 安装：pip install "nxopen-mcp[embed,reflect]"（Python 3.11+），或 uvx nxopen-mcp。
    - 上游最新 release 为 v0.2.0。
    - 按上游 README 用本机 NX 安装目录建索引：nxopen-mcp index --nx-path <NX 安装根>。
-   - 嵌入服务需提供 OpenAI 兼容的 /v1/embeddings，并加载 bge-m3（1024 维）。
-   - 配置 NXOPEN_MCP_EMBEDDER、NXOPEN_MCP_OLLAMA_URL、NXOPEN_MCP_OLLAMA_MODEL。
-   - 验证：GET {url}/v1/models（llama.cpp）或 GET {url}/api/tags（Ollama）中能看到 bge-m3。
+   - 嵌入模型在 MCP 进程内加载：建索引与首次语义查询时加载 BAAI/bge-m3（1024 维，首次约 2GB 下载），不需要另起嵌入服务，也没有需要设置的环境变量。
+   - 验证：get_class / get_member 返回成员（只查本地索引），search_api 在模型加载完成后返回结果。
    - 未配置 MCP 时，说明编写 API 会退回 dir() 与 UGOPEN 头文件核实。
 
 5. 输出报告
@@ -204,7 +186,7 @@ agent 会先读 `SKILL.md`，再按任务类型读取对应的域文件，然后
 
 ### 安装后的验证
 
-在技能目录中执行一次全量回归。最后一行显示全部通过，即表示本机环境齐备：
+在技能目录中执行一次全量回归。日志中没有 SKIP 行，且最后一行显示全部通过，才表示本机环境齐备：
 
 ```
 > scripts\tests\RUN_TESTS.bat
@@ -226,6 +208,8 @@ PASS runner marker selftest
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
+
+出现 SKIP 说明宿主 Python 或 pymupdf 缺失：装好 Python 3.11+ 并在该解释器里 `pip install pymupdf` 后重跑；打了 SKIP 的步骤不算通过。
 
 50 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
 文件；这些文件每次运行都会重新生成。

@@ -16,8 +16,9 @@ Token layer limitations (NX 12 PDF export, measured):
   - CJK text has no ToUnicode mapping, so Chinese requirements/table text is
     invisible here (drafting-annotation.md section 10).
   - The diameter glyph Ø is dropped the same way: the "4x<O>8" label renders
-    visually but its text-layer token is just "8". Diameter values therefore
-    cannot be checked in the text layer; verify them on a rendered image.
+    visually but the Ø contributes no token of its own; its ASCII "4x"
+    remainder still shows up. The symbol itself therefore has to be verified
+    on a rendered image.
 Exit code 0 = all expected tokens found, 1 = missing, 3 = no pymupdf here.
 """
 import sys

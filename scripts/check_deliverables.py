@@ -69,8 +69,7 @@ def main(argv=None):
         results["part"] = d.part_gate(facts)
     if args.step:
         census = d.step_census(args.step)
-        results["step"] = d.step_gate(
-            census, facts, schema=args.schema, pmi=parse_pmi(args.pmi))
+        results["step"] = d.step_gate(census, facts, schema=args.schema)
     if args.pmi:
         if not args.step:
             raise SystemExit("--pmi needs --step: PMI counts come from the STEP census")

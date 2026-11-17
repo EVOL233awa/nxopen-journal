@@ -10,6 +10,8 @@
 #     SetMovingGroup → DragByTransform → Solve → ApplyToModel → EndDrag
 #   * Component.GetDegreesOfFreedom() 在批处理下**可用**（本测试把实测值
 #     打印出来；旧笔记说"数值滞后"见 references/assembly.md §A.2）
+#   * Fit 铰枢轴：孔轴偏置 100 mm 的臂拖 90°，DOF 仍 1T+1R、臂原点绕
+#     铰轴扫 141.42 mm、Fit 仍 Solved；再轴向滑 5 mm 被放行（1T 的实证）
 #
 # 死路（Concentric / Hinge / 不等半径 Fit）不放在本文件，见对应用例
 #   scripts/tests/17_motion_deadends.py（正式检查，含圆边 Concentric
@@ -169,7 +171,7 @@ def main():
     parts = {}
 
     # 幂等：清掉本用例旧产物（FileNew 不覆盖，见 SKILL.md §3 坑位 2）
-    for stale in list(PARTS) + ["m16_asm"]:
+    for stale in list(PARTS) + ["m16_asm", "m16_arm", "m16_hinge"]:
         sp = os.path.abspath(stale + ".prt")
         if os.path.exists(sp):
             os.remove(sp)
@@ -351,19 +353,152 @@ def main():
     print("DRAG_AND_BOND=%s" % ("PASS" if drag_ok else "FAIL"))
     pos.EndAssemblyConstraints()
 
-    # ---- 7) 结论 ----------
-    if fit_ok and drag_ok:
+    # ---- 7) Fit 铰 90° 枢轴门：铰轴偏离组件原点时，pivot 必须是铰轴 ----
+    # 旧结论（references/assembly.md §A.5：Fit 拖动枢轴 = 约束铰轴线、
+    # 读数 1T+1R）此前只有一次性探针。这里用一根孔轴偏置 100 mm 的臂
+    # 把两条主张变成 gate：若 pivot 是组件原点，臂原点不动、孔轴会甩到
+    # 半径 ~141 mm 处，Fit 必破、轴向滑移也会被拒。
+    arm = new_part(name="m16_arm")
+    session.Parts.SetWork(arm)
+    ufs.Part.SetDisplayPart(arm.Tag)
+    body_arm = block(arm, NXOpen.Point3d(-20.0, -12.0, 0.0),
+                     "160", "24", "8")
+    unit = arm.UnitCollection.GetBase("Length")
+    arm.Expressions.CreateSystemExpressionWithUnits(
+        "HOLE_D = %.4f" % HOLE_D, unit)
+    add_thru_hole(arm, body_arm, 100.0, 0.0, 8.0, "HOLE_D")
+    ufs.Part.Save()
+    arm_path = os.path.abspath("m16_arm.prt")
+    assert os.path.exists(arm_path) and os.path.getsize(arm_path) > 0, \
+        "m16_arm 未落盘"
+    arm_face = hole_faces(arm, ufs, HOLE_R)[0][0]
+
+    hinge = new_part(name="m16_hinge")
+    session.Parts.SetWork(hinge)
+    ufs.Part.SetDisplayPart(hinge.Tag)
+    hca = hinge.ComponentAssembly
+    h_base, _ = hca.AddComponent(parts["m16_base"].FullPath, "1", "MODEL",
+                                 NXOpen.Point3d(0.0, 0.0, 0.0),
+                                 identity(), 1)
+    h_base.SetName("m16_base")
+    h_arm, _ = hca.AddComponent(arm.FullPath, "1", "MODEL",
+                                NXOpen.Point3d(150.0, 60.0, 20.0),
+                                identity(), 1)
+    h_arm.SetName("m16_arm")
+    ufs.Part.SetDisplayPart(hinge.Tag)
+
+    hpos = hca.Positioner
+    hpos.BeginAssemblyConstraints()
+    hmark = session.SetUndoMark(NXOpen.Session.MarkVisibility.Invisible, "t16h")
+    h_fix = hpos.CreateConstraint(True)
+    h_fix.ConstraintType = NXOpen.Positioning.Constraint.Type.Fix
+    h_fix.CreateConstraintReference(h_base, h_base, False, False, False)
+    h_fix.SetName("H_FIX")
+    h_fit = hpos.CreateConstraint(True)
+    h_fit.ConstraintType = NXOpen.Positioning.Constraint.Type.Fit
+    h_fit.CreateConstraintReference(h_base, h_base.FindOccurrence(geo["m16_base"][0]),
+                                    False, False, False)
+    h_fit.CreateConstraintReference(h_arm, h_arm.FindOccurrence(arm_face),
+                                    False, False, False)
+    h_fit.SetName("H_FIT")
+    session.UpdateManager.DoUpdate(hmark)
+
+    # 臂孔在局部 (100,0,0)、轴 +Z，故 Fit 解算后臂原点必在半径 100 的
+    # 圆周上（与 pivot 无关）。旋转 90° 后原点应扫过 141.42 mm 弧长弦。
+    arm_face_pt = (100.0, 0.0, 0.0)
+    arm_face_dir = (0.0, 0.0, 1.0)
+
+    def hinge_axis():
+        o, m = h_arm.GetPosition()
+        return xf(o, m, arm_face_pt), xfd(m, arm_face_dir)
+
+    def solve_fit():
+        n = hpos.EstablishNetwork()
+        n.AddConstraint(h_fix)
+        n.AddConstraint(h_fit)
+        e = n.Solve()
+        n.ApplyToModel()
+        hpos.ClearNetwork()
+        return e
+
+    e_h0 = solve_fit()
+    o_h0, _ = h_arm.GetPosition()
+    a0, d0 = hinge_axis()
+    gap_h0 = line_line_dist((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), a0, d0)
+    r_h0 = math.hypot(o_h0.X, o_h0.Y)
+    dof_h = h_arm.GetDegreesOfFreedom()
+    print("HINGE_SOLVED err=%s gap=%.6f r=%.6f dof=%dT+%dR"
+          % (e_h0, gap_h0, r_h0, dof_h.NumTranslational,
+             dof_h.NumRotational))
+
+    def drag_fit(vec, mat):
+        n = hpos.EstablishNetwork()
+        n.AddConstraint(h_fix)
+        n.AddConstraint(h_fit)
+        n.NonMovingGroupGrounded = False
+        n.BeginDrag()
+        n.SetMovingGroup([h_arm])
+        n.DragByTransform(vec, mat)
+        e = n.Solve()
+        n.ApplyToModel()
+        n.EndDrag()
+        hpos.ClearNetwork()
+        return e
+
+    def pose_arm():
+        o, _ = h_arm.GetPosition()
+        a, d = hinge_axis()
+        return o, a, d
+
+    e_h1 = drag_fit(NXOpen.Vector3d(0.0, 0.0, 0.0), rot_z(90.0))
+    o_h1, a1, d1 = pose_arm()
+    gap_h1 = line_line_dist((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), a1, d1)
+    r_h1 = math.hypot(o_h1.X, o_h1.Y)
+    moved = math.sqrt((o_h1.X - o_h0.X) ** 2 +
+                      (o_h1.Y - o_h0.Y) ** 2 +
+                      (o_h1.Z - o_h0.Z) ** 2)
+    sweep = math.degrees(math.atan2(o_h1.Y, o_h1.X)
+                         - math.atan2(o_h0.Y, o_h0.X))
+    sweep = (sweep + 180.0) % 360.0 - 180.0
+    print("HINGE_ROT90 err=%s gap=%.6f r=%.6f moved=%.6f sweep=%.6f"
+          % (e_h1, gap_h1, r_h1, moved, sweep))
+
+    e_h2 = drag_fit(NXOpen.Vector3d(0.0, 0.0, 5.0), identity())
+    o_h2, a2, d2 = pose_arm()
+    gap_h2 = line_line_dist((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), a2, d2)
+    print("HINGE_SLIDE5 err=%s gap=%.6f dz=%.6f"
+          % (e_h2, gap_h2, o_h2.Z - o_h1.Z))
+
+    st_h = solve_status(h_fit)
+    dof_h1 = h_arm.GetDegreesOfFreedom()
+    hinge_ok = (
+        st_h == "Solved"
+        and abs(gap_h0) <= TOL and abs(gap_h1) <= TOL and abs(gap_h2) <= TOL
+        and abs(r_h0 - 100.0) <= 0.05 and abs(r_h1 - 100.0) <= 0.05
+        and abs(abs(sweep) - 90.0) <= 1.0 and moved >= 100.0
+        and abs(o_h2.Z - o_h1.Z - 5.0) <= 0.05
+        and abs(o_h2.X - o_h1.X) <= 0.01 and abs(o_h2.Y - o_h1.Y) <= 0.01
+        and dof_h1.NumTranslational == 1 and dof_h1.NumRotational == 1)
+    print("FIT_HINGE_90=%s status=%s dof=%dT+%dR"
+          % ("PASS" if hinge_ok else "FAIL", st_h,
+             dof_h1.NumTranslational, dof_h1.NumRotational))
+    hpos.EndAssemblyConstraints()
+
+    # ---- 8) 结论 ----------
+    if fit_ok and drag_ok and hinge_ok:
         # 显式保存装配件（不依赖"显示部件是谁"）；SaveComponents=True 让
         # 改过位姿的组件一并落盘
-        asm.Save(NXOpen.BasePart.SaveComponents.TrueValue,
-                 NXOpen.BasePart.CloseAfterSave.FalseValue)
-        asm_path = os.path.abspath("m16_asm.prt")
-        assert os.path.exists(asm_path) and os.path.getsize(asm_path) > 0, \
-            "装配件 m16_asm 未落盘"
-        print("ASM_SAVED bytes=%d" % os.path.getsize(asm_path))
+        for key, part in (("m16_asm", asm), ("m16_hinge", hinge)):
+            part.Save(NXOpen.BasePart.SaveComponents.TrueValue,
+                      NXOpen.BasePart.CloseAfterSave.FalseValue)
+            fp = os.path.abspath(key + ".prt")
+            assert os.path.exists(fp) and os.path.getsize(fp) > 0, \
+                "装配件 %s 未落盘" % key
+            print("%s_SAVED bytes=%d" % (key.upper(), os.path.getsize(fp)))
         print("BENCH_PASS")
     else:
-        print("BENCH_FAIL fit=%s drag=%s" % (fit_ok, drag_ok))
+        print("BENCH_FAIL fit=%s drag=%s hinge90=%s"
+              % (fit_ok, drag_ok, hinge_ok))
     print("TEST16_DONE")
 
 

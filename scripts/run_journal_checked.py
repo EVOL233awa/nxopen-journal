@@ -29,11 +29,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BATCH = os.path.join(HERE, "run_journal_batch.bat")
 
 # run_journal 把正常收尾的 sys.exit(0) 也打成 "Line N: Traceback ... SystemExit: 0"，
-# 整段吞掉；只有块内没有别的异常行时才吞，真异常后面跟 SystemExit: 0 仍算失败。
-# 吞与判必须用同一套标记：FATAL / _FAIL 都不含 "Error" / "Exception"，只看后两者
+# 整段吞掉；只有块内除 traceback 头外全是缩进行时才吞，顶格的其它行（异常行、
+# 链式 traceback 头，含 StopIteration 这类名字不含 "Error" / "Exception" 的）
+# 一律留作失败。
+# 吞与判必须用同一套标记：FATAL / _FAIL 都不含 "Error" / "Exception"，只看异常名
 # 会把夹在块里的原生 FATAL 一并吞掉。
 _CLEAN_EXIT = re.compile(r"Traceback \(most recent call last\):")
 _MARKERS = ("_FAIL", "STAGE_FAIL", "FATAL", "Traceback")
+
+
+def run_batch(cmd):
+    """启动批处理并收集输出，返回 (returncode, raw)。
+
+    stdin 必须隔离：NX 的 DEX 脚本 `step214ug.cmd` 在转换器非零返回时执行
+    `pause`（`step242ug.cmd` 没有）。继承控制台 stdin 时 `pause` 等按键，
+    而这里等 `communicate()` 返回，两边互等就是永久挂死；`DEVNULL` 让
+    `pause` 立即读到 EOF，失败路径退回"非零退出 + 日志"。
+    """
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
+    raw = proc.communicate()[0] or b""
+    return proc.returncode, raw
 
 
 def strip_clean_exit(text):
@@ -46,7 +63,9 @@ def strip_clean_exit(text):
             continue
         body = seg[:end]
         inner = body.split("\n", 1)[-1] if "\n" in body else ""
-        if "Error" in body or "Exception" in body:
+        # 帧与源码行都缩进；顶格行是异常行或链式 traceback 头，出现即非
+        # clean-exit 块。
+        if any(line and not line[0].isspace() for line in inner.split("\n")):
             continue
         if any(marker in inner for marker in _MARKERS):
             continue
@@ -96,9 +115,7 @@ def main(argv=None):
     cmd = [os.environ.get("COMSPEC", "cmd.exe"), "/c", BATCH, args.journal]
     if args.workdir:
         cmd.append(args.workdir)
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
-    raw = proc.communicate()[0] or b""
+    returncode, raw = run_batch(cmd)
     text = raw.decode("utf-8", "replace")
     sys.stdout.write(text)
     sys.stdout.flush()
@@ -109,7 +126,7 @@ def main(argv=None):
     ok, hits, missing = verdict(text, args.token, args.allow_crash,
                                 args.allow_missing_token)
     print("RUN_CHECK exit=%d markers=%s token=%s"
-          % (proc.returncode, ",".join(hits) or "-",
+          % (returncode, ",".join(hits) or "-",
              "missing" if missing else "ok"))
     return 0 if ok else 1
 

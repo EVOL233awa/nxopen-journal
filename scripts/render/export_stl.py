@@ -5,19 +5,15 @@ Env:
   IMG_PART  absolute path of the .prt to open (required)
   IMG_OUT   absolute path of the .stl to write (required)
 
-Selection block takes a plain body list (SetArray); ProcessHoldFlag is not
-needed for STL.  Measured corrections:
-  * NX 12 STLCreator has no TriangleTolerance -> use ChordalTol.
-  * It also has no OutputTypeOption; the member is OutputType (OutputTypeEnum),
-    so this probe leaves the default instead of guessing.
-Assembly parts keep their geometry in component occurrences, so when the part
-has no own bodies the probe falls back to ObjectSelector.Scope.EntirePart and
-logs whatever the assembly-level attempt produced.
+All STL creation lives in nxlib.measure.export_mesh(scope="auto"): own bodies
+go through SetArray, assembly parts without own bodies fall back to
+ObjectSelector.Scope.EntirePart, and a <=84-byte file (0 triangles) is
+rejected.  This journal only opens the part, runs the exporter, and logs.
 
 Pass IMG_PART/IMG_OUT through the wrapper bat (run_export.bat): Git Bash
 `\\$var` inside double quotes eats the backslash and the journal sees a
-literal `$n` (measured).  The log lands next to the STL so a
-swallowed NX console still leaves evidence.
+literal `$n` (measured).  The log lands next to the STL so a swallowed NX
+console still leaves evidence.
 """
 import os
 import sys
@@ -26,9 +22,16 @@ import traceback
 import NXOpen
 import NXOpen.UF
 
-# Binary STL: 80-byte header + uint32 count.  A 0-triangle file is exactly 84
-# bytes, so anything at or below that carries no geometry.
-MIN_STL_BYTES = 84
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    _here = os.path.dirname(os.path.abspath(sys.argv[0]))
+_p = os.path.abspath(os.path.join(_here, ".."))
+if os.path.isdir(os.path.join(_p, "nxlib")) and _p not in sys.path:
+    sys.path.insert(0, _p)
+
+from nxlib.assembly import preload_tree
+from nxlib.measure import export_mesh
 
 PART = os.environ.get("IMG_PART", "").strip()
 OUT = os.environ.get("IMG_OUT", "").strip()
@@ -47,49 +50,6 @@ def say(msg):
     sys.stdout.flush()
 
 
-def export(session, bodies, out, say):
-    sc = session.DexManager.CreateStlCreator()
-    say("  STLCreator tol/output members: %s"
-        % [n for n in dir(sc) if "Tol" in n or "Output" in n])
-    sc.OutputFile = out
-    # 0.05 left visible facets on the flange's cylindrical faces at README
-    # render size; 0.01 costs a few x triangles and reads smooth
-    sc.ChordalTol = 0.01
-    if bodies is None:
-        sc.ExportSelectionBlock.SelectionScope = \
-            NXOpen.ObjectSelector.Scope.EntirePart
-        say("  scope=EntirePart")
-    else:
-        say("  scope=SelectedObjects n=%d" % len(bodies))
-        sc.ExportSelectionBlock.SetArray(bodies)
-    sc.Commit()
-    sc.Destroy()
-    size = os.path.getsize(out) if os.path.exists(out) else 0
-    ok = size > MIN_STL_BYTES
-    say("  stl written=%s size=%s" % (ok, size))
-    return ok
-
-
-def collect_bodies(part, say):
-    bodies = list(part.Bodies)
-    if bodies:
-        say("  own bodies=%d via part.Bodies" % len(bodies))
-        return bodies
-    root = part.ComponentAssembly.RootComponent
-    kids = list(root.GetChildren()) if root is not None else []
-    say("  no own bodies; children=%d" % len(kids))
-    say("  ufs.Assem members with Part/Comp: %s"
-        % [n for n in dir(NXOpen.UF.UFSession.GetUFSession().Assem)
-           if "Part" in n or "Comp" in n][:14])
-    for c in kids:
-        try:
-            proto = c.Prototype
-            say("  child %r proto=%s" % (c.Name, type(proto).__name__))
-        except Exception as exc:
-            say("  child %r Prototype raised %s" % (c.Name, exc))
-    return None
-
-
 def main():
     say("=" * 60)
     say("EXPORT STL  PART=%r OUT=%r" % (PART, OUT))
@@ -103,8 +63,14 @@ def main():
         part, status = session.Parts.Open(PART)
         ufs.Part.SetDisplayPart(part.Tag)
         say("opened %s" % part.FullPath)
-        bodies = collect_bodies(part, say)
-        ok = export(session, bodies, OUT, say)
+        own = len(list(part.Bodies))
+        say("own bodies=%d" % own)
+        if own == 0:
+            say("preload_tree opened=%d"
+                % len(preload_tree(session, part)))
+        export_mesh(part, OUT, scope="auto")
+        say("size=%d" % os.path.getsize(OUT))
+        ok = True
     except Exception as exc:
         say("FAIL %s: %s" % (type(exc).__name__, exc))
         say(traceback.format_exc())

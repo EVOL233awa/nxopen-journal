@@ -116,7 +116,7 @@ recomputation plus a visual gate.
 Every one of the 7 balloons attaches to real geometry and the 7 BOM rows map one-to-one onto the
 parts; the three views fill the frame with the notes placed right above the BOM. Vertical dimension
 text is forced parallel to its dimension line through the .NET preferences API (the UF default is
-unstable and stacks digits at random under the same code path). The za10→za40 script chain carries
+unstable and stacks digits at random under the same code path). The assembly-drawing script carries
 its own audit gate, and the sheet passed after three visual-review iterations.
 
 | Sweep envelope & interference check: envelope arc, coupler curve, clearance callouts |
@@ -142,41 +142,19 @@ analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path ci
 ### nxopen MCP
 
 The MCP server is a separate project ([nxopen-mcp](https://github.com/mingfeng6684/nxopen-mcp)) and
-is the main defence against hallucinated APIs: it looks answers up in NX's own API documentation.
-Half of its tools need a local embedding service.
+needs a separate install. It looks answers up in NX's own API documentation and is the main defence
+against hallucinated APIs. `get_class` / `get_member` use only the local index; `search_api` /
+`find_builder` encode the query in-process with BGE-M3, and the first semantic query waits for the
+model to load (about 1-2 minutes). If the model fails to load the call errors out; there is no
+keyword-search fallback.
 
 Upstream has published v0.2.0 (latest) and v0.1.0, with tags and releases. Install with
-`pip install "nxopen-mcp[embed,reflect]"` (upstream `requires-python` is >=3.11), or use `uvx nxopen-mcp`
-to run it without installing. The local machine has an editable source install, version 0.2.0, and
-the `NXOPEN_MCP_*` environment variables below are written for that version. Build the index once
-against the local NX installation, and use the same embedding model for the index and the queries.
-
-| Tool | Needs | When the embedding service is down |
-| --- | --- | --- |
-| `get_class` / `get_member` | local index | works |
-| `search_api` / `find_builder` | local index + embedding service | fails; there is no keyword-search fallback |
-
-Any OpenAI-compatible `/v1/embeddings` endpoint works. llama.cpp's `llama-server --embedding`,
-Ollama, and LM Studio can all load `bge-m3` (1024 dimensions). This machine runs llama-server;
-the parameters below are an example only:
-
-```
-llama-server --model <bge-m3.gguf> --embedding --pooling cls --embd-normalize 2 --host 0.0.0.0 --port 11436 --ctx-size 8196
-```
-
-Fill in the three environment variables on the MCP side for the service you actually use; set
-`NXOPEN_MCP_EMBEDDER` to `llama` (llama.cpp, LM Studio and similar OpenAI-compatible endpoints)
-or `ollama`:
-
-```
-NXOPEN_MCP_EMBEDDER=llama
-NXOPEN_MCP_OLLAMA_URL=<embedding service endpoint, e.g. http://127.0.0.1:11436>
-NXOPEN_MCP_OLLAMA_MODEL=bge-m3
-```
-
-The service is ready when `bge-m3` shows up in the model list: llama.cpp answers
-`GET {url}/v1/models`, Ollama answers `GET {url}/api/tags`. The `llama` channel against LM Studio
-is unverified.
+`pip install "nxopen-mcp[embed,reflect]"` (upstream `requires-python` is >=3.11), or run it without
+installing via `uvx nxopen-mcp` as described upstream. `[embed]` pulls in FlagEmbedding; the first use
+downloads the ~2 GB `BAAI/bge-m3` model, shared by indexing and queries. Build the index once against
+the local NX installation: `nxopen-mcp index --nx-path <NX install root>`. Upstream v0.2.0 has no
+embedding-service settings: the model loads inside the MCP process, so there is no service to run and
+no environment variable to set.
 
 ## Install
 
@@ -208,16 +186,16 @@ Steps:
 3. Run static checks and regression
    - Run python scripts\check_repo.py and confirm CHECK_REPO_OK.
    - Run scripts\tests\RUN_TESTS.bat and report every case.
-   - Verdict: the expected marker for each case appears and no _FAIL appears; the last line is === ALL TESTS PASSED ===.
+   - Verdict: the expected marker for each case appears, no _FAIL and no SKIP appears; the last line is === ALL TESTS PASSED ===.
+   - A SKIP means host Python or pymupdf is missing; install Python 3.11+ and run `pip install pymupdf` in that interpreter, then rerun. A skipped step does not count as passed.
    - On failure, report the case number, the failing item and the last 50 log lines; do not report only the exit code.
 
 4. Configure nxopen MCP (optional)
    - Install: pip install "nxopen-mcp[embed,reflect]" (Python 3.11+), or uvx nxopen-mcp.
    - The latest upstream release is v0.2.0.
    - Build the index against the local NX installation: nxopen-mcp index --nx-path <NX install root>.
-   - The embedding service must expose an OpenAI-compatible /v1/embeddings endpoint and serve bge-m3 (1024 dimensions).
-   - Set NXOPEN_MCP_EMBEDDER, NXOPEN_MCP_OLLAMA_URL and NXOPEN_MCP_OLLAMA_MODEL.
-   - Verify that GET {url}/v1/models (llama.cpp) or GET {url}/api/tags (Ollama) lists bge-m3.
+   - The embedding model is loaded inside the MCP process: indexing and the first semantic query download/load BAAI/bge-m3 (1024 dimensions, ~2 GB on first use). There is no separate service and no environment variable to set.
+   - Verify: get_class / get_member return members from the local index; search_api returns results once the model has loaded.
    - If MCP is not configured, state that API checks will fall back to dir() and the UGOPEN headers.
 
 5. Report
@@ -258,8 +236,10 @@ PASS 37_sketch_autodim_param.py
 PASS 38_measure.py
 PASS 39_reverse_route.py
 PASS 40_rolling_network.py
+(PASS 41_template.py through PASS 53_pmi_census.py omitted)
 PASS 09_fea_static.py
 PASS check_journal rule selftest - counter-examples hit, clean passes
+PASS runner marker selftest
 PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
@@ -336,9 +316,11 @@ the `SimpleInterference` route, for threaded holes use "pilot hole plus annotati
 ```
 nxopen-journal/
 ├── SKILL.md                        entry layer: rules / environment / skeleton / common operations / logging / workflow / routing
+├── LICENSE                         MIT license
 ├── CHANGELOG.md                    version history (Keep a Changelog)
+├── .github/workflows/ci.yml        cloud CI (check_repo.py / check_journal rule self-test / journal static check, no NX)
 ├── docs/wiki/                      maintainer guide: architecture / execution flow / modules / data flow / boundaries (entry [docs/wiki/README.md](docs/wiki/README.md))
-├── references/                     eight domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering
+├── references/                     nine domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / verification
 ├── images/                         figures from real runs
 ├── scripts/
 │   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)

@@ -38,7 +38,11 @@ if not defined NX_HOME set "NX_HOME=D:\UG-NX12"
 if not exist "%NX_HOME%\NXBIN\run_journal.exe" goto :rj_no_nx
 echo === RUN_JOURNAL NX_HOME=%NX_HOME% ===
 call "%NX_HOME%\UGII\ugiicmd.bat" "%NX_HOME%"
-"%NX_HOME%\NXBIN\run_journal.exe" "%~1"
+rem stdin MUST be isolated: the DEX script step214ug.cmd runs "pause" when the
+rem converter returns non-zero (step242ug.cmd does not). With an inherited
+rem console stdin that pause waits for a key and the caller waiting on the
+rem process deadlocks; < NUL makes it read EOF and exit.
+"%NX_HOME%\NXBIN\run_journal.exe" "%~1" < NUL
 set "RUN_JOURNAL_EXIT=%ERRORLEVEL%"
 if not "%RJ_WORKDIR%"=="" popd
 echo === RUN_JOURNAL_EXIT=%RUN_JOURNAL_EXIT% ===

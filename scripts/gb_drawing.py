@@ -482,11 +482,16 @@ def set_cjk_font(part):
 
 
 def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
-                   margin=VIEW_MARGIN, size=None):
-    """Create the first-angle trio (FRONT above, TOP below, RIGHT beside),
+                   margin=VIEW_MARGIN, size=None, bbox=None):
+    """Create the first-angle trio (TOP below FRONT, RIGHT left of FRONT),
     pinned by CONTENT centre into the free area above the title block.
     Call blank_datums() BEFORE this.  body defaults to the part's single
     body.  size must match the sheet created by new_sheet (A4/A3).
+
+    `bbox=(mmin, mmax)` supplies the model envelope directly: an assembly has
+    no single body to measure, so pass `assembly_bbox(assembly)` here and the
+    views are pinned by that envelope.  When bbox is given, `body` is not
+    consulted at all.
 
     NX 12's DrawingSheet DOES expose `Height` (measured 210 on the A4 sheet
     in 20_drafting_views.py) and `Length`; there is no `Width`.  The size is
@@ -497,13 +502,14 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
         raise RuntimeError("standard_views: pass size= (A4/A3) matching new_sheet")
     if size not in SHEET:
         raise RuntimeError("standard_views: unsupported size %r" % (size,))
-    if body is None:
-        bodies = list(part.Bodies)
-        if len(bodies) != 1:
-            raise RuntimeError("standard_views: pass body= for multi-body "
-                               "parts (%d bodies)" % len(bodies))
-        body = bodies[0]
-    bbox = model_bbox(body)
+    if bbox is None:
+        if body is None:
+            bodies = list(part.Bodies)
+            if len(bodies) != 1:
+                raise RuntimeError("standard_views: pass body= or bbox= for "
+                                   "multi-body parts (%d bodies)" % len(bodies))
+            body = bodies[0]
+        bbox = model_bbox(body)
     sheet.Open()
     svb = part.DraftingViews.CreateStandardViewsBuilder()
     svb.Part = part
@@ -535,17 +541,25 @@ def standard_views(part, sheet, body=None, scale=1.0, gap=VIEW_GAP,
         b = content_bbox(v, bbox[0], bbox[1])
         sizes[k] = (b[2] - b[0], b[3] - b[1])
     c = NONBIND_C[size]
-    fx = BINDING_A + margin + sizes["FRONT"][0] / 2.0
+    # GB first-angle: the view from the right sits LEFT of FRONT. Center the
+    # RIGHT+FRONT group in the usable frame area, otherwise the old
+    # left-pinned FRONT leaves no room for a left-side RIGHT view.
+    usable_left = BINDING_A + margin
+    usable_right = w - c - margin
+    group_w = sizes["RIGHT"][0] + gap + sizes["FRONT"][0]
+    x0 = usable_left + max(0.0, (usable_right - usable_left - group_w) / 2.0)
+    fx = x0 + sizes["RIGHT"][0] + gap + sizes["FRONT"][0] / 2.0
     fy = h - c - margin - sizes["FRONT"][1] / 2.0
     pos = {
         "FRONT": (fx, fy),
         "TOP": (fx, fy - sizes["FRONT"][1] / 2.0 - gap
                 - sizes["TOP"][1] / 2.0),
-        "RIGHT": (fx + sizes["FRONT"][0] / 2.0 + gap
-                  + sizes["RIGHT"][0] / 2.0, fy),
+        "RIGHT": (x0 + sizes["RIGHT"][0] / 2.0, fy),
     }
     for k in keep:
-        pin_view(sheet, views[k], pos[k][0], pos[k][1], scale, bbox=bbox)
+        b = pin_view(sheet, views[k], pos[k][0], pos[k][1], scale, bbox=bbox)
+        if b[0] < BINDING_A or b[1] < c or b[2] > w - c or b[3] > h - c:
+            raise RuntimeError("view %s content out of sheet: %r" % (k, b))
     return views
 
 
@@ -597,13 +611,18 @@ def hole_circles(body, radius=None, tol=0.01):
     at the highest z (the opening a top view sees).  radius filters out
     blends; a radius-blind pick makes the dimension read the blend instead of
     the hole (silent wrong value, per 19_drafting_annotation.py).
-    Returns [(edge, (x, y, z), radius)]."""
+    A full circle's `GetVertices` returns a reference point on the circle, not
+    the centre; the centre comes from `AskFaceData(face)[1]`.
+    Returns [(edge, (x, y, z), radius)] with (x,y) = face centre and z = the
+    opening plane."""
     out = {}
     for face in body.GetFaces():
         if face.SolidFaceType != NXOpen.Face.FaceType.Cylindrical:
             continue
         try:
-            r = abs(_ufs().Modeling.AskFaceData(face.Tag)[4])
+            fd = _ufs().Modeling.AskFaceData(face.Tag)
+            r = abs(fd[4])
+            cx, cy = float(fd[1][0]), float(fd[1][1])
         except Exception:
             continue
         if radius is not None and abs(r - float(radius)) > tol:
@@ -616,7 +635,7 @@ def hole_circles(body, radius=None, tol=0.01):
             if (abs(p1.X - p2.X) > 0.05 or abs(p1.Y - p2.Y) > 0.05
                     or abs(p1.Z - p2.Z) > 0.05):
                 continue
-            key = (round(p1.X, 3), round(p1.Y, 3))
+            key = (round(cx, 3), round(cy, 3))
             if key not in out or p1.Z > out[key][1]:
                 out[key] = (e, p1.Z, r)
     return [(v[0], (k[0], k[1], v[1]), v[2]) for k, v in sorted(out.items())]

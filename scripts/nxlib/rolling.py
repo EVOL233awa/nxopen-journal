@@ -9,8 +9,8 @@
                      圆柱/圆锥，能被 G7 认成建出的圆角面。
   roll_rim           圆边（凸台口、孔口、环面角）：同一截面绕边圆心轴旋转。
                      环面半径 R、主半径 = 滚球中心圆半径（≠ 边圆半径），刀面是
-                     精确 type19，rad_data = R；喇叭环面（主半径 = R）同样可建，
-                     但只对部分弧旋转，整圈会自交。
+                     精确 type19，rad_data = R；喇叭环面（主半径 = R）由 roll_rim
+                     拒绝；喇叭情形走 apply_roll_general → torus_ring_outer。
   classify_corner    B 类角面：沿 ±法向偏置 R，薄的一侧坍缩成脊线；判类取点云
                      第三主成分 thickness：≤0.005·R 且圆残差 ≤1e-9 判精确管道，
                      0.005–0.05·R 判近似角片，>0.05·R 判未知，s[0]/s[1]≤0.01 判球。
@@ -602,11 +602,10 @@ def torus_ring(wp, center, axis, major, radius, eps=0.02):
     ring = _revolve_uf(wp, curves, center, axis, 0.0, 2.0 * math.pi)
     if ring is None or ring.IsSheetBody:
         return None
-    from nxlib.modeling import face_blend_edge
     for e in ring.GetEdges():
         if e.SolidEdgeType == NXOpen.Edge.EdgeType.Circular:
             try:
-                face_blend_edge(wp, e, radius)
+                mdl.face_blend_edge(wp, e, radius)
             except Exception:
                 for b in list(wp.Bodies):
                     if b.Tag not in before:
@@ -648,7 +647,6 @@ def torus_ring_outer(wp, center, axis, major, radius, eps=0.02):
     ring = _revolve_uf(wp, curves, center, axis, 0.0, 2.0 * math.pi)
     if ring is None or ring.IsSheetBody:
         return None
-    from nxlib.modeling import face_blend_edge
     got = 0
     for e in ring.GetEdges():
         if e.SolidEdgeType != NXOpen.Edge.EdgeType.Circular:
@@ -659,7 +657,7 @@ def torus_ring_outer(wp, center, axis, major, radius, eps=0.02):
         if g["circle"]["r"] < 0.5 * ro:
             continue
         try:
-            face_blend_edge(wp, e, radius)
+            mdl.face_blend_edge(wp, e, radius)
         except Exception:
             for b in list(wp.Bodies):
                 if b.Tag not in before:

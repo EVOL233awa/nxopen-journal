@@ -55,6 +55,7 @@ from nxlib.testing import check, say, RESULTS
 from nxlib.session import new_part
 from nxlib.modeling import (apply_roll, block, boolean, face_blend_edge,
                             volume)
+from nxlib.reverse import interface_table
 from nxlib.measure import (CYLINDER, TORUS, compare_parts, face_table,
                            fillet_coverage, fillet_map, fillet_run_samples,
                            g7_reachability, g9_structure, hole_audit,
@@ -376,6 +377,14 @@ def main():
           "hole audit total=%d denominator=%d" %
           (audit["total"], len(audit["denominator"])))
 
+    iface = interface_table(meas, part, audit=audit)
+    tapered = [r for r in iface["rows"] if r["role"] == "tapered_hole"]
+    check("REG_INTERFACE_HALF_ANGLE",
+          bool(tapered) and all("half_angle_deg" in r for r in iface["rows"])
+          and any(abs(abs(r["half_angle_deg"]) - CS_ANGLE * 0.5) < 0.05
+                  for r in tapered),
+          "interface rows=%d tapered=%r" % (len(iface["rows"]), tapered))
+
     empty = station_report([], [], {"stations": [], "dropped": 0})
     check("REG_G1_EMPTY", not empty["pass"] and "no stations" in empty["reasons"],
           "empty station plan pass=%s reasons=%s" %
@@ -401,9 +410,11 @@ def main():
 
     structures = (len(d["cylinders"]) + len(d["cones"]) +
                   len(d["torus_groups"]))
-    g9_loose = g9_structure(part, 100)
-    g9_tight = g9_structure(part, structures, feature_factor=0.1,
-                            feature_offset=0)
+    # G9 只收结构表：宽松档给 1 个 id（limit=16），紧档按目录组数给等量 id。
+    g9_loose = g9_structure(part, [{"id": "STRUCT"}])
+    g9_tight = g9_structure(part, [{"id": "S%d" % i}
+                                   for i in range(structures)],
+                            feature_factor=0.1, feature_offset=0)
     say("g9 loose=%r tight=%r"
         % (g9_loose["reasons"], g9_tight["reasons"]))
     # 只报特征数的 G9 会放过"11 个无名 extrude"：名字缺失本身就要 FAIL，

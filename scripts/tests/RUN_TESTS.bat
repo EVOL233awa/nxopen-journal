@@ -16,9 +16,12 @@ rem   :gate runs scripts\run_journal_checked.py when a host python is
 rem   available. PASS = expected token present AND no _FAIL / STAGE_FAIL /
 rem   FATAL / Traceback line. "memory access violation" passes only for the
 rem   journals named in GATE_ALLOW_CRASH.
-rem   Without a host python :gate falls back to the findstr triple (token,
-rem   _FAIL, FATAL without a TESTxx_FATAL prefix) and still executes the
-rem   journal - the fallback gates, it does not SKIP.
+rem   Without a host python :gate applies the same markers with findstr
+rem   (token, _FAIL, any FATAL, Traceback, "memory access violation" unless
+rem   GATE_ALLOW_CRASH names the journal) and still executes the journal -
+rem   the fallback gates, it does not SKIP. A Traceback line is accepted only
+rem   when the log also carries "SystemExit: 0", the terminator of the clean
+rem   sys.exit(0) block; the python path also inspects the block body.
 rem NOTE: tests 26 (ThreadedHole) and 28 (Axis factory) deliberately
 rem reproduce a native crash, so a passing log contains "memory access
 rem violation" and run_journal exits 1 even though the log says "Execution
@@ -37,6 +40,8 @@ rem
 rem After the NX cases, test 19's PDF is checked at value level by
 rem verify_anno_pdf.py on the host interpreter. It needs pymupdf;
 rem without it the step prints SKIP and does not gate.
+rem verify_load_options.py then starts two more NX processes to gate
+rem cross-session UGII_LOAD_OPTIONS behavior (AsSaved vs FromDirectory).
 rem
 rem Generated artifacts land in .\parts and are deleted again at
 rem the end (they are fully regenerated each run).
@@ -47,6 +52,10 @@ set "TESTS=%~dp0"
 set "PARTS=%TESTS%parts"
 set "GATE_ALLOW_CRASH=26_hole_package.py 28_pattern_helix.py"
 if exist "%PARTS%" rmdir /s /q "%PARTS%"
+if exist "%PARTS%" (
+  echo FAIL parts directory could not be cleared, aborting
+  exit /b 1
+)
 if not exist "%PARTS%" mkdir "%PARTS%"
 
 call :gate 01_bracket.py TEST01_DONE
@@ -161,6 +170,12 @@ if errorlevel 1 exit /b 1
 call :pdfverify
 if errorlevel 1 exit /b 1
 
+rem cross-session load options: two extra fresh NX processes, driven by the
+rem host script verify_load_options.py (same assembly opened under AsSaved
+rem and FromDirectory defs; the component lives in a subdirectory).
+call :loadopt
+if errorlevel 1 exit /b 1
+
 echo === ALL TESTS PASSED ===
 if not "%KEEP_PARTS%"=="1" (
   rem artifacts are regenerated on every run; drop them to keep the skill small
@@ -178,11 +193,11 @@ rem ------------------------------------------------------------
 set "GATE_FILE=%~1"
 set "GATE_TOKEN=%~2"
 set "GATE_LOG=%TESTS%_gate_%GATE_FILE%.log"
+set "GATE_CRASH="
+for %%A in (%GATE_ALLOW_CRASH%) do if /I "%%A"=="%GATE_FILE%" set "GATE_CRASH=--allow-crash"
 set "PY=%PYTHON%"
 if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
 if not defined PY goto :gate_fallback
-set "GATE_CRASH="
-for %%A in (%GATE_ALLOW_CRASH%) do if /I "%%A"=="%GATE_FILE%" set "GATE_CRASH=--allow-crash"
 "%PY%" "%SKILL%\scripts\run_journal_checked.py" "%TESTS%%GATE_FILE%" "%PARTS%" --token "%GATE_TOKEN%" %GATE_CRASH% > "%GATE_LOG%" 2>&1
 if errorlevel 1 goto :gate_fail_wrapper
 del "%GATE_LOG%" >nul 2>&1
@@ -193,10 +208,22 @@ exit /b 0
 call "%SKILL%\scripts\run_journal_batch.bat" "%TESTS%%GATE_FILE%" "%PARTS%" > "%GATE_LOG%" 2>&1
 findstr /C:"_FAIL" "%GATE_LOG%" >nul
 if not errorlevel 1 goto :gate_fail_flag
-rem FATAL without a TESTxx_FATAL prefix means the journal died mid-way but
-rem may still have printed its success token later; that is not a pass.
-findstr /C:"FATAL" "%GATE_LOG%" | findstr /V /R "TEST[0-9][0-9]_FATAL" >nul
+rem Any FATAL line fails, including TESTxx_FATAL: run_journal_checked.py
+rem scans the same substring. The header states the fallback marker set.
+findstr /C:"FATAL" "%GATE_LOG%" >nul
 if not errorlevel 1 goto :gate_fail_flag
+rem A Traceback line is a failure unless it is the clean sys.exit(0) block
+rem run_journal prints, whose terminator is "SystemExit: 0".
+findstr /C:"Traceback" "%GATE_LOG%" >nul
+if not errorlevel 1 (
+  findstr /C:"SystemExit: 0" "%GATE_LOG%" >nul
+  if errorlevel 1 goto :gate_fail_flag
+)
+rem GATE_ALLOW_CRASH is the only exemption for the deliberate crash probes.
+if not defined GATE_CRASH (
+  findstr /C:"memory access violation" "%GATE_LOG%" >nul
+  if not errorlevel 1 goto :gate_fail_flag
+)
 findstr /C:"%GATE_TOKEN%" "%GATE_LOG%" >nul
 if errorlevel 1 goto :gate_missing_token
 del "%GATE_LOG%" >nul 2>&1
@@ -211,7 +238,7 @@ del "%GATE_LOG%" >nul 2>&1
 exit /b 1
 
 :gate_fail_flag
-echo FAIL %GATE_FILE% - a _FAIL verdict was printed
+echo FAIL %GATE_FILE% - output carries a failure marker
 echo ---- output ----
 type "%GATE_LOG%"
 del "%GATE_LOG%" >nul 2>&1
@@ -311,4 +338,33 @@ exit /b 0
 
 :pdfverify_fail
 echo FAIL pdf value check - anno19.pdf did not pass verify_anno_pdf.py
+exit /b 1
+
+rem ------------------------------------------------------------
+rem :loadopt - cross-session load options gate.
+rem verify_load_options.py builds an assembly whose component sits in a
+rem subdirectory, saves AsSaved/FromDirectory defs, then starts two fresh NX
+rem processes with UGII_LOAD_OPTIONS pointing at each def. AsSaved must load
+rem the component, FromDirectory must miss it. Needs a host python and NX.
+rem ------------------------------------------------------------
+:loadopt
+set "PY=%PYTHON%"
+if not defined PY for /f "delims=" %%P in ('where python 2^>nul') do if not defined PY set "PY=%%P"
+if not defined PY goto :loadopt_no_python
+echo load options cross-session interpreter: %PY%
+"%PY%" "%TESTS%verify_load_options.py" "%PARTS%" > "%TESTS%_gate_loadopt.log" 2>&1
+set "LOADOPT_RC=%ERRORLEVEL%"
+type "%TESTS%_gate_loadopt.log"
+del "%TESTS%_gate_loadopt.log" >nul 2>&1
+echo load options cross-session rc=%LOADOPT_RC%
+if not "%LOADOPT_RC%"=="0" goto :loadopt_fail
+echo PASS load options cross-session
+exit /b 0
+
+:loadopt_no_python
+echo SKIP load options cross-session - no python on PATH; set PYTHON
+exit /b 0
+
+:loadopt_fail
+echo FAIL load options cross-session - verify_load_options.py did not pass
 exit /b 1

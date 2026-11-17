@@ -119,10 +119,11 @@ def main():
     stage("view_scale_1_1", set_scale_one)
 
     # ------------------------------------------------------- edge resolution
-    # A full-circle edge reports p1 == p2 == arc centre. The hole openings carry
-    # an R2 blend, so the same centre also owns a R6 circle on the top face;
-    # a radius-blind pick would make the diameter dimension read the blend
-    # instead of the hole (silent wrong value), hence the radius filter.
+    # A full-circle edge reports p1 == p2, but p1 is a reference point on the
+    # circle, not the centre. The hole openings carry an R2 blend, so the same
+    # face also owns an R6 circle on the top face; a radius-blind pick would
+    # make the diameter dimension read the blend instead of the hole (silent
+    # wrong value), hence the radius filter.
     TOL = 0.05
 
     def near(pt, xyz):

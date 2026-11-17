@@ -45,6 +45,18 @@ def _cross(a, b):
             a[0] * b[1] - a[1] * b[0]]
 
 
+def _mass_units(part):
+    """质量属性的五件套单位对象列表（体积 mm³ / 质量 kg / 长度 mm / 力 N）。
+
+    `NewMassProperties` 要的是单位对象而非字符串；同一列表在 modeling /
+    measure / template 各写过一份，单位名写错一处就静默换单位，收在这里。
+    """
+    uc = part.UnitCollection
+    return [uc.FindObject(n) for n in
+            ("SquareMilliMeter", "CubicMilliMeter", "Kilogram",
+             "MilliMeter", "Newton")]
+
+
 def _perp_dist(p1, p2, d):
     v = _sub(p2, p1)
     return math.sqrt(max(0.0, _dot(v, v) - _dot(v, d) ** 2))

@@ -45,6 +45,12 @@
 
 - `ImportTo=WorkPart` 必须同时设 `OutputFile`（任意可写 `.prt` 路径）；漏设时
   `Commit()` 不报错、工作件仍是 0 bodies，必须靠回读判失败。
+- 部分安装上 `ImportTo=WorkPart` 即使设了 `OutputFile` 也只写中间件：Commit
+  后工作件实体数不增且不抛异常。按“实体数没增加”而不是“实体数为 0”判定，
+  用 `NXOpen.UF.Part.ImportPartModes()`（默认原图层/不建组/不导视图）
+  + `ufs.Part.Import(中间件, modes, [1,0,0,0,1,0], [0,0,0], 1.0)` 并入；
+  正常环境实体数已增加，兜底不触发。导入前后都要数工作件原有实体，防止把
+  原有实体算成导入结果。
 - `ImportTo=NewPart` 必须给 `SettingsFile` 与完整 `.prt` `OutputFile`。def 缺失
   或路径不存在时静默写约 40 KB 空壳（0 bodies），`Commit()` 不抛异常；
   `FileOpenFlag` 只设 False；`OutputFile` 的目录必须先建好，否则同样静默无产物。
@@ -85,12 +91,20 @@
 NX 写具体子类型：平面度是 `FLATNESS_TOLERANCE`，不是 `GEOMETRIC_TOLERANCE`。
 按泛型计数恒为 0。判据按子类型族：`FLATNESS_TOLERANCE >= 1`、
 `GEOMETRIC_ITEM_SPECIFIC_USAGE >= 2`，并检查 `LENGTH_MEASURE(0.05)` 是否落盘。
-`PmiData`/`Annotations` 关掉时这三个读数一起归零。
+`PmiData`/`Annotations` 关掉时这三个读数一起归零。`nxlib.exchange.export_step`
+的 `annotations=None` 跟随 `pmi`（只传 `pmi=True` 就同时开两个开关）；
+显式写 `pmi=True, annotations=False` 会打一行警告，不替调用方改语义。
+
+`check_deliverables --pmi` 只接受实体类型名（`*_TOLERANCE` 与
+`GEOMETRIC_ITEM_SPECIFIC_USAGE`/`DRAUGHTING_MODEL`/`DIMENSIONAL_*`/
+`SHAPE_DIMENSION_REPRESENTATION`/`DATUM_*`）。值类写法（如
+`LENGTH_MEASURE(0.05)`）可能被内联成 `MEASURE_WITH_UNIT(...)`，实体计数看不到，
+传进 `--pmi` 会直接抛 `ValueError`；值判据由 53 号用例按 STEP 原文断言。
 
 - 只按公差子类型判：`DRAUGHTING_MODEL` 在无 PMI 的 AP242 里也有 25 个。
 - 装配件：AP242 保留组件 PMI（1 FLATNESS / 2 GISU），AP214 静默丢成 0/0；
   结构实体两边一致（2 solid / 12 面 / 2 NAUO / 3 PRODUCT）。
-- 尺寸类 PMI 在 NX12 批处理里不可用：`CreatePmiHorizontalDimension` 与
+- 尺寸类 PMI 在 NX12 批处理里不可用，走 FCF 路线：`CreatePmiHorizontalDimension` 与
   Horizontal/Vertical/Ordinate/Diameter/Hole 及普通 `CreateHorizontalDimension`
   全部 `memory access violation`，空 `DimensionData + PmiData` 也崩；builder
   要求已存在 Dimension，无法自举。可交付的 PMI 只有 FCF（形状/方向类）。
@@ -100,9 +114,11 @@ NX 写具体子类型：平面度是 `FLATNESS_TOLERANCE`，不是 `GEOMETRIC_TO
 ## 7. 占用门（空腔/多料）
 
 - Z 单轴定站距会漏 1 mm 薄腔；站距必须 ≤ 最小特征厚度的一半，或改用三轴。
-- 三轴切片按等分格中心取站，最后一格不足站距也要取中心，否则顶/底薄层无站。
+- 三轴切片按 `lo+(k+0.5)·pitch` 取站；末站落到 `hi` 及以上时钳到 `hi−1e-4`，否则顶/底薄层无站。
 - 体积差是独立证据：三角网格有符号体积差超过 `max(1 mm³, 0.2%·V_ref)` 即判
-  FAIL，即使所有切片都 0 命中。面积站差阈值为 `max(0.5 mm², 0.1%·A_ref)`。
+  FAIL，即使所有切片都 0 命中。面积站差阈值为
+  `max(0.5 mm², 0.1%·max(A_ref, A_test))`。
+- 包盒三轴差超过 0.05 mm 判 `DELIV_E_OCCUPANCY_BBOX`（与体积/切片并列的独立证据）。
 - 无差异且站距粗于 `min_feature/2` 时输出 `NO_SIGNAL`，不是 `PASS`。
 - 连通分量变化也算差异（多体、内腔）。通孔负控：Ø10 通孔 ΔV 785.08 mm³
   （ΔV/V_ref=1.3085%，V_ref=60000 mm³ 为无孔参考件，带孔件 59214.92 mm³），

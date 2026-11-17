@@ -5,6 +5,9 @@
 
   - `ImportTo=WorkPart` 也必须设 `OutputFile`，否则 Commit 不报错、工作件
     仍是 0 bodies；
+  - 部分安装上 WorkPart 只把几何写进 `OutputFile` 中间件：Commit 后按实体
+    数增量判定，没增加就用 `UF_PART_import` 并入工作件；非空工作件断言
+    防止兜底把原有实体算成导入结果；
   - `ImportTo=NewPart` 的产物约 8 s 后才落盘；判定必须另起进程
     `Parts.OpenBaseDisplay` 重开读 `Bodies`，不能在同一次 Commit 后读
     `Parts.Work`；
@@ -86,6 +89,18 @@ def main():
           facts["bodies"] == 1 and facts["faces"] == 6
           and near(facts["volume"], 4000.0), str(facts))
 
+    # 非空工作件：UF 兜底按实体增量判定，原有实体不能被算成导入结果。
+    # 10³ 块 + 20×20×10 块 = 2 体 / 12 面 / 5000；重复导入会变成 3 体。
+    imp2 = S.new_part(path=os.path.join(BASE, "ex51_imp2.prt"))
+    modeling.block(imp2, NXOpen.Point3d(0.0, 0.0, 0.0), "10", "10", "10")
+    NXOpen.UF.UFSession.GetUFSession().Part.SetDisplayPart(imp2.Tag)
+    got2 = exchange.import_step(stp242, "ap242", target="work")
+    facts2 = exchange.part_facts(got2)
+    say("IMPORT242_WORK_NONEMPTY " + str(facts2))
+    check("T51_242_WORK_NONEMPTY",
+          facts2["bodies"] == 2 and facts2["faces"] == 12
+          and near(facts2["volume"], 5000.0), str(facts2))
+
     # 242 NewPart：简单实体 STEP 可用；importer 8 s 后才落盘，文件名由它
     # 自己定，不看我们给的 OutputFile。判"新出现的 .prt 里有没有可用实体"。
     out242 = os.path.join(BASE, "ex51_242_new.prt")
@@ -104,6 +119,22 @@ def main():
         ok242 = (f242["bodies"] == 1 and f242["faces"] == 6
                  and near(f242["volume"], 4000.0))
     check("T51_242_NEW", ok242, str(rows242))
+
+    # UF_PART_import 兜底本身：把 242 NewPart 产物并入空工作件，1 体 / 4000。
+    # DEX 只写中间件的安装上，上面的 work 用例最终走的也是这条通路。
+    uf_ok = False
+    uf_detail = "no 242 NewPart artifact"
+    if good242:
+        uf_path = os.path.join(BASE, good242[0][0])
+        uf_part = S.new_part(path=os.path.join(BASE, "ex51_uf.prt"))
+        NXOpen.UF.UFSession.GetUFSession().Part.SetDisplayPart(uf_part.Tag)
+        exchange._import_into_work(uf_path)
+        uf_facts = exchange.part_facts(uf_part)
+        uf_detail = str(uf_facts)
+        say("IMPORT_UF_WORK " + uf_detail)
+        uf_ok = (uf_facts["bodies"] == 1 and uf_facts["faces"] == 6
+                 and near(uf_facts["volume"], 4000.0))
+    check("T51_UF_WORK", uf_ok, uf_detail)
 
     # 214 NewPart 正控：同样等 8 s，再按目标路径或新文件找可开部件。
     out214 = os.path.join(BASE, "ex51_214_new.prt")

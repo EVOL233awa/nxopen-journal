@@ -18,7 +18,7 @@
 判据来自测量编译（`references/reverse-engineering.md` §12.1/§12.2）：
 
 - 同轴柱/锥/环面组 → 回转体（多段半径台阶 → `revolved_profile`；单段 →
-  `cylinder`/`hole_chain`）；
+  `cylinder`）；凹锥口进孔链，凸锥台按 `revolved_profile` 出行；
 - 同法向 ≥2 偏置平面族 → 板/环带（`plate_2p5d`）：取族内面积最大的一对
   偏置当板厚（宽面），要求该对面积 ≥ 所有带里最大对面积的
   `BAND_AREA_SHARE`；给 `part` 时沿族的行程方向取 1/6 与 5/6 两张截面，
@@ -306,9 +306,12 @@ def _revolved_structures(measure, fillet_radii=None):
             "confidence": "high" if faces else "low",
         })
     for gi, g in enumerate(measure.get("cones", [])):
+        # 凸圆锥是外锥台（加料），凹圆锥才是锥孔；两者同模板会让外锥台
+        # 走 drafted_bore 的 cut 分支
+        concave = bool(g.get("concave"))
         rows.append({
-            "role": "cone",
-            "template": "drafted_bore",
+            "role": "cone" if concave else "hub",
+            "template": "drafted_bore" if concave else "revolved_profile",
             "axis": [_round(v) for v in g.get("axis", [])],
             "point": [_round(v) for v in g.get("point", [])],
             "radius": _round(abs(float(g.get("radius", 0.0)))),
@@ -341,17 +344,21 @@ def _same_axis(a, b, tol_deg=COAXIAL_TOL_DEG):
         abs(a.get("radius", 0.0)), abs(b.get("radius", 0.0))) + 2.0
 
 
-def _hole_chains(measure, revolved, part=None):
+def _hole_chains(measure, revolved, part=None, fillet_radii=None):
     """孔链：把**同轴线的凹面段**（孔壁、锥口）归成一条链，逐段保留半径/长度。
 
-    判据只有两条：段必须是凹面（孔壁/锥口，不是凸台外圆），且与链的同轴线
-    重合。有 `part` 时用 `hole_audit` 的分母当种子（与 G2 同一分母），
-    只有测量时退回"凹面圆柱组"。阶梯孔绝不能被并成一段直孔；链里每段带
-    自己的半径与轴向区间，G2 仍按段逐孔匹配。
+    判据只有三条：段必须是凹面（孔壁/锥口，不是凸台外圆）、半径不在
+    `fillet_radii` 里（圆角面组不进功能面组），且与链的同轴线重合。种子取
+    测量里的凹面圆柱/圆锥组；只有池为空且给了 `part` 时才退回
+    `hole_audit` 的分母与 `mouth_cones`（那时才用审计口径）。阶梯孔绝不能
+    被并成一段直孔；链里每段带自己的半径与轴向区间，G2 仍按段逐孔匹配。
     """
+    radii = set(_round(abs(float(r))) for r in (fillet_radii or []))
     pool = []
     for g in measure.get("cylinders", []):
         if not g.get("concave"):
+            continue
+        if _round(abs(float(g.get("radius", 0.0)))) in radii:
             continue
         pool.append({"kind": "cylinder",
                      "radius": _round(abs(float(g.get("radius", 0.0)))),
@@ -684,11 +691,22 @@ def _arc_fit(part, face, hole_axis, window=None):
 SHAPE_SIMILARITY = 0.06        # 归一化轮廓的逐点半径相对差上限（相似判据）
 
 
-def _ring_radii_profile(pts3, n_out=24):
-    """三维闭环 → 归一化的"到形心距离"序列（只留形状，去掉位置与尺度）。"""
+def _ring_radii_profile(pts3, n_out=24, normal=None):
+    """三维闭环 → 归一化的"到形心距离"序列（只留形状，去掉位置与尺度）。
+
+    给了 `normal` 时先把点投影到该法向的截面平面（`ms.basis` 的 e1/e2）；
+    只取 p[0]/p[1] 时法向不是 Z 的截面会丢掉一个面内轴，不同的截面形状
+    会被判成相似。
+    """
     if not pts3:
         return None
-    ring = _resample_by_length([(p[0], p[1]) for p in pts3], n_out)
+    if normal is not None:
+        e1, e2 = ms.basis(normal)
+        uv = [(sum(float(p[k]) * e1[k] for k in range(3)),
+               sum(float(p[k]) * e2[k] for k in range(3))) for p in pts3]
+    else:
+        uv = [(p[0], p[1]) for p in pts3]
+    ring = _resample_by_length(uv, n_out)
     cx = sum(p[0] for p in ring) / float(len(ring))
     cy = sum(p[1] for p in ring) / float(len(ring))
     rs = [math.hypot(p[0] - cx, p[1] - cy) for p in ring]
@@ -698,15 +716,16 @@ def _ring_radii_profile(pts3, n_out=24):
     return [r / ref for r in rs]
 
 
-def _sections_similar(a, b, tol):
+def _sections_similar(a, b, tol, normal=None):
     """两张截面是否"同一轮廓按比例缩放"（拔模/缩放）而不是形状变了。
 
-    做法：各自归一化到平均半径 1，逐点比半径序列。拔模体的两张截面是同一条
-    轮廓的相似形，归一化后逐点重合；变截面臂的端面长宽比不同，归一化后仍
-    有明显差异。相位的选择取最小残差的那个循环移位（两截面起点可能不同）。
+    做法：先按截面法向 `normal` 投影，再各自归一化到平均半径 1，逐点比半径
+    序列。拔模体的两张截面是同一条轮廓的相似形，归一化后逐点重合；变截面
+    臂的端面长宽比不同，归一化后仍有明显差异。相位的选择取最小残差的那个
+    循环移位（两截面起点可能不同）。
     """
-    ra = _ring_radii_profile(a)
-    rb = _ring_radii_profile(b)
+    ra = _ring_radii_profile(a, normal=normal)
+    rb = _ring_radii_profile(b, normal=normal)
     if ra is None or rb is None:
         return False
     n = len(ra)
@@ -770,7 +789,7 @@ def _loft_structures(measure, part, bands):
         # 轮廓按比例缩放），面积比只反映收缩率。真正的变截面臂两张截面的
         # 形状本身不同（长宽比变）。区分靠相似度：把两张截面各自归一化到
         # 同一面积后，若逐点重合就是拔模/缩放，否则才是变截面。
-        if _sections_similar(shape[0], shape[1], SHAPE_SIMILARITY):
+        if _sections_similar(shape[0], shape[1], SHAPE_SIMILARITY, d):
             continue
         # 臂的证据是**沿行程方向的两张端面**，不是整条带的所有平面面。
         # 旧实现把 band["faces"]（整族全部面）都算作臂的证据，于是这块板的
@@ -810,7 +829,8 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
     families = _planar_families(measure)
     bands = _bands(families)
     revolved = _revolved_structures(measure, fillet_radii)
-    chains, chain_sources = _hole_chains(measure, revolved, part=part)
+    chains, chain_sources = _hole_chains(measure, revolved, part=part,
+                                         fillet_radii=fillet_radii)
 
     unresolved = []
     rows = []
@@ -1015,8 +1035,8 @@ def infer_structures(measure, part=None, fillet_radii=None, frame=None):
         row["build_order"] = i
 
     # ---- 面归属对账：每一张面都必须有结构解释，否则显式登记。
-    # 旧实现只处理 PLANE/CYLINDER/CONE/TORUS，SPHERE(18)/B_SURFACE(23)/
-    # BLEND(43) 既没有角色也不进 unresolved——球面、环面、自由曲面在结构表
+    # 旧实现只处理 PLANE/CYLINDER/CONE/TORUS，SPHERE(18)/BLEND(23)/
+    # B_SURFACE(43) 既没有角色也不进 unresolved——球面、环面、自由曲面在结构表
     # 里完全消失，而报告看起来"完整"。这里把未归属面按类型与半径分组点名。
     claimed = set()
     for row in rows:

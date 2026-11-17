@@ -7,7 +7,7 @@
 ### A.1 添加组件与组件操作
 
 ```python
-m = NXOpen.Matrix3x3(); m.Xx = 1.0; m.Yy = 1.0; m.Zz = 1.0   # ⚠ 无参构造为全 0，必须显式置对角
+m = NXOpen.Matrix3x3(); m.Xx = 1.0; m.Yy = 1.0; m.Zz = 1.0   # ⚠ 见下方「姿态/方向阵一律显式赋值」
 # 实参第 2 位=引用集名、第 3 位=组件名（已核对；再后面的实参未逐位验证）。
 # 下面这行与仓库现有调用点写法一致（nxlib/assembly.py、tests/16、tests/17 都传 "1","MODEL"）：
 # "1" 当引用集名（非法值 → 静默回退成 MODEL）、"MODEL" 当组件名，功能可用但没真正选引用集。
@@ -27,6 +27,7 @@ children = assy.ComponentAssembly.RootComponent.GetChildren() # ⚠ 没有 .Comp
 - `AsSaved` 按 .prt 里记录的组件目录找；`FromDirectory` 只搜父件所在目录，搜索目录列表完全不参与；`SearchDirectories` 只按列表找，不搜父件目录。装配或图纸副本被移到别处、组件留在原目录时，`FromDirectory` 会把组件全部卸载。
 - 未加载的唯一判据是 `PartLoadStatus.NumberUnloadedParts`（`GetPartName`/`GetStatusDescription` 给明细，按部件文件去重）；**`comp.Prototype` 对未加载组件也返回占位对象且不抛异常**，不能用来计数。
 - 跨机持久化：`Session.Parts.LoadOptions.Save(def_path)` 生成 def，`UGII_LOAD_OPTIONS` 指向它（NX 启动读一次，需重启）；会话内改 `ComponentLoadMethod` **会写回 def**（def 里 `LoadOptions_LoadOption` 分记 `load_as_saved`/`load_from_dir`/`load_from_search_dirs`，三种方式写出三种取值）。反证法验收：把 def 改成另一种方式，新会话必须复现未加载；改回必须全加载——证明配置真被读取，而不是记住了上次会话状态。
+- ⚠ 覆盖范围：`MoveComponent` 增量/全局枢轴、组件阵列、`AlignLock` 可建但 `CannotSolve` 已由 10/17 号 gate；`LoadOptions.Save` 写回与同会话 `Restore` 由 35 号 gate，跨会话加载由 `verify_load_options.py` 两进程差分 gate；双平面 Touch Slider（DOF `1T+0R` + Y/Z 位移被拉回）与 `NonMovingGroupGrounded` 默认 False/可写由 10 号 gate；Fit 单铰拖 90°/轴向滑 5 mm/`1T+1R` 枢轴由 16 号 gate（孔轴偏置 100 mm 的臂：原点扫 141.42 mm、Fit 仍 `Solved`、轴间隙 0）。
 
 ### A.2 配对约束（用例 10）
 
@@ -66,7 +67,7 @@ cf.SetName("FIX_base")
 
 - `con.Type` 只读 → 用 `con.ConstraintType`。
 - `Distance` 偏置**真正可用的是 `con.Expression.RightHandSide = "50"`**（成功且回读 50）；`con.OffsetRightHandSide` setter 不可用（传 str 报 `Not yet implemented`，传 float 报 `Expecting str type, found float` 的类型错）。
-- DOF 仅辅助，**读数可能偏大、不反映解算后的实际约束，不能当"约束是否生效"的互证工具**：件已被解算移动、`Solve()` 返回 None 之后，`GetDegreesOfFreedom()` 仍可能读 `3T+3R`；补 `DoUpdate` 后同样可能读 `3T+3R`。读数偏大先按未加载几何排查——约束引用未加载数据会被 DOF 计算忽略，读 DOF 前先预载子件（`nxlib.assembly.preload_components`）；`ClearNetwork`/约束持久性亦为疑似成因，未定论。`Fix`/`Fit` 在已解算网络上读到过正确值也不能外推。可当结论用的只有一条：删约束后任何件 `3T+3R`。做法：交付判据写拖动后的几何量与 `GetPosition()`，不写"DOF=X"。
+- DOF 仅辅助，**读数可能偏大、不反映解算后的实际约束，不能当"约束是否生效"的互证工具**：件已被解算移动、`Solve()` 返回 None 之后，`GetDegreesOfFreedom()` 仍可能读 `3T+3R`；补 `DoUpdate` 后同样可能读 `3T+3R`。读数偏大先按未加载几何排查——约束引用未加载数据会被 DOF 计算忽略，读 DOF 前先预载子件（`nxlib.assembly.preload_components`，只覆盖直接子件；嵌套子装配由调用方递归）；`ClearNetwork`/约束持久性亦为疑似成因，未定论。`Fix`/`Fit` 在已解算网络上读到过正确值也不能外推。删约束后读到 `3T+3R` 只是基线、无法区分约束是否生效，须用 `positioner.Constraints` 为空 + 冷开复核。做法：交付判据写拖动后的几何量与 `GetPosition()`，不写"DOF=X"。
 - `RemoveComponent` 不删 positioner 持久约束。清空：`for c in list(positioner.Constraints): c.Persistent = False` → `DeleteNonPersistentConstraints()` → 冷开 `list(...)==[]`。
 - 面引用 = `FindOccurrence(原型面)`；用错原型面**在装配约束里不报错**——错配的引用被接受，只在解算时静默变 `CannotSolve`。`not in the same file as the Targetset` 是 CAE 目标集（`SetObject`/TargetSetManager）的话（fea.md §5），别当装配约束的报错。
 
@@ -74,7 +75,7 @@ cf.SetName("FIX_base")
 （`ValueOf` 在 `dir()` 里但**不是枚举成员**，赋类型报 `Expecting NXOpen.Positioning.Constraint.Type type, found builtin_function_or_method`。）
 ⚠ **`Hinge`/`Slider`/`Cylindrical`/`Ball`/`Screw`/`Gear`/`RackPinion`/`Cable`/`CommonOffsetTransform`/`LinearPattern`/`CircularPattern`/`Linear2dPattern`/`RadiantPattern` 标注 `For internal use only`**，赋 `ConstraintType` 抛 `NXOpen.NXException: The constraint type is not valid for this operation.`（13 项全拒）。
 
-**可用性结论（做空间机构必读）**：装配定位层**没有球铰/圆柱铰/铰链/滑块原语**——全表 29 种里可赋 `ConstraintType` 的只有 **16** 种（`Touch`/`Concentric`/`Fix`/`Distance`/`Parallel`/`Perpendicular`/`Center12`/`Center22`/`Angle`/`Fit`/`Bond`/`OrientAngle`/`AlignLock`/`SplineData`/`SplineLength`/`Undefined`），其余 **13** 个 internal-only（上段）赋即抛 `NXException`。所以**球铰 + 圆柱铰的连杆机构在装配层无法约束**：硬凑 `Fit`/`Bond` 会让解算把件甩飞，且铰点同轴度读数对轴向滑移不敏感、不能用。正确做法：装配层只做**定位** + `Fit`/`Bond`（转动副走 §A.5 的 `Fit`/`Bond`，移动副走「两组平面 Touch」），铰链改在 Motion 域建——`motion.md` §M.3 只文档化并验证了 `Revolute` 与 `Slider` 两种关节的建法，`Ball`/`Cylindrical`/`Hinge` 在 Motion 域可建与否**未验证**（没有该实验）。
+**可用性结论（做空间机构必读）**：装配定位层**没有球铰/圆柱铰/铰链/滑块原语**——全表 29 种里可赋 `ConstraintType` 的只有 **16** 种（`Touch`/`Concentric`/`Fix`/`Distance`/`Parallel`/`Perpendicular`/`Center12`/`Center22`/`Angle`/`Fit`/`Bond`/`OrientAngle`/`AlignLock`/`SplineData`/`SplineLength`/`Undefined`），其余 **13** 个 internal-only（上段）赋即抛 `NXException`。所以**球铰 + 圆柱铰的连杆机构在装配层无法约束**：硬凑 `Fit`/`Bond` 会让解算把件甩飞，且铰点同轴度读数对轴向滑移不敏感、不能用。正确做法：装配层只做**定位** + `Fit`/`Bond`（转动副走 §A.5 的 `Fit`/`Bond`，移动副走「两组平面 Touch」），铰链改在 Motion 域建——`motion.md` §M.3 的 `Revolute`/`Slider` 已验，`Cylindrical`/`Spherical`（球铰）/`Universal`/`Planar` 由 23 号 gate（`JointDefine.Type` 全表无 `Hinge`/`Ball`：铰链= `Revolute`、球铰= `Spherical`；`AskSolverDofCount` 增量 2/3/2/3）。
 
 求解路线：先 `Fix` 基准件，再加 `Touch`/`Concentric`；`Distance` 偏置走 `con.Expression.RightHandSide`，其余可行回退走 §A.5 Bond 决策树——间隙配合/同轴贴合优先 Bond。对齐没有 `Align` 成员，用 `Concentric`/`Fit`。
 
@@ -124,7 +125,7 @@ con.CreateConstraintReference(comp_b, comp_b.FindOccurrence(hole_face_b), False,
 # 滑块侧面   ↔ 导轨侧面：  去掉 Y 平移 + 绕 Z 转动
 # 剩余自由度 = 沿 X 平移（DOF 1T+0R）
 ```
-- `Constraint.Type.Slider` internal-only（§A.2），**不要用 `Fit`/`Bond` 代替**。判据：拖动后滑块只沿导轨方向平移、其余方向位移为零；再转曲柄 5° 与解析式对账。
+- `Constraint.Type.Slider` internal-only（§A.2），**不要用 `Fit`/`Bond` 代替**。判据（10 号 gate）：`Fix(导轨)` + 两条 Touch 后 `GetDegreesOfFreedom()` 读 `1T+0R`、约束状态 `Solved`；把滑块 `MoveComponent` 沿 Y/Z 各移 5 mm 后重建网络 `Solve`，位移被拉回 0，沿 X 的 5 mm 保留。⚠ `DragByTranslation` 在批处理里只搬组件位姿，随后 `Solve` 不回收越界位移（约束仍报 Solved），不能拿它当约束活性判据。
 
 **附属件（销轴/套筒）跟动 = `Bond`**：
 ```python
@@ -134,7 +135,7 @@ c.CreateConstraintReference(comp_pin, comp_pin, False, False, False)    # 成员
 c.CreateConstraintReference(comp_host, comp_host, False, False, False)  # 成员 2
 ```
 - **每附属件单独一组、两成员**。⚠ **绝不可**把 N 个销轴 + M 个宿主放进同一 Bond——语义是"多个可动对象构成刚性组"，等于整机刚性。
-- 间隙配合时 `Fit` 不可用，`Bond` 作几何补丁；间隙动力学须另建。
+- 间隙配合改用 `Bond` 作几何补丁（`Fit` 只适用于过盈/接触）；间隙动力学须另建。
 
 **拖动配方**：
 ```python
@@ -147,16 +148,17 @@ net.SetMovingGroup([by["曲柄"]])            # 名单不决定谁动：谁动�
 net.DragByTransform(NXOpen.Vector3d(0.0, 0.0, 0.0), rot_z(5.0))
 net.Solve(); net.ApplyToModel(); net.EndDrag(); pos.ClearNetwork()
 ```
-- **拖动枢轴 = 约束铰轴线**（**不是**该件自身原点，也不是全局原点；与 §A.1 `MoveComponent` 绕全局原点**不是同一 API，不可混写**）：Fit 单铰下拖 90°，铰轴点原地不动、`dir` 不变、Fit 仍 `Solved`、DOF 仍 `1T+1R`，而组件原点绕铰轴划弧离开原位——若真绕自身原点转，孔轴必甩成水平、Fit 必破。`DragByTranslation` 是**纯平移**。`DragByTransform` 的矩阵按**转置**应用：用 §A.1 的按列写法传 +90°（`Xy=+1, Yx=-1`）实际得到 −90°（+X→−Y，P18）；要逆时针改用按行写法。`MoveComponent` 是原样回存，两者方向约定不同，不可混写。
+- **拖动枢轴 = 约束铰轴线**（**不是**该件自身原点，也不是全局原点；与 §A.1 `MoveComponent` 绕全局原点**不是同一 API，不可混写**）：16 号 gate 用孔轴偏置 100 mm 的臂验证——Fit 单铰下拖 90°，铰轴点原地不动、`dir` 不变、Fit 仍 `Solved`、DOF 仍 `1T+1R`，臂原点扫过 141.42 mm 圆弧且到铰轴半径恒为 100；若真绕自身原点转，孔轴必甩成水平、Fit 必破。`DragByTranslation` 是**纯平移**。`DragByTransform` 的矩阵按**转置**应用：用 §A.1 的按列写法传 +90°（`Xy=+1, Yx=-1`）实际得到 −90°（+X→−Y，P18）；要逆时针改用按行写法。`MoveComponent` 是原样回存，两者方向约定不同，不可混写。
+- ⚠ `DragByTranslation` 后接 `Solve`/`ApplyToModel` 在 10 号双平面滑块上不回收越界位移，约束状态保持 `Solved`；需要行为判据时改用 `MoveComponent` 后重建网络求解。
 - 谁动**由约束连通性决定，不由移动组名单决定**：默认 `NonMovingGroupGrounded=False` 时单件组照样驱动机器（Bond 伙伴被一并带走、Touch 伙伴随动）。⚠ **置 True 不是"拖不动"的开关**——同一 flag 在两套几何里表现相反：Bond 组那套里 True 使整组（含组内件）原地不动，Fit 铰那套里 True 仍被驱动转动。本环境只有"**默认值为 False**"是实证结论，别把 True 当锁死手段。任意活动杆都能驱动整机。
 - GUI 路径：装配 → 组件位置 → 移动组件，类型「动态」。
 
 **判据与约束**：
 - `Concentric` 挂圆柱面报 `CannotSolve` → 改挂孔口圆边；圆边约束了什么须拖动验证（位移落轴、绕轴自由、沿轴滑被拒），不能靠静态 DOF 读数下结论。
 - `Fit` 不等半径报 `InternallyInconsistent`；`AlignLock` **建得出来**（`FindOccurrence(圆柱面)` 返回 `Face` 不是 `None`，无 `No overload matches these arguments.`），但解算静默 `CannotSolve` → 不要用，改 `Concentric` 圆边或 `Fit`。
-- 路线：`Concentric` 孔口圆边无半径要求；`Fit` 圆柱面**必须严格等半径**（硬几何前提：配合件的孔/轴半径要手工精确匹配到同一值，否则 `InternallyInconsistent`），可读 `1T+1R`。交付用 `Fit`+`Bond`。
+- 路线：`Concentric` 孔口圆边无半径要求；`Fit` 圆柱面**必须严格等半径**（硬几何前提：配合件的孔/轴半径要手工精确匹配到同一值，否则 `InternallyInconsistent`），可读 `1T+1R`——16 号 gate 同时验证轴向滑 5 mm 被放行、绕轴转 90° 被放行，两者都保持同轴。交付用 `Fit`+`Bond`。
 
-圆边取**孔口整圆**（`p1 == p2 == 圆心`），用 `hole_top_edge()` 的"两顶点重合+取近顶面"筛法；取错面对齐到另一端。⚠ 该筛法**依赖几何构造方式**：同一几何上 `hole_face()` 可能返回含 4 条边（2 圆 2 直）的面，筛法在那种面上一个边都拿不到（返回 `None`），只有纯圆柱面才拿到 2 条——换几何后须先验证筛法成立，别当成通用。⚠ 圆边路线只在最小几何上验证，**真实多杆机构未验证**。
+圆边取**孔口整圆**（`p1 == p2` 只说明是整圆，`p1` 是圆周上的参考点不是圆心；圆心取 `AskFaceData(face)[1]`），用 `hole_top_edge()` 的"两顶点重合+取近顶面"筛法；取错面对齐到另一端。⚠ 该筛法**依赖几何构造方式**：同一几何上 `hole_face()` 可能返回含 4 条边（2 圆 2 直）的面，筛法在那种面上一个边都拿不到（返回 `None`），只有纯圆柱面才拿到 2 条——换几何后须先验证筛法成立，别当成通用。⚠ 圆边路线只在最小几何上验证，**真实多杆机构未验证**。
 
 **验证**：故意移开再解算须弹回同轴（静态重合时"无错+间隙 0"无证明力）；拖动后重测铰轴间隙；脚本不保存，保存后重新 `Parts.Open` 复测；`DexManager.CreateStlCreator` 导 STL 第三方复算（SKILL.md §3 路线约束 6）。
 

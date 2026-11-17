@@ -42,7 +42,9 @@ def read_stl(path):
     return np.array(verts, float), np.arange(len(tris) * 3).reshape(-1, 3)
 
 
-def weld(verts, ndigits=4):
+def weld(verts, ndigits=5):
+    """Merge vertices for body splitting; 5 digits matches stl_math.components
+    and deliverable.stl_census so a 4e-6 export jitter does not split a body."""
     key = np.round(verts, ndigits)
     uniq, inv = np.unique(key, axis=0, return_inverse=True)
     return uniq, inv.reshape(-1)
@@ -314,18 +316,24 @@ def main():
         print(__doc__)
         return 2
     src, dst = args[0], args[1]
-    numeric = [a for a in args[2:] if not a.startswith("--")]
     spec = {"out": dst, "parts": [{"stl": src}]}
+    # flag values are not positionals: --az 45 --el -60 must not become w/h
+    used = set()
+    for flag, key in (("--az", "az"), ("--el", "el")):
+        if flag in args:
+            i = args.index(flag) + 1
+            spec[key] = float(args[i])
+            used.add(i)
+    if "--scalebar" in args:
+        i = args.index("--scalebar") + 1
+        spec["scalebar"] = [float(args[i]), args[i + 1]]
+        used.update((i, i + 1))
+    numeric = [a for i, a in enumerate(args)
+               if i >= 2 and i not in used and not a.startswith("--")]
     if len(numeric) > 0:
         spec["w"] = int(numeric[0])
     if len(numeric) > 1:
         spec["h"] = int(numeric[1])
-    for flag, key in (("--az", "az"), ("--el", "el")):
-        if flag in args:
-            spec[key] = float(args[args.index(flag) + 1])
-    if "--scalebar" in args:
-        i = args.index("--scalebar")
-        spec["scalebar"] = [float(args[i + 1]), args[i + 2]]
     print("single %s" % src)
     return render(spec, dst)
 

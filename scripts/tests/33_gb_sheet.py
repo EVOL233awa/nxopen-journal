@@ -140,6 +140,10 @@ def main():
         n = gb.blank_datums(state["part"])
         print("BLANKED_DATUMS=%d" % n)
         gb.apply_gb_preferences(state["part"])
+        fid = gb.set_cjk_font(state["part"])
+        print("CJK_FONT=%d" % fid)
+        if fid <= 0:
+            raise RuntimeError("set_cjk_font returned %r" % (fid,))
         state["sheet"] = gb.new_sheet(state["part"], "SHT1", "A4")
         state["frame"] = gb.frame(state["sheet"], "A4")
         f = state["frame"]
@@ -164,10 +168,24 @@ def main():
                                    % (k, n))
             state[k] = v
         state["mbbox"] = gb.model_bbox(state["body"])
+        boxes = {}
         for k in ("FRONT", "TOP", "RIGHT"):
             cb = gb.content_bbox(state[k], *state["mbbox"])
+            boxes[k] = cb
             print("VIEW %s content=(%.1f,%.1f)-(%.1f,%.1f)"
                   % (k, cb[0], cb[1], cb[2], cb[3]))
+            f = state["frame"]
+            if cb[0] < f["left"] or cb[1] < f["bottom"] \
+                    or cb[2] > f["right"] or cb[3] > f["top"]:
+                raise RuntimeError("view %s content out of frame: %r"
+                                   % (k, cb))
+        fc, rc, tc = boxes["FRONT"], boxes["RIGHT"], boxes["TOP"]
+        if (rc[0] + rc[2]) / 2.0 >= (fc[0] + fc[2]) / 2.0:
+            raise RuntimeError("first angle: RIGHT must be left of FRONT: "
+                               "%r vs %r" % (rc, fc))
+        if (tc[1] + tc[3]) / 2.0 >= (fc[1] + fc[3]) / 2.0:
+            raise RuntimeError("first angle: TOP must be below FRONT: "
+                               "%r vs %r" % (tc, fc))
         print("VIEWS=3 VISIBLE=%s" % (",".join(counts),))
     stage("standard_views", s_views)
 
@@ -283,6 +301,18 @@ def main():
                                % (pitch_y, overall_y))
         print("LANE_ORDER_OK pitch_y=%.2f overall_y=%.2f"
               % (pitch_y, overall_y))
+        # diameter callout: its own delta is asserted AFTER the DIM_WANT block,
+        # so the overall/pitch/height/thickness count stays 4.
+        n_before = len(list(part.Dimensions))
+        dt = gb.dim_diameter(top, holes_sorted[0][0], holes_sorted[0][1],
+                             (hx - 25.0, hy - 4.0))
+        if dt is None:
+            raise RuntimeError("diameter dimension not created")
+        n_after = len(list(part.Dimensions))
+        print("DIA_DIM_DELTA=%d" % (n_after - n_before))
+        if n_after - n_before != 1:
+            raise RuntimeError("diameter dimension delta %d != 1"
+                               % (n_after - n_before))
     stage("dimensions", s_dims)
 
     def s_centers():

@@ -344,6 +344,27 @@ def main():
           "a reachable runway must not carry BLOCKED evidence: %r"
           % (plan_ok["evidence"],))
 
+    # closed ring: `fillet_run_samples` marks a runway whose faces each have
+    # two in-run neighbours; that is the only case that routes to
+    # roll_general (a full circular fillet), not to the open-chain roll_edge.
+    closed_run = {"radius": 3.0, "nfaces": 3, "faces": [60, 61, 62],
+                  "supports": [("22/R0.000/A0.000", 4)], "closed": True}
+    ring = []
+    for tag, nb in ((60, (61, 62)), (61, (62, 60)), (62, (60, 61))):
+        f = cyl(tag, [0.0, 0.0, 5.0], [0.0, 0.0, 1.0], 3.0)
+        f["edges"] = [{"tag": 930 + tag, "faces": [tag, nb[0]]},
+                      {"tag": 940 + tag, "faces": [tag, nb[1]]},
+                      {"tag": 950 + tag, "faces": [tag, 30]},
+                      {"tag": 960 + tag, "faces": [tag, 31]}]
+        ring.append(f)
+        fbt[tag] = f
+    plan_ring = tr.plan_runway(closed_run, fbt)
+    say("transition closed=%r" % (plan_ring,))
+    check("T49_TRANSITION_CLOSED_RING",
+          plan_ring["mechanism"] == "roll_general",
+          "a closed runway with two supports routes to roll_general: %r"
+          % (plan_ring["mechanism"],))
+
     # a support narrower than R cannot hold the blend.  The two supports
     # must be a legitimate pair (parallel walls): with perpendicular supports
     # the dihedral check fires first and the width reason never appears --
@@ -385,9 +406,9 @@ def main():
     check("T49_TRANSITION_WIDTH_RULE",
           need is not None and abs(need - 3.0) < 1e-9 and
           len(adequate) == len([w for w in widths if w >= need]) and
-          (len(adequate) >= 2) == (plan_tight["reachable"] is True),
-          "reachability must follow 'two supports >= R each': need=%r "
-          "widths=%r reachable=%r"
+          plan_tight["reachable"] is True,
+          "the face-table width is an estimate, so it must not decide "
+          "reachability: need=%r widths=%r reachable=%r"
           % (need, widths, plan_tight["reachable"]))
     single = dict(tight)
     single["faces"] = [52, 53]
@@ -405,10 +426,10 @@ def main():
     say("transition single-support=%r" % (plan_one,))
     obs1 = plan_one.get("build_obstacle") or {}
     check("T49_TRANSITION_WIDTH_REASON",
-          plan_one["reachable"] is False and
-          "wide enough" in obs1.get("reason", "") and
-          "support(s) wide enough" in obs1.get("reason", ""),
-          "a runway without two wide supports must say how many are short: "
+          plan_one["reachable"] is True and
+          "width_suspect" in obs1.get("reason", "") and
+          "support(s)" in obs1.get("reason", ""),
+          "a width shortfall is a build warning, not unreachability: "
           "%r" % (obs1,))
     check("T49_TRANSITION_EVIDENCE_SHAPE",
           obs1.get("runway_faces") == [52, 53] and "supports" in obs1,

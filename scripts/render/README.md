@@ -18,7 +18,7 @@ graph LR
   F --> D
 ```
 
-三维件：`run_export.bat part.prt out.stl` → `render_stl.py scene.json` →
+三维件：`run_export.bat C:\work\part.prt C:\work\out.stl` → `render_stl.py scene.json` →
 `condition.py in.png out.png 1500 1100 14`。工程图：NX 里出 PDF →
 `pdf2png.py in.pdf out.png 3.0` → `condition.py` 同样收尾。
 
@@ -28,9 +28,9 @@ graph LR
   必须经它传参：Git Bash 里 `\\$var` 在双引号内会吃掉反斜杠、journal 收到
   字面 `$n`（实测）；环境变量必须在 cmd 侧 set。日志写在 STL 同目录
   `export_stl.log`，NX 吞掉控制台输出时证据在这里。
-- **export_stl.py**（NX journal）——读 `IMG_PART`/`IMG_OUT`；三角公差
-  `ChordalTol=0.01`（0.05 在 README 渲染尺寸下圆柱面可见棱面；NX 12 的
-  STLCreator 没有 TriangleTolerance）；装配无自身体时回退
+- **export_stl.py**（NX journal）——读 `IMG_PART`/`IMG_OUT`，导出本体全部
+  委托 `nxlib.measure.export_mesh(scope="auto")`：弦高 0.01 mm、<=84 字节
+  判无几何；装配无自身实体时先 `preload_tree` 再收集组件实例体，不再走
   `Scope.EntirePart`。
 - **render_stl.py** `<scene.json>` 或 CLI 参数——Z 缓冲平面着色 + 二面角
   25° 特征边，效果对齐 NX"带边着色"视图。场景键：顶层

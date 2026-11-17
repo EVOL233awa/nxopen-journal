@@ -6,13 +6,15 @@
 
   1) PY36       scripts/tests/*.py 必须能以 Python 3.6 语法解析。NX 12 内嵌解释器
                 是 Python 3.6.1，3.7+ 的新语法在宿主 Python 上通过、在 NX 里直接
-                报语法错，这一组就是拦这件事。
-  2) COVERAGE   RUN_TESTS.bat 里 :gate 的每个用例号都要有对应文件，且每个用例文件
-                都要在 RUN_TESTS.bat 里被点到名（在跑或在不跑的注释里说明）。
+                报语法错，这一组就是拦这件事；feature_version 漏掉的 f-string
+                调试 `=` 与同引号嵌套由词法层补拦。
+  2) COVERAGE   tests/ 下的 .py 只允许用例名或 verify_*.py；RUN_TESTS.bat 里 :gate
+                的每个用例号都要有对应文件，且每个用例文件都要在 RUN_TESTS.bat 里
+                被点到名（在跑或在不跑的注释里说明）。
   3) DOCS       .md 的围栏配平、表格块必须有表头与分隔行、列数一致；README 与
                 README.en.md 里提到的本仓库文件必须存在；两个 README 要互相链接。
   4) TREE       SKILL.md 的文件清单要覆盖磁盘上的每个顶层条目（隐藏项除外），
-                清单里写出的 scripts/references/docs 路径必须在磁盘上存在，
+                清单里写出的每个路径必须在磁盘上存在，
                 避免新增目录或删文件后清单过期。
   5) NOLIB      标准层独占：非探针用例的函数（含嵌套）不得与 nxlib 公开 API 同名
                 （同名=配方被复制进用例，正是"越滚越大的史山"的形态；应 import）。
@@ -24,7 +26,8 @@
                 跨域通用且高发（静默失败/崩溃）的陷阱才留在 SKILL.md 铁律。
   8) WIKI       维护者导览 docs/wiki 必须跟代码同改：名册表（roster 标记后的
                 表格首列）要列出每个 nxlib 模块、域文件、工具脚本；用例/gate
-                计数要与本文件常量一致；页面必须被索引页链接；禁用"文件:行号"
+                计数要与本文件常量一致；页面必须被索引页链接且索引链接必须存在，
+                名册条目必须仍在磁盘上；禁用"文件:行号"
                 锚点（行号随维护漂移，改用符号名或 §章节）；被引用的符号与
                 §章节必须仍然存在。
 
@@ -36,6 +39,7 @@ import io
 import os
 import re
 import sys
+import tokenize
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else
                        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -43,7 +47,10 @@ TESTS = os.path.join(ROOT, "scripts", "tests")
 BATCH = os.path.join(TESTS, "RUN_TESTS.bat")
 NXLIB = os.path.join(ROOT, "scripts", "nxlib")
 WIKI = os.path.join(ROOT, "docs", "wiki")
-KEEP_DIRS = ("parts", "__pycache__", ".git")
+KEEP_DIRS = ("parts", "__pycache__")
+# 不在版本控制里的点目录。.github 等已跟踪的点目录照扫：隐藏目录不等于可跳过。
+# 这里按全名精确匹配；KEEP_DIRS 是前缀匹配，不能把 .git 放进去（会连 .github 一起跳过）。
+SKIP_DIRS = (".git", ".zcode", ".ruff_cache")
 # 探针/死路类用例：自包含（不复用标准层）是设计决策——它们的价值在原样记录
 # 原样调用方式，改写成库调用反而失真。新增同类用例必须显式登记进来。
 SELF_CONTAINED = {
@@ -59,7 +66,7 @@ EXPECTED_GATES = 50
 EXPECTED_PROBES = 3
 # 标准层规模：模块数与公开 API 数在 wiki 里有散文计数，一并钉住（同名函数跨模块
 # 只算一次，与 check_nolib 的 nxlib_apis() 同口径）。
-EXPECTED_API_COUNT = 231
+EXPECTED_API_COUNT = 232
 # 用例文件名的实名规则：PY36/COVERAGE/NOLIB/_FAIL 四组共用同一份。编号不限位数、
 # 大小写不敏感，否则 `54_Bad_Case.py` 这类名字对整道门隐形（连用例计数都不动）。
 CASE_NAME = r"\d\d+_[A-Za-z0-9_]+\.py"
@@ -74,6 +81,9 @@ DELIM = re.compile(r"^\|[\s:|\-]+\|$")
 # 词表只收过程叙述标记；"验证/复测"这类动作词是配方的一部分，不拦。
 CONCISE_PATTERNS = (
     (r"(19|20)\d\d[-年/.]\d{1,2}[-月/.]\d{1,2}", "日期"),
+    (r"\d{4}年\d{1,2}月", "日期"),
+    (r"\b(?:19|20)\d\d[-./](?:0?[1-9]|1[0-2])\b", "日期"),
+    (r"\b\d{8}\b", "日期"),
     (r"实测", "实测"),
     (r"冷启动", "冷启动"),
     (r"复验", "复验"),
@@ -90,7 +100,9 @@ CONCISE_PATTERNS = (
     (r"复证", "复证"),
     (r"审计实证", "审计实证"),
     (r"踩到", "踩坑"),
-    (r"上轮|旧版|曾经|当时|最初|后来", "历史指代"),
+    (r"本会话", "本会话"),
+    (r"文档原口径", "文档原口径"),
+    (r"上轮|旧版|曾经|当时|最初|后来|早前|原先|一开始|上一次", "历史指代"),
 )
 # ROUTE：负面断言必须同时给出做法；坑位式标题/表格一律不再新增。
 ROUTE_VERBS = ("用", "改", "走", "传", "设", "先", "必须", "直接", "按", "只",
@@ -98,6 +110,9 @@ ROUTE_VERBS = ("用", "改", "走", "传", "设", "先", "必须", "直接", "�
                "保留", "删", "断言", "校验", "枚举", "调", "提交", "选", "匹配",
                "→", "打")
 NEG_RE = re.compile(r"(不可用|不存在|只读|死路|不生效|必报|必抛|报错|失败|不能)")
+# 单字做法动词（用/只/选）会撞上负面词本身与名词：不先剔掉这些片段，
+# “不可用/只读/选项” 会靠自己的字面通过，负面断言判据就永远不触发。
+NEG_NOUN_RE = re.compile(r"(选项|用法|作用|选型)")
 PITFALL_HEAD_RE = re.compile(r"^#+.*(坑位|反模式|不可用项|死路|陷阱)")
 ALLOWED_TRAP_HEAD_RE = re.compile(r"^#+.*高发")
 # 高发清单只按显式标记认定：标题是否含「高发」由作者措辞决定，改个标题就能让
@@ -126,14 +141,121 @@ def rel(path):
 def md_files():
     out = []
     for base, dirs, names in os.walk(ROOT):
-        # 隐藏目录（.git/.zcode 会话草稿）不在版本控制里，扫进来会让门的结论依赖
-        # 别人本机的工作副本；KEEP_DIRS 按前缀匹配，覆盖 parts38/parts46 这类产物目录。
-        dirs[:] = [d for d in dirs if not d.startswith(".")
+        # .git/.zcode/.ruff_cache 不在版本控制里，扫进来会让门的结论依赖别人本机
+        # 的工作副本；.github 等已跟踪的点目录照扫。KEEP_DIRS 按前缀匹配，覆盖
+        # parts38/parts46 这类产物目录。
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS
                    and not any(d == p or d.startswith(p) for p in KEEP_DIRS)]
         for n in names:
             if n.lower().endswith(".md"):
                 out.append(os.path.join(base, n))
     return sorted(out)
+
+
+def _string_delim(text):
+    """字符串 token 的 (定界引号, 是否三引号)；找不到引号返回 None。"""
+    for i, ch in enumerate(text):
+        if ch in "'\"":
+            return ch, text.startswith(ch * 3, i)
+    return None
+
+
+def _quote_conflicts(delim, stack):
+    """该字符串的定界符是否与外层 f-string 冲突（3.6 会在解析期提前收尾）。"""
+    q, triple = delim
+    return any(q == outer_q and (triple or not outer_triple)
+               for outer_q, outer_triple in stack)
+
+
+def _fstring_quote_conflicts(src):
+    """f-string 替换域里复用外层定界引号在 3.6 解析期报错。
+
+    宿主 3.12 的 tokenizer（PEP 701）把 `f"{"x"}"` 与嵌套 `f"{f"{x}"}"` 都当合法；
+    3.11 及以前的宿主解析器本身拒绝这类写法，故只在 3.12+ 补这一层。
+    """
+    if sys.version_info < (3, 12):
+        return []
+    out = []
+    stack = []
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(src).readline)
+        for tok in tokens:
+            if tok.type == tokenize.FSTRING_START:
+                delim = _string_delim(tok.string)
+                if delim is not None:
+                    if _quote_conflicts(delim, stack):
+                        out.append((tok.start[0],
+                                    "f-string 同引号嵌套（3.12 起才允许）"))
+                    stack.append(delim)
+            elif tok.type == tokenize.FSTRING_END:
+                if stack:
+                    stack.pop()
+            elif tok.type == tokenize.STRING and stack:
+                delim = _string_delim(tok.string)
+                if delim is not None and _quote_conflicts(delim, stack):
+                    out.append((tok.start[0],
+                                "f-string 内复用同引号字符串（3.12 起才允许）"))
+    except (tokenize.TokenError, IndentationError):
+        pass
+    return out
+
+
+def _skip_string(text, i):
+    """从 text[i] 的引号起跳过整个字符串字面量，返回结束位置。"""
+    q = text[i]
+    triple = text.startswith(q * 3, i)
+    j = i + (3 if triple else 1)
+    while j < len(text):
+        if text[j] == "\\":
+            j += 2
+            continue
+        if triple:
+            if text.startswith(q * 3, j):
+                return j + 3
+        elif text[j] == q:
+            return j + 1
+        j += 1
+    return len(text)
+
+
+def _field_has_debug_eq(segment):
+    """FormattedValue 源码片段（`{expr=...}`）的顶层是否有调试 `=`。"""
+    if not (segment.startswith("{") and segment.endswith("}")):
+        return False
+    body = segment[1:-1]
+    depth = 0
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch in "'\"":
+            i = _skip_string(body, i)
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+        elif depth == 0 and ch == ":":
+            if not (i + 1 < len(body) and body[i + 1] == "="):
+                return False  # 进入 format spec，其后不再看
+        elif depth == 0 and ch == "=":
+            prev = body[i - 1] if i else ""
+            nxt = body[i + 1] if i + 1 < len(body) else ""
+            if prev not in "=!<>:" and nxt != "=":
+                return True
+        i += 1
+    return False
+
+
+def _fstring_compat_issues(tree, src):
+    """feature_version=(3,6) 不拦的 f-string 新语法：调试 `=` 与同引号复用。"""
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FormattedValue):
+            segment = ast.get_source_segment(src, node)
+            if segment is not None and _field_has_debug_eq(segment):
+                out.append((node.lineno, "f-string 调试 `=`（3.8 起才允许）"))
+    out += _fstring_quote_conflicts(src)
+    return out
 
 
 def check_py36():
@@ -164,10 +286,23 @@ def check_py36():
         n += 1
         src = read(path)
         try:
-            ast.parse(src, filename=name, feature_version=(3, 6))
+            tree = ast.parse(src, filename=name, feature_version=(3, 6))
         except SyntaxError as exc:
             problems.append("PY36 %s:%s %s" % (name, exc.lineno, exc.msg))
             print("  FAIL %s:%s %s" % (name, exc.lineno, exc.msg))
+            continue
+        for line, what in _fstring_compat_issues(tree, src):
+            problems.append("PY36 %s:%s %s" % (name, line, what))
+            print("  FAIL %s:%s %s" % (name, line, what))
+    probe_src = 'x = 1\nprint(f"{x=}")\n'
+    if len(_fstring_compat_issues(ast.parse(probe_src), probe_src)) != 1:
+        problems.append("PY36 自检失败：f-string 调试 `=` 未被识别")
+        print("  FAIL f-string 调试 = 自检失败")
+    if sys.version_info >= (3, 12):
+        nested_src = 'x = 1\nprint(f"{"x"}")\nprint(f"{f"{x}"}")\n'
+        if len(_fstring_compat_issues(ast.parse(nested_src), nested_src)) != 2:
+            problems.append("PY36 自检失败：f-string 同引号嵌套/复用未被识别")
+            print("  FAIL f-string 同引号嵌套自检失败")
     print("  解析 %d 个 py 文件（用例+随包模块），问题 %d 处" % (n, len(problems)))
 
 
@@ -179,6 +314,14 @@ def check_coverage():
         return
     batch = read(BATCH)
     files = set(n for n in os.listdir(TESTS) if CASE_RE.match(n))
+    # 命名规则之外的文件对 PY36/COVERAGE/NOLIB 三组都隐形；只允许 verify_*.py
+    # 这类宿主自检脚本，其余一律要求改名成 NN_name.py。
+    stray = [n for n in sorted(os.listdir(TESTS))
+             if n.endswith(".py") and not CASE_RE.match(n)
+             and not re.match(r"verify_.*\.py$", n)]
+    for n in stray:
+        problems.append("COVERAGE %s 不符合用例命名 NN_name.py（改名或登记为 verify_*.py）" % n)
+        print("  FAIL %s 不符合用例命名规则" % n)
     # :gate 必须是行首的 call（允许前导空白）。正则不锚行首时，
     # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行会被算作
     # "已覆盖"，套件实际跳过 34 号却报全绿。
@@ -305,6 +448,9 @@ def check_docs():
         m = re.search(r"^%s\s*=\s*(\d+)" % name, msrc, re.M)
         if m:
             ftypes[name] = int(m.group(1))
+        else:
+            problems.append("DOCS 面类型常量缺失 scripts/nxlib/measure.py 的 %s" % name)
+            print("  FAIL measure.py 缺面类型常量 %s" % name)
     pairs = (("球面", ftypes.get("SPHERE")),
              ("blend 面", ftypes.get("BLEND")),
              ("B 曲面", ftypes.get("B_SURFACE")),
@@ -334,7 +480,7 @@ def check_docs():
 
 
 def _tree_paths(tree):
-    """从 SKILL.md §8 的树形清单提取 scripts/、references/、docs/ 下的文件路径。"""
+    """从 SKILL.md §8 的树形清单提取全部文件路径（通配/省略号条目除外）。"""
     stack = []
     out = []
     for line in tree.splitlines():
@@ -350,8 +496,7 @@ def _tree_paths(tree):
             stack.append(entry.rstrip("/"))
             continue
         path = "/".join(stack + [entry])
-        if path.startswith(("scripts/", "references/", "docs/")):
-            out.append(path)
+        out.append(path)
     return out
 
 
@@ -381,11 +526,14 @@ def check_tree():
     tops = sorted(n for n in os.listdir(ROOT) if not n.startswith("."))
     # 清单条目的首段路径要与顶层条目全名相等：整块子串判据会把新增的 render/
     # 判成已登记（清单里现成写着 `scripts/render/`）。
+    # 只收深度 0 的条目：嵌套行的首段不是顶层目录（在 tests/ 下补一个同名
+    # README.md 不能顶替根目录的 README.md）。
     listing = set()
     for line in tree.splitlines():
-        m = re.match(r"^[│├└─\s]*([^\s/]+)", line)
-        if m:
-            listing.add(m.group(1))
+        m = re.search(r"(?:├──|└──)\s*([^\s/]+)", line)
+        if not m or len(line[:m.start()]) // 4 != 0:
+            continue
+        listing.add(m.group(1))
     for n in tops:
         if n not in listing:
             problems.append("TREE 清单未覆盖顶层条目 %s" % n)
@@ -455,16 +603,16 @@ def check_nolib():
         if not CASE_RE.match(name):
             continue
         for node in ast.walk(ast.parse(read(os.path.join(TESTS, name)))):
-            if not isinstance(node, ast.Call) or not node.args:
+            if not isinstance(node, ast.Call):
                 continue
             fn = node.func
             fname = getattr(fn, "id", None) or getattr(fn, "attr", None)
             if fname != "check":
                 continue
-            a0 = node.args[0]
-            # id 可能是拼出来的（`"47_A" + "_FAIL"` / `"47_B{0}".format("_FAIL")`）：
-            # 折不动就查首参整棵子树里的字符串常量，按约定 id 里不允许出现该 token。
-            bad = [p.value for p in ast.walk(a0)
+            # 全部位置参数与关键字参数都要扫：id 可能是拼出来的（`"47_A" + "_FAIL"` /
+            # `"47_B{0}".format("_FAIL")`），detail 里的 _FAIL 同样会进 gate 日志。
+            args = list(node.args) + [k.value for k in node.keywords]
+            bad = [p.value for a in args for p in ast.walk(a)
                    if isinstance(p, ast.Constant) and isinstance(p.value, str)
                    and "_FAIL" in p.value]
             if bad:
@@ -567,8 +715,9 @@ def check_routes():
                 bad_tbl += 1
                 problems.append("ROUTE %s:%d 坑位表，并入对应路线" % (r, i))
                 print("  FAIL %s:%d 坑位表" % (r, i))
+            body = NEG_NOUN_RE.sub("", NEG_RE.sub("", s))
             if (not s.startswith("#") and NEG_RE.search(s)
-                    and not any(v in s for v in ROUTE_VERBS)):
+                    and not any(v in body for v in ROUTE_VERBS)):
                 bad_line += 1
                 problems.append("ROUTE %s:%d 只有负面断言，没有做法" % (r, i))
                 print("  FAIL %s:%d 只有负面断言" % (r, i))
@@ -643,12 +792,23 @@ def check_wiki():
     idx = read(index)
     # 判据取 markdown 链接目标本身：子串包含会让 `[模块](03-modules.md.bak)` 这种
     # 坏链照样过（`.md.bak` 仍含 `03-modules.md`），只有删整行才报。
-    idx_links = {os.path.basename(m.group(1))
-                 for m in re.finditer(r"\]\(\s*([^)\s]+)\s*\)", idx)}
+    idx_links = set()
+    bad_links = []
+    for m in re.finditer(r"\]\(\s*([^)\s]+)\s*\)", idx):
+        target = m.group(1).split("#", 1)[0]
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        idx_links.add(os.path.basename(target))
+        if not (os.path.exists(os.path.join(WIKI, target))
+                or os.path.exists(os.path.join(ROOT, target))):
+            bad_links.append(target)
     for n in pages:
         if n not in idx_links:
             problems.append("WIKI %s 未在索引页里链接" % n)
             print("  FAIL 索引页未链接 %s" % n)
+    for t in sorted(set(bad_links)):
+        problems.append("WIKI 索引页链接 %s 不存在" % t)
+        print("  FAIL 索引页链接 %s 不存在" % t)
     blob = wiki_text()
 
     # 1) 覆盖：新增模块/域文件/工具脚本后，wiki 不改就过不去。
@@ -662,14 +822,29 @@ def check_wiki():
     refdir = os.path.join(ROOT, "references")
     if os.path.isdir(refdir):
         must["references"] = [n for n in sorted(os.listdir(refdir)) if n.endswith(".md")]
-    must["scripts"] = [n for n in sorted(os.listdir(os.path.join(ROOT, "scripts")))
-                       if n.endswith((".py", ".bat"))]
+    scripts_dir = os.path.join(ROOT, "scripts")
+    script_names = [n for n in sorted(os.listdir(scripts_dir))
+                    if n.endswith((".py", ".bat"))]
+    # render/ 是 scripts 的子目录，之前只扫顶层：新增渲染脚本（含
+    # run_export.bat）不必登记。tests/ 有自己的 README 与用例门，不并入此名册。
+    render_dir = os.path.join(scripts_dir, "render")
+    if os.path.isdir(render_dir):
+        script_names += ["render/" + n for n in sorted(os.listdir(render_dir))
+                         if n.endswith((".py", ".bat"))]
+    must["scripts"] = script_names
     rosters = {}
     for n in pages:
         lines = read(os.path.join(WIKI, n)).splitlines()
         cur = None
+        in_fence = False
         for line in lines:
             s = line.strip()
+            if s.startswith("```"):
+                in_fence = not in_fence
+                cur = None
+                continue
+            if in_fence:
+                continue
             m = re.match(r"<!--\s*roster:\s*([A-Za-z0-9_]+)\s*-->", s)
             if m:
                 cur = m.group(1)
@@ -696,13 +871,51 @@ def check_wiki():
     for m in missing:
         problems.append("WIKI 名册缺 %s（新增/改名后需同步 docs/wiki 的 roster 表）" % m)
         print("  FAIL 名册缺 %s" % m)
+    # 反向：名册里列着的文件必须还在磁盘上。只查 must->got 时，删掉域文件后
+    # roster 里的旧行照样安静地留在表里，名册反过来成了过期清单。条目可写全名
+    # 或去掉扩展名的 stem（与 1) 的 forward 判据同口径），这里两种都认。
+    existing = {}
+    if os.path.isdir(NXLIB):
+        existing["nxlib"] = set()
+        for n in os.listdir(NXLIB):
+            if n.endswith(".py"):
+                existing["nxlib"].update((n, n[:-3]))
+    if os.path.isdir(refdir):
+        existing["references"] = set()
+        for n in os.listdir(refdir):
+            if n.endswith(".md"):
+                existing["references"].update((n, n[:-3]))
+    existing["scripts"] = set()
+    for d in ("scripts", "scripts/tests", "scripts/render"):
+        full = os.path.join(ROOT, d)
+        if not os.path.isdir(full):
+            continue
+        for n in os.listdir(full):
+            if n.endswith((".py", ".bat")):
+                existing["scripts"].update((n, n.rsplit(".", 1)[0]))
+    for group, names in sorted(rosters.items()):
+        known = existing.get(group)
+        if known is None:
+            continue
+        for name in sorted(names):
+            if name not in known:
+                problems.append("WIKI 名册 %s 条目 %s 在磁盘上不存在"
+                                "（删/改名后需同步 docs/wiki 的 roster 表）" % (group, name))
+                print("  FAIL 名册 %s 条目 %s 不存在" % (group, name))
 
     # 1b) nxlib 名册的行数列必须等于文件实际行数：行数随维护漂移，写死了就
     #     会静默说谎（旧条目只靠人工回顾，漂了几个月没人发现）。
     for n in pages:
         cur = None
+        in_fence = False
         for line in read(os.path.join(WIKI, n)).splitlines():
             s = line.strip()
+            if s.startswith("```"):
+                in_fence = not in_fence
+                cur = None
+                continue
+            if in_fence:
+                continue
             m = re.match(r"<!--\s*roster:\s*([A-Za-z0-9_]+)\s*-->", s)
             if m:
                 cur = m.group(1)
@@ -714,14 +927,25 @@ def check_wiki():
                 if s:
                     cur = None
                 continue
-            if cur != "nxlib":
+            if cur == "nxlib":
+                base_dir, suffix = NXLIB, ".py"
+            elif cur == "references":
+                base_dir, suffix = os.path.join(ROOT, "references"), ".md"
+            else:
                 continue
             cells = [c.strip() for c in s.strip("|").split("|")]
-            mm = re.match(r"`([A-Za-z0-9_]+)`", cells[0]) if cells else None
-            num = re.match(r"^(\d+)\s*行?$", cells[-1]) if cells else None
+            mm = re.match(r"`([A-Za-z0-9_.\-]+)`", cells[0]) if cells else None
+            # references 表是 |文件|域|行数|用例|：行数在倒数第二列，最后一列
+            # 是用例号（单个编号会被误读成行数）。
+            num_cell = (cells[-2] if cur == "references" and len(cells) >= 2
+                        else cells[-1]) if cells else None
+            num = re.match(r"^(\d+)\s*行?$", num_cell) if num_cell else None
             if not mm or not num:
                 continue
-            path = os.path.join(NXLIB, mm.group(1) + ".py")
+            if cur == "references":
+                path = os.path.join(base_dir, mm.group(1))
+            else:
+                path = os.path.join(base_dir, mm.group(1) + suffix)
             if not os.path.isfile(path):
                 continue
             real = len(read(path).splitlines())
@@ -771,7 +995,7 @@ def check_wiki():
             problems.append("WIKI 的%s数应为 %d（与 check_repo.py 常量同步）" % (label, value))
             print("  FAIL %s数应为 %d" % (label, value))
 
-    # 2b) 标准层规模：wiki 散文里的"15 模块 / 231 个公开 API"没有名册背书（名册只保证
+    # 2b) 标准层规模：wiki 散文里的"15 模块 / 232 个公开 API"没有名册背书（名册只保证
     #     每个模块有一行，改错数字照样绿），按常量核对。
     modules_now = len([n for n in os.listdir(NXLIB)
                        if n.endswith(".py") and n != "__init__.py"]) if os.path.isdir(NXLIB) else 0
@@ -799,7 +1023,7 @@ def check_wiki():
     checked = bad_anchor = 0
     for n in pages + ["README.md"]:
         s = read(os.path.join(WIKI, n))
-        for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.(?:py|bat|md))`\s*的\s*`([^`]+)`", s):
+        for m in re.finditer(r"`([A-Za-z0-9_./\-]+\.(?:py|bat|md))`\s*(?:里的|的)\s*`([^`]+)`", s):
             target, anchor = m.group(1), m.group(2)
             path = resolve_ref(target)
             if path is None:

@@ -304,7 +304,7 @@ for ct in curves:
 - **截面与面表双证据**：截面给外形，面表给原始曲面。圆孔在截面里可能只显示为一个开口，必须用面表的圆柱面（半径、轴向、孔心）确认；两腿之间的矩形槽与圆孔同时存在时，按面表的圆柱面建孔，再按截面建槽。
 - **堆叠层各用各的截面**：相邻层的窗口/缺口形状、角度和半径可以完全不同；沿用相邻层会整层多料。
 - **凸台顶面与板顶不在同一高度**：螺栓凸台顶比板顶低一个台阶时，把沉孔切到板顶会把孔壁加长这个台阶高度。刀具上限取该孔自己的端面，不要用整块板的顶面。
-- **孔包入口与入口锥分开建**：`HolePackageBuilder` 的刀具在孔位之前固定延伸约 2 mm，孔壁起点更靠近入口面时会切掉入口外材料（孔壁变短、入口塌边）；按面表轴向区间建独立圆柱切除体，起止各穿出 1–2 mm。孔包一次成型还会把入口锥与孔壁绑在同一特征，改孔深会同时改锥面位置；按孔表把孔壁与入口锥拆成两个切除体，锥面按面表半径/半角建。
+- **孔包入口与入口锥分开建**：`HolePackageBuilder` 的刀具没有固定的入口延伸——入口延伸量随孔位/孔深在 0.000–5.000 mm 之间变（孔位离入口面越近越小，孔已通到顶面时为 0）；孔壁起点更靠近入口面时，刀具延伸会切掉入口外材料（孔壁变短、入口塌边），量得孔壁起点与设计不符时按面表轴向区间建独立圆柱切除体，起止各穿出 1–2 mm。孔包一次成型还会把入口锥与孔壁绑在同一特征，改孔深会同时改锥面位置；按孔表把孔壁与入口锥拆成两个切除体，锥面按面表半径/半角建。
 - **锪面深度校验**：`HolePackageBuilder.Validate()` 要求孔深大于锪面深度，锪面深度由 `(锪径 − 孔径)/2/tan(半角)` 决定；即使通孔已经切好，也把孔深写成该值加 1 mm 再提交，锥面只切入口那一圈。
 - **孔壁长度比原件长 0.5–1 mm 的整倍数** → 建成件的孔壁顶到了入口倒角或锪面占掉的那一段。孔壁长度是两端面之间的净长，锥段不计入；先建入口倒角再复测孔长，不要靠缩短孔深去凑，那会把孔底一起缩短。
 - **圆柱/锥面参数一致性的半径/孔心/轴全对、只有长度差一个或几个过渡段** → 自建件用一根直孔贯穿了原件由同轴多半径段组成的孔（沉孔/锪面/退刀槽/锥段）。按 `group_coaxial` 的半径分桶逐段建切除体，长度取各段自己的面表轴向区间；不要用总深拉一根孔再解释为“过渡简化”，那会在每段端面留下整圈多料/缺料。
@@ -329,10 +329,10 @@ for ct in curves:
 
 ### 9.1b 过渡规划（`nxlib.transitions`）
 
-`transitions.plan_runway(run, faces_by_tag)` 把一条参考跑道落成机制决策，`transitions_plan(part, measure, radii)` 出整件计划。它只读测量、不建几何；产出三样东西：
+`transitions.plan_runway(run, faces_by_tag)` 把一条参考跑道落成机制决策，`transitions_plan(part, measure, radii)` 出整件计划。它只读测量、不建几何（读数用面表/站表，几何由 `structures` 建）；产出三样东西：
 
 - `mechanism`：按支撑面构成路由（两侧平面-平面开链 → `roll_edge`；平面 + 曲面或曲面 + 曲面 → `face_blend`；闭合整圆 → `roll_general`；支撑面读不全 → `measured_section`，即 §9.8）。分母是**切向支撑面**，不是跑道面的全部邻面：端面/切面按方向排除（圆柱/圆锥跑道看平面法向是否垂直于跑道轴，环面跑道看平面法向是否平行于环轴且到中心面距离等于 minor R）。
-- `reachable` + `reasons`：支撑面宽度**不足两条满足 `R`**、二面角超出 20°–160°。两条都在试建前判，不必靠失败反推。宽度用**面盒估计**（按面法向去掉法向分量后取面内小跨度）：轴对齐矩形面精确、曲面偏大，**斜置窄壁会严重低估**——10 mm 宽的 45° 支撑算得 2.93 mm，所以它只是粗筛，不能当上界也不能当判定。
+- `reachable` + `reasons`：只有二面角超出 20°–160° 会置 `reachable=False`。支撑面宽度用**面盒估计**（按面法向去掉法向分量后取面内小跨度）：轴对齐矩形面精确、曲面偏大，**斜置窄壁会严重低估**——10 mm 宽的 45° 支撑算得 2.93 mm，因此它只作粗筛（`width_suspect`），不参与可达性判定；边界上的跑道回到 `fillet_feasible` 按边几何复算。
 - `build_obstacle` 与 `evidence` 分开：**宽度不足**记 `build_obstacle`——参考件自己的圆角已经存在，所以"支撑比 R 窄"证明的是复刻难，不是物理不可达；把它当 BLOCKED 会让参考解自己都不过（旧口径 `ceiling = 跑道/面` 犯的就是这个错）。只有**二面角越界**才是拓扑不可达，进 `evidence`。
 - G7 的 `BLOCKED` **只认 `evidence`**（`verify_parts(..., g7_transitions=True)`）；没有证据的跑道一律 FAIL，`build_obstacle` 是构建阶段的行动项。
 - **跑道长度不在这里判**：`plan_runway` 的判据里没有那条边的长度（run 行虽带 `samples`/`bbox`，计划层没把它做成长度判据），所以它不产出 length 原因；`0.5R` 那一档由 `structures.fillet_feasible(min_len_factor=0.5)` 按边几何给（§9.2 末条）。
@@ -372,7 +372,7 @@ fb.FaceBlendDefineType = NXOpen.Features.FaceBlendBuilder.DefiningType.BlendTwoF
 fb.FirstFaceCollector = face_collector(wp, [face_a])
 fb.SecondFaceCollector = face_collector(wp, [face_b])
 fb.CrossSectionType = NXOpen.Features.FaceBlendBuilder.CrossSectionOption.Circular
-fb.CircularCrossSection.SetRadius(repr(radius))
+fb.CircularCrossSection.SetRadius(str(radius))
 fb.CommitFeature()
 ```
 
@@ -480,7 +480,7 @@ part_o = open_part(ORIG)
 audit = hole_audit(orig, part_o)       # G2 分母：全部柱/锥组入账
 cmp = compare_parts(ORIG, BUILT, ref_a=audit["denominator"])
 gates = verify_parts(ORIG, BUILT, g7="auto", g9=True,
-                     structure_count=STRUCT_ROWS)   # G0–G9，每门带 status
+                     structure_count=STRUCT_TABLE)   # G0–G9，每门带 status
 mesh_o = read_stl(export_mesh(open_part(ORIG), STL_ORIG))
 mesh_b = read_stl(export_mesh(open_part(BUILT), STL_BUILT))
 bbox_o, bbox_b = mesh_bbox(mesh_o), mesh_bbox(mesh_b)
@@ -498,9 +498,9 @@ iou = section_iou(mesh_o, mesh_b, (0.0, 0.0, z), (0.0, 0.0, 1.0))
 - **局部试件/组件比对先刚性对齐再报 IoU**：面积/周长在 1% 内不代表形状对上（端壁位置差可被端角半径互换抵消）。做法：精确截面 → 绕截面法向旋转+平移对齐 → 报对齐 IoU、未对齐 IoU 与差值多边形主位置；窗口参数校验 `u_min<u_max`、`v_min<v_max` 且首站两侧面积非零（窗口写错时两侧同为 0，会伪装成完美匹配）。
 - **测站避开轮廓台阶高度**：`exact_section` 切在台阶/顶点值（±0.2 mm）会产生环分裂与开环伪影，该站读数不可当结构差；层叠结构各层外缘不同，按层分别取截面。**平面站的判定口径是"名义站位 + 沿法向 13.7 µm 偏到材料侧"的 STL 切面**（`measure.cut_plan`）：切面与原件面共面会导致环分裂/零面积，偏一点就绕开共面三角，站保留并标 `coplanar=True/offset_mm/offset_dir/offset_basis`，报告里能看出这一站不是名义截面以及方向凭什么定（`face_normal` = 共面面外法向反向，`section_area` = 原件截面积较大侧）；不得剔除站、改站表或用自建面站位代替。B-rep 名义站口径（`exact_section` + `station_report_hybrid`）**只在自比对证明该件的剖面段能闭合成环时**才用作判定：`UF SectionFromPlanes` 按面边界返回开口段，导入体上端点本应重合却串不成环，`brep_section_iou` 对开口判失败，于是每一站平面站都假失败；此时要么先修串环（按切线连续性选续接段，见 §9.8），要么退回 STL 偏置口径。要用 B-rep 读数做题解（重建轮廓、结构分界截面）时，串环算法必须按切线续接，贪心按键取段会串成开口环或自回零面积环。斜面的 point/normal 与轮廓取 B-rep 面表/精确截面，轮廓端点用相邻平面的交线解析求（两面方程联立），不从 STL/采样点取；STL 采样会让斜面的位置差远小于包盒位置与尺寸差容差，却足以让整面站归零。
 - **比对的分母是原件，且先跑 `hole_audit`**：`unmatched_a` 是“原件有、自建件没有”的结构，逐项建或写入简化清单；原件侧先 `hole_audit`（全部柱/锥组：功能孔、锥孔/沉孔、耳孔、锥口），再用 `functional_hole_groups` 与截面内环互证，`audit["denominator"]` 作为 `ref_a` 传给 `compare_parts`；`functional_hole_groups` 少于 `hole_audit` 时缺组进 `missing_groups`，G2 判失败。圆角/凸台/外轮廓转角不计入分母；`hole_audit.total==0` 时 G2 记 N/A。只报 `unmatched_b` 会把漏建结构当成通过；`unmatched_b` 逐项确认是孔还是圆角/凸台，多出的圆角组不算漏建。
-- **通用几何门用一次汇总**：`verify_parts(orig, built, g7="auto", g9=True, structure_count=结构表行数)` 按原件面表生成测站（平行平面族每偏距一站；圆柱/圆锥沿自身轴取根/中/端），逐站比 IoU/面积（默认 STL 切面口径：平面站与轴站按 `cut_plan` 偏 13.7 µm，`section_mode="brep"` 才换 B-rep 名义站），再比圆柱/锥面参数（分母 `hole_audit`）、体积、包盒、top/front/side/iso 轮廓与双向偏差（单实体可读至双向表面偏差）。偏差用 `mesh_deviation`：双向面积加权与精确点—面距离，`sample_surface` 固定 seed 可复现；长度按 `measure_part` 的 `length_scale` 换到毫米。`station_plan` 受 `max_stations` 约束，`budget_skipped>0`/`plan_complete=False` 是采样截断：G1 结论只对已比站有效，报告要另列未进自检的结构，不能把自动站表当全覆盖；空站表/几何剔除才判失败。每门返回 `status: PASS|FAIL|BLOCKED|N/A`，`pass` 只对全 PASS/N/A 为真，`delivery_pass` 在任一 BLOCKED 时为 false，`blocked` 单列。G7 按 §9.5 双轨（`G7geo` 结论、`G7raw` 参考），G9 按 §4.1 硬式；表达式可编辑性按 §7 单独查。
-- **G4 不可达证据**：`g4_blocked_reason(part, axis, side, delta, limit, R)` 取该轴极值顶点、邻接面/边与最短邻边；≥3 面且最短边 <0.5R 时返回 `blocked=True` 与 `projection_reduction_mm`，G4 记 BLOCKED 并逐轴列残差；R 默认取参考件环面圆角中面数最多的半径（主圆角组），证据里带 `corner_radius_mm/corner_radius_basis`；否则仍按 0.05 mm 判 FAIL，不用 BLOCKED 兜底。**R 是必给项**：参考件无环面且未显式给 R 时返回 `blocked=False` 并把 `corner_radius_basis` 写成"半径未知"（不猜零件常数），该轴按 FAIL 处理。
-- **G9 用特征树直方图，不用目测**：`g9_structure(part, structures)` 统计 `FeatureType` 直方图、类型占比、父子深度与同型站栈占比；`structures` 取结构表行数并显式传入（`verify_parts(..., g9=True, structure_count=N)`）；`structure_directory` 的组数只作对账诊断，圆角面会逐面成组，当分母会让 G9 失去约束。任一判据不过即 FAIL，列出直方图、深度与站栈计数，不用“特征数不多”这类定性描述过关。
+- **通用几何门用一次汇总**：`verify_parts(orig, built, g7="auto", g9=True, structure_count=结构表)` 按原件面表生成测站（平行平面族每偏距一站；圆柱/圆锥沿自身轴取根/中/端），逐站比 IoU/面积（默认 STL 切面口径：平面站与轴站按 `cut_plan` 偏 13.7 µm，`section_mode="brep"` 才换 B-rep 名义站），再比圆柱/锥面参数（分母 `hole_audit`）、体积、包盒、top/front/side/iso 轮廓与双向偏差（单实体可读至双向表面偏差）。偏差用 `mesh_deviation`：双向面积加权与精确点—面距离，`sample_surface` 固定 seed 可复现；长度按 `measure_part` 的 `length_scale` 换到毫米。`station_plan` 受 `max_stations` 约束，`budget_skipped>0`/`plan_complete=False` 是采样截断：G1 结论只对已比站有效，报告要另列未进自检的结构，不能把自动站表当全覆盖；空站表/几何剔除才判失败。每门返回 `status: PASS|FAIL|BLOCKED|N/A`，`pass` 只对全 PASS/N/A 为真，`delivery_pass` 在任一 BLOCKED 时为 false，`blocked` 单列。G7 按 §9.5 双轨（`G7geo` 结论、`G7raw` 参考），G9 按 §4.1 硬式；表达式可编辑性按 §7 单独查。
+- **G4 不可达证据**：`g4_blocked_reason(part, axis, side, delta, limit, R)` 取该轴极值顶点、邻接面/边与最短邻边；≥3 面且最短边 <0.5R 时返回 `blocked=True` 与几何证据（极值顶点、邻面、最短边、二面角、半径依据），G4 记 BLOCKED 并逐轴列残差；R 默认取参考件环面圆角中面数最多的半径（主圆角组），证据里带 `corner_radius_mm/corner_radius_basis`；否则仍按 0.05 mm 判 FAIL，不用 BLOCKED 兜底。**R 是必给项**：参考件无环面且未显式给 R 时返回 `blocked=False` 并把 `corner_radius_basis` 写成"半径未知"（不猜零件常数），该轴按 FAIL 处理。
+- **G9 用特征树直方图，不用目测**：`g9_structure(part, structures)` 统计 `FeatureType` 直方图、类型占比、父子深度与同型站栈占比；`structures` 只收结构表本身（`verify_parts(..., g9=True, structure_count=结构表)`），传行数（`structure_count=N`）直接 `ValueError`；`structure_directory` 的组数只作对账诊断，圆角面会逐面成组，当分母会让 G9 失去约束。任一判据不过即 FAIL，列出直方图、深度与站栈计数，不用“特征数不多”这类定性描述过关。
 - **匹配成功不等于合格，结论只取整链布尔值**：`pass` 按圆柱/锥面参数一致性阈值逐项判（圆柱半径 0.025、孔心 0.05、轴 0.1°、长度 0.1；圆锥加半角 0.1°），已匹配但超差的项按 `delta_radius/delta_center/delta_length/delta_half_angle_deg` 修到阈值内；`verdict = cmp["pass"]`，它要求原件功能组全部匹配且逐项过阈值；`unmatched_b`（多出的圆角/凸台组）只作复核，`strict_pass` 才要求两组全匹配。`pairs` 数量或“匹配上的组数”不作通过证据；原件有圆锥组却用圆柱代替时圆柱/锥面参数一致性直接失败。
 - **面表先出结构假设，再动手**：同轴圆柱/圆锥成组 → 回转；大平面为主、圆柱少 → 棱柱基体 + 孔切除；环面成组 → 圆角地图；B 曲面 → 端盖/过渡面，按截面族收口；同轴同半径被环槽打断 → 一个功能孔，按轴向区间整体建一个切除体。
 - **截面核验取结构分界站**：站表从面表生成（水平站取全部水平平面族的 z；功能孔取轴向端点与中点并沿孔轴法向各取一站；每个结构沿自身轴线取根/中/端，开口与槽另取槽底与两端），取原件结构分界的全集，不只取建模用到的站；只取 z 站会给出高通过率而与整门相反，失败集中在斜向、耳孔与凸耳站。每个组件根/中/端各一站，孔取过轴与垂直轴各一站；面积差与 IoU 同时看，面积差小但 IoU 低说明形状错位，IoU 高但面积差大说明孔/槽环没减掉。
@@ -539,8 +539,8 @@ template.derived(wp, "ROOT_FILL_U", "U_BACK - ROOT_FILL_R", "Length")
 - **每结构至少一条命名驱动表达式**，且特征里引用的是名字不是字面值；派生约束写成公式（`A = B - R`），不是两处字面值恰好相等——否则改 B 时 A 不跟。哪些量该进表达式见 §12.2（设计/数据分层）：测量轮廓是数据层，写成表达式只会造出死参数。
 - **引用稳定**：只引用基准面/基准轴/草图/主结构面；不引用圆角边、阵列面、会被布尔吃掉的面（`modeling.md` §1.8）。
 - **单参数扰动**：改值 → `DoUpdate` 0 回滚、0 告警、单实体；还原后体积/面数逐位复原。还原对不上说明更新过程中几何被重写，该参数不能直接驱动。
-- **局部性**：改一个结构参数，无关结构的量测站/包盒/体积变化在 STL 噪声内；不满足就拆子模板或接受“结构级重算”并把依赖链写进报告。
-- **活参数普查覆盖全表**：矩阵只测挑出来的代表参数会漏掉死参数与坏参数；交付前对每个命名表达式做 +10% 普查，live/named ≥0.9、broken=0，并按结构核对“每结构至少一条 live”。派生量单独标注，不进编辑集——改派生量的 RHS 会破坏公式（NX 报 `The specified expression variable does not exist.`）。
+- **局部性**：改一个结构参数，无关结构的量测站变化在 STL 噪声内；体积按改前/改后成对记录作诊断（不进 gate，噪声底未标定）。不满足就拆子模板或接受“结构级重算”并把依赖链写进报告。
+- **活参数普查覆盖全表**：矩阵只测挑出来的代表参数会漏掉死参数与坏参数；交付前对每个命名表达式做 +10% 普查，`alive_ratio = 1.0`、`dead`/`broken` 为空，并按结构核对“每结构至少一条 live”。派生量单独标注，不进编辑集——改派生量的 RHS 会破坏公式（NX 报 `The specified expression variable does not exist.`）。
 - **声明必须先对账，`alive_ratio` 不是可编辑性证明**：`expression_survey` 的分母只含**真的建出来**的表达式，所以“声明 35 条、只建 25 条”照样报 `alive_ratio=1.0`。交付前把参数表的设计行与 `survey.named` 做差集，差集逐条进 `missing` 并写进 G8 判定（`audit.liveness(part, design)` 就是这么分的），`missing` 非空即不通过。漏建的成因通常是量被写成了构建时字面值，改成表达式再复测，不要用“比例 1.0”盖过。
 - **可编辑性至少三层证据**：① 声明对账（上一条）；② 单参数 +10% 全绿（`alive_ratio`）；③ **逐参数可用包络**——按倍率递增改值直到 `Update undo happened`，记下最后一个仍能解算的倍率（`audit.edit_envelope` / `edit_envelope_summary`）。第三层用来区分“超出物理范围”和“结构脆弱”：孔半径从 40 改到 60 而外径只有 52.7、圆角半径超过材料半宽，都是第一类，不该记成模型缺陷；而撑不住 +20% 的尺寸才是第二类。报告里 narrow 档要逐条给倍率与原文，不用一个 broken 总数代替。
 - **无导入体/哑体**；特征树按结构分组，树深 ≤8。
@@ -647,7 +647,7 @@ build_order/confidence/status`）与 `unresolved`（每条带证据面与下一�
 - **端壁按测量侧视轮廓扫掠切，平面只是它的一种**：`trim_planes` 按单个平面裁，端面一旦斜切带弧或沿臂长带台阶就切不出来；`sweep_trim(wp, target, frame, profile_uz, v_span)` 把 (u,z) 轮廓沿 ±V 拉成棱柱再求差，`keep` 选保留侧。端壁带弧时传 `profile_segs`（`{"line":...}`/`{"arc":...}` 混合段）——**折线剖面会把一段弧切成几十个小平面**，端壁面型就不是柱面，后续圆角也挂不上去（`profile_uz_curves` 就是为此把圆弧作为一条曲线送进剖面）。三个读法：① `keep` 的保留侧由 NX 按轮廓绕向规范化，所以断言要写"去料体积等于轮廓外的部分"，不要假设保留的是哪一边；② 轮廓必须真的盖住/避开料，否则布尔报 `completely outside target body`；③ 弧段采样成折线时先检查 `added_types` 里有没有 16（柱面），只有 22 就说明弧退化成了平面。
 - 缺口（这些结构目前只能用原语拼，拼的时候必须自带自检）：圆锥出口以外的异形孔型（如内环槽）。用原语拼装的结构按四条自检：① 一个结构一个函数、函数体内无零件常数；② 每次布尔后断体数/体积/面型；③ 参数 ×1.1 活性；④ 建完就按该结构的站复算截面。缺一项就别宣称这个结构建成了。
 - **厚度沿 z 分段变化的铸造体必须走 `revolved_profile`**：写成 z 带棱柱逐段 unite 时，每段带出 4 个侧面 + 段间台阶面，面数按段数线性膨胀，而形状精度仍受段高限制（9 段级模型 74 特征 / 10 773 面，原件 998 面，误差全落在平面站切片上）。解析轮廓把台阶放进轮廓里，台阶面只在半径变化处出现。判据：同一形状，回转解的面数应比 z 带堆叠低一个量级，且两者体积一致——面数不能靠体积换。
-- **拔模只在设了 `DraftOption` 之后才生效**：`ExtrudeBuilder.Draft` 先设 `DraftOption`（`SimpleFromStart`/`SimpleFromProfile`）再 `SetDraftAngle`；只设角度时提交成功、无告警、体积与直壁逐位相同。验收只能按体积对锥台解析值（`h/3·(A₀+A₁+√A₀A₁)`），体数/面数/告警都看不出来。
+- **拔模要同时设 `DraftOption` 与角度，顺序无关**：`ExtrudeBuilder.Draft` 是 `MultiDraft`，`DraftOption`（`SimpleFromStart`/`SimpleFromProfile`）与 `SetDraftAngle` 两步都要设，顺序无关（先类型后角度、先角度后类型逐位相同）；只设角度时提交成功、无告警、体积与直壁逐位相同。验收按截面类型选解析式：相似截面（回转体）按锥台 `h/3·(A₀+A₁+√A₀A₁)`，矩形均匀拔模是等距偏置，按 `abh−(a+b)h²t+(4/3)h³t²`（`t=tanα`，带符号）复算；体数/面数/告警都看不出来。
 - **360° 能吃单调的带台阶/凹陷整条轮廓**（体积等于解析值）；自交或越过旋转轴的轮廓才报 "Cannot create Swept geometry"。整条回转只出一条特征，分段回转后合并仍是可选路线：台阶落在段界上，不要为了"一条轮廓"去平滑台阶。
 - **圆角账本要逐边一条**：`blend_try` 失败只给 `None`，拿不到原因就无法回答"这条跑道为什么不可达"；要记原文就用 `fillet_run`。失败原文必须来自半径本身：一条边被上一条圆角消费后重新试，报的是 `Referenced edge does not exist.`，会把"半径太大"伪装成"边不见了"——超半径试件要用未动过的边。
 - 组织：一个结构一个函数，**函数体内不出现零件常数**——常数只在参数表/数据表里；特征名前缀 = 结构 id，便于逐个结构审计（活性、局部性、偏差归因）。

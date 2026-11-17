@@ -32,11 +32,11 @@
 
 ### 1.6 对称件
 
-- 画一半 + 镜像（特征级 `MirrorFeatureBuilder`；草图级不可用，§4.3）。
+- 画一半 + 镜像：用特征级 `MirrorFeatureBuilder`；草图级镜像走 §4.3 的做法。
 
 ### 1.7 参数化与命名
 
-- 顶层参数表达式化（`L_Plate=100`、`D_Bore=8`）；≥2 次出现或可能被改即表达式；次级尺寸派生（§4.1）。参数名不用 `p`/`P` 前缀——自动表达式是 `p0`、`p1`，同前缀会被可编辑性检查一并过滤（判据见 `reverse-engineering.md` §7）。
+- 顶层参数表达式化（`L_Plate=100`、`D_Bore=8`）；≥2 次出现或可能被改即表达式；次级尺寸派生（§4.1）。参数名避开 `p`/`P` + 纯数字（`p0`、`p12`）——自动表达式是这种形式，会被可编辑性检查过滤；`P_D_BORE` 这类带下划线的名字不被过滤，但没必要踩边（判据见 `reverse-engineering.md` §7）。
 - 一个表达式只驱动一个结构/一个体；多个体共用同一名字时按体拆名，否则改值的体积响应会叠加。
 - 需回看才能认出的特征 `SetName`；常见项目做模板。
 - 图层：Solids 1-10 / Sheets 11-20 / Sketches 21-40 / Curves 41-60 / Datums 61-80；Layer Category 整层开关。
@@ -108,7 +108,7 @@ session.Preferences.Modeling.BodyType = \
 - **派生约束写成公式**，不要在两处写相等的字面值：`ROOT_FILL_U = U_BACK - ROOT_FILL_R`、`TAPER_R1 = TAPER_R + TAN4 * TAPER_T1`。父参数一改子量自动跟；两处字面值会在第一次编辑时就分叉。
 - **无单位量**用 `CreateSystemExpression("Number", "TAN4 = tan(TAPER_HA)")`；`GetBase("Number")` 报错，长度/角度分别 `GetBase("Length")/("Angle")`（§4.1）。
 - **轴心/方向的字面值陷阱**：圆柱、圆锥 builder 的轴向点与方向是字面值，改半径表达式不移动轴心。需要"随板厚移动"时，让高度承担变化（起点固定、`Height = T + BOSS_H`），或改用草图圆拉伸；把轴心写成另一个 Expression 再赋给 builder 不可靠。
-- **模板层入口**：`nxlib.template` 负责参数表 → 表达式 → 告警读取 → 编辑矩阵；结构模板代码只读 `ctx`（工作部件 + 表达式表），零件常数留在 schema。
+- **模板层入口**：`nxlib.template` 负责参数表 → 表达式 → 告警读取 → 编辑矩阵；结构模板代码只读工作部件 `wp` 与 `param_table` 的输出（值/单位字典 + 表达式表），零件常数留在 schema。
 
 ```python
 from nxlib import template
@@ -186,8 +186,8 @@ cut.CommitFeature(); cut.Destroy()
 ### 2.1b 圆柱 / 圆锥 / 表达式绑定补充
 
 - `CylinderBuilder.Types` 只有 `ArcAndHeight`/`AxisDiameterAndHeight`，无 `BooleanType`。
-- 无 UF `CreateCone`/`CreateCylinder`；圆锥用 `ConeBuilder.Types.DiametersAndHeight` + `Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`。
-- `Diameter`/`Height` 只读，`.Expression.RightHandSide` 可绑定（`cyl.Diameter.RightHandSide = "D_Base"`）。
+- UF 层有 `CreateCone`/`CreateCylinder`（`(sign, targTag, origin, height, diam, direction)`）；圆柱/圆锥统一走 builder，圆锥用 `ConeBuilder.Types.DiametersAndHeight` + `Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`。
+- `Diameter`/`Height` 只读，改用 `.Expression.RightHandSide` 绑定（写 `cyl.Diameter.RightHandSide = "D_Base"`）。
 - Builder 首参传 `NXOpen.Features.Feature.Null`（Cylinder/Block 等）、`NXOpen.Features.Cone.Null`（Cone）；`None` 报 TypeError。`Direction` 收 `Vector3d`（传 `Direction` 报 "Expecting NXOpen.Vector3d type"）。
 - **斜轴孔/锥孔切除**：`CreateCylinderBuilder(Feature.Null)` → `Type=Types.AxisDiameterAndHeight`、`Axis=wp.Axes.CreateAxis(Point3d, Vector3d, UpdateOption)`、`Diameter/Height` 写 `.RightHandSide` → `CommitFeature()`；锥孔用 `CreateConeBuilder(Cone.Null)` + `Types.DiametersAndHeight` + `BaseDiameter/TopDiameter/Height` + `Axis`。两者都**不设布尔**，提交后单独 `CreateBooleanBuilder(Subtract)` 与目标体相减。验收：1 实体，圆柱切除体积按 πr²h、锥孔按 πh/3(R²+Rr+r²) 下降。
 - **独立圆柱凸台**：同一 builder 用 `Origin`（Point3d，底面圆心）+ `Direction`（Vector3d）也能建，不必先建轴；提交后 `CreateUniteFeature` 合并。验收：合并后单实体，体积 = 基体 + πr²h。
@@ -200,7 +200,7 @@ cut.CommitFeature(); cut.Destroy()
 - 显式设 `Direction`（否则 `No axis selected`）。
 - `Curves.CreateArc` 的 startAngle/endAngle 用**弧度**。
 - 示例：`scripts/tests/01_bracket.py`。
-- **截面在新建件或打开的原件里都能建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`；已打开的原件上下文里同样能 `AddToSection` 并拉伸（提交成功、体数 1）。保存/重开后**旧 tag 不可解析**（`cannot resolve all curves`），要用重新查到的曲线——本会话没构造出"跨保存复用同一组持久曲线"的样本，该报错的场景未取到证据。
+- **截面在新建件或打开的原件里都能建**：`Parts.FileNew()` + `model-plain-1-mm-template.prt` 提交后 `SetDisplayPart`；已打开的原件上下文里同样能 `AddToSection` 并拉伸（提交成功、体数 1）。保存/重开后**旧 tag 不可解析**（`cannot resolve all curves`），要改用重新查到的曲线；跨保存复用同一组持久曲线的行为**未验证**，不要依赖。
 - **多环截面 = 带孔轮廓**：一条规则含全部曲线、或每环一条规则逐次 `AddToSection`，两种写法等效，结果是单个实体（可多 lump），内环成孔；体积与解析值比较时扣掉多边形化误差。
 - **每环必须精确闭合**：内环留 0.03 mm 缝时不是"静默丢弃"——外环轮廓被当整块填满，孔不出现，且缝隙环另生成一张片体、**体数变 2**（用体数断言能发现）；外环留 0.03 mm 缝时链被错误闭合，体积异常增大。截面环拼接后要校验首末点重合。
 - **拔模拉伸的起剖面偏置**：`SimpleFromStart` 的起剖面在拉伸起点、向上按半角收缩；中面轮廓等于量得轮廓时，起剖面取中面外偏 `h/2·tanθ`。角弧拔模后是圆锥，中面半径 = 起剖面半径 − `h/2·tanθ`；中面截面作为验收站。
@@ -359,7 +359,7 @@ ok, body = apply_roll(wp, body, edge, radius)
 - 弧段与直边共点、截面在 edge 的局部系内建（`e1 = sgn*n0`、`e2 = d × e1`、滚心 `o·u_i = R`），拉伸方向沿边、终点穿出 `ee = min(0.8, 0.25L)`；起点与边端点平齐（起点在顶点处与邻边相接，穿出会切掉邻边该留的料），刀具体不要与目标体共面收尾。
 - 截面与拉伸必须在 undo mark 内建，布尔失败立刻 `UndoToMark` + `DeleteUndoMark` + `UpdateManager.ClearErrorList()`，然后重新取实体（`part.Bodies` 的包装对象已失效）。
 - **已成功提交的圆角不要回滚**：回滚后实体 out-of-date，质量属性读 0，下一次布尔报 `Tool body completely outside target body`。逐条滚时“成功就留在树上”。
-- 候选边先筛：两面都是平面（type 22）、夹角 20°–160°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 >60° 的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。这是"值不值得试"的预筛，不是可行性判据；`apply_roll` 的刀具有默认 ≥4R 行程门槛，判"倒不出来"用 `structures.fillet_feasible` 的 ≥0.5R。
+- 候选边先筛：两面都是平面（type 22）、夹角 20°–160°、长度 ≥ max(1.2R, 自身面宽)；法向与边方向夹角 <60°（或 >120°，即法向接近沿边）的面是前次刀具的端面，跳过。不筛会有一半尝试落在近共面残边（夹角 <10°）上。这是"值不值得试"的预筛，不是可行性判据；`apply_roll` 的刀具有默认 ≥4R 行程门槛，判"倒不出来"用 `structures.fillet_feasible` 的 ≥0.5R。
 - 端缘是 2–5 mm 折面链时逐段滚，长度下限放到 1.2R，两端仍各穿出 0.8；相邻两段的刀具有重叠，顶点处自然形成过渡，不必另建球面。
 - 每条边记中点（四舍五入到 0.01），被拒的边不再重试，否则重扫循环不收敛。
 - 验收：滚出的圆角面是类型 16、`radius` = 圆角半径（直边，精确圆弧）或类型 19（`rad_data` = 圆角半径、`radius` = 主半径）；体积按“截面面积 × 边长”校验在 35% 以内（凸减、凹加）。
@@ -629,7 +629,7 @@ print("V=%.3f A=%.3f C=(%.3f,%.3f,%.3f)" % (mp.Volume, mp.Area, mp.Centroid.X, m
 
 - 基线（100×60×20）：`V=120000.000`、`A=18400.000`、质心 `(50,30,10)`。
 - 容差签名是 `(Unit[], Double[], IBody[])`，习惯写 `[0.99]`；**标量 0.99 也被接受**（体积/面积读数与 `[0.99]` 逐位相同），"必须数组、否则报错"的说法不成立。多体测量返回各体之和。
-- 无 `uf.Modl.AskBoundingBox`；包围盒用 `GetEdges()` → `GetVertices()` 取 min/max。
+- 包围盒走 `ufs.ModlGeneral.AskBoundingBox(body.Tag)`（`gb_drawing.model_bbox` 已封装；该函数在 `ModlGeneral` 组，不在 `Modeling`，失败直接报错、不拿直边拼假值）。
 
 ### 3.6 去参（改哑体，慎用）
 
@@ -648,7 +648,7 @@ from nxlib.modeling import involute_gear
 res = involute_gear(wp, m=2, z=20, alpha_deg=20, b_width=20, bore_d=20,
                     hub_d=40, hub_len=30, z_offset=0.0)
 ```
-- 无变位、无根切保护；改 `p_gear_*` 表达式可联动；`hub_d`/`hub_len` 为 0 时不建轮毂。
+- 无变位、无根切保护；`p_gear_m`/`p_gear_z`/`p_gear_alpha` 经 `p_rb` 驱动齿面规律曲线；齿顶/齿根弧与径向连接线是哑曲线，齿宽/轴孔径/轮毂是字面量，改尺寸要重跑 `involute_gear` 重建，不要靠 `DoUpdate`。`p_gear_b`/`p_gear_d_bore` 建后无特征消费，改它们不变几何；要当可编辑参数用，先把齿宽/孔径接进特征（§6）。`hub_d`/`hub_len` 为 0 时不建轮毂。
 - 验收：34 号用例（z=20/m=2/α=20°/B=20/孔Ø20，扣孔体积对解析值 18238.9 mm³ 带 ±2%）。齿数灵敏度是**约 14%/齿**（z=20→21 由 18239.150 变 20794.993，+14.013%），不是 ~5%/齿；齿面表达式不能写 `atan`。
 
 ## 4. 草图与表达式
@@ -724,7 +724,7 @@ for e in sk.GetAllExpressions():                 # 自动生成的驱动尺寸
 - 改参数后实体精确跟随（圆半径 → `R_WEB`，体积按解析值变化），且尺寸仍是驱动尺寸。
 - 同一草图多个尺寸时要成对链接直径/半径（`2 * R` 与 `R`），否则约束自相矛盾。
 - **系统式与位置量**：联动尺寸可以写成系统式（`W_HALF = H_LOBE + R_EYE`），但每个独立结构尺寸都要有数值参数入口；块原点、圆柱轴心在批处理只收字面值，列入不可参数化清单，不伪装成命名表达式。
-- **草图点可以标注**：对单点跑 AutoDimension 产生 2 个驱动尺寸并把 dof 由 2 降到 0。NXOpen 也有**点特征**：`wp.BaseFeatures.CreatePointFeatureBuilder(NXOpen.Features.PointFeature.Null)` 可建，其 `Point` 只收 `NXOpen.Point` 对象（`wp.Points.CreatePoint(Point3d)` 的返回值），传字面 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`。该点特征能否由命名表达式驱动**本会话未测**，不要假定能或不能。
+- **草图点可以标注**：对单点跑 AutoDimension 产生 2 个驱动尺寸并把 dof 由 2 降到 0。NXOpen 也有**点特征**：`wp.BaseFeatures.CreatePointFeatureBuilder(NXOpen.Features.PointFeature.Null)` 可建，其 `Point` 只收 `NXOpen.Point` 对象（`wp.Points.CreatePoint(Point3d)` 的返回值），传字面 `Point3d` 报 `Expecting NXOpen.Point type, found NXOpen.Point3d`。该点特征能否由命名表达式驱动**未验证**，不要假定能或不能。
 - 驱动参数必须真的接到几何上：接到会移动的边上时，先确认改参数不会让该边的主人变化（见 §4.3 的拓扑陷阱）。
 
 

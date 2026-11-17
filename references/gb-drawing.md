@@ -46,7 +46,7 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 ## 模块路线约束
 
 - `pin_view` 收敛（<0.05mm）；`AskViewBorders` 含标签余量仅粗估，道位用 `model_bbox`+`content_bbox`。
-- `standard_views` 的摆位：NX 原生 `FrontTopRight` 布局（未钉位）把 `RIGHT` 放在 FRONT **左侧**（内容中心 x=67 vs 198）；`gb.standard_views` 却把 `RIGHT` 钉到 FRONT **右侧**（x=195 vs 93，TOP 在 FRONT 下方）——即同一张第一角图纸上，本模块的摆位与 NX 原生第一角布局左右相反，**布局方向与图幅角标不一致**。视图内容的投影手性（`RIGHT` 究竟是从右看还是其镜像）本文档未测，非对称件须按图核一遍。
+- `standard_views` 的摆位：GB 第一角——`RIGHT` 在 FRONT **左侧**、`TOP` 在 FRONT **下方**，三视图组在可用图框内水平居中；`pin_view` 后逐视图核 `content_bbox`，越出图框直接抛错。视图内容的投影手性（`RIGHT` 是从右看还是其镜像）非对称件须按图核一遍。
 - 图框/自定义表格线也可用 `part.Curves.CreateLine(...)`（`sheet.Open()` 后）；标准图框优先 `gb.frame`。
 - `Cannot move view off of the drawing`：按视图参考点判定，且只在越界很远时才抛——参考点移到 (350,155) / (93,-40) / (-40,-30) 时内容已整块出纸仍**不报错**，只有移到 (-500,-500) 才抛该串，且那次调用自身不生效；抛错**不会**回滚之前已成功的移动（TOP 已被移到纸外，随后 FRONT 的越界调用抛错，TOP 参考点仍停在 (350,155)）。所以布局必须由代码自查：改完逐视图核 `content_bbox` 是否落在纸内。
 - 枚举 `END_POINT`（`UF_DRF_end_point`）非 `ENDPOINT`；圆心 `ARC_CENTER`。
@@ -58,7 +58,7 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 
 ## 模块路线约束补充
 
-- `model_bbox` 主路线 = `ufs.ModlGeneral.AskBoundingBox`（NX12 在 **ModlGeneral** 组，非 `ufs.Modeling`）；该调用失败时**打印 `WARN model_bbox: AskBoundingBox failed (...); using linear edges` 再回退直边**（非静默），纯回转体无直边时回退无料可用、直接抛错。
+- `model_bbox` 主路线 = `ufs.ModlGeneral.AskBoundingBox`（NX12 在 **ModlGeneral** 组，非 `ufs.Modeling`）；该调用失败时**直接抛 `RuntimeError`（消息含 `no linear-edge fallback`），不回退直边**。
 
 ## 非轴对齐零件出图（自然坐标系）
 
@@ -172,12 +172,14 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 
 | 函数 |
 | --- |
-| `new_sheet(part,name,size)`、`frame(sheet,size)`、`standard_views(part,sheet,body,scale,size)`、`projected_views(part,sheet,parent,dx,dy)`、`pin_view(sheet,view,cx,cy,scale,bbox)` |
+| `new_sheet(part,name="SHT1",size="A4")`、`frame(sheet,size="A4")`、`standard_views(part,sheet,body=None,scale=1.0,gap=22.0,margin=18.0,size=None,bbox=None)`、`projected_views(part,sheet,parent,dx=0.0,dy=0.0)`、`pin_view(sheet,view,cx,cy,scale=1.0,tol=0.05,tries=3,bbox=None)` |
 | `blank_datums(part)`、`apply_gb_preferences(part)`、`model_bbox(body)`、`assembly_bbox(bodies)`、`content_bbox(view,...)` |
-| `title_block(sheet,frame_geo,...)`、`tech_note(sheet,tb_geo,lines,base_y=None)`、`part_note(sheet,lines,origin)`、`hole_circles(body,radius)`、`linear_edges(body)`、`extreme_edge(...)` |
-| `save_model_view(part,name,rows)`、`base_view(part,sheet,name)`、`set_cjk_font(part)`（非轴对齐出图与中文出图） |
-| `dim_between(view,...)`、`dim_diameter(view,...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,centre,org,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
+| `title_block(sheet,frame_geo,...)`、`tech_note(sheet,tb_geo,lines=None,size=3.5,base_y=None)`、`part_note(sheet,lines,origin_xy,size=3.5)`、`hole_circles(body,radius)`、`linear_edges(body)`、`extreme_edge(...)` |
+| `save_model_view(part,name,rows)`、`base_view(part,sheet,model_view_name)`、`set_cjk_font(part)`（非轴对齐出图与中文出图） |
+| `dim_between(view,...)`、`dim_diameter(view,...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,center_model,org_xy,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
 | `map_point(view,model_xyz)`（模型点转图纸坐标一律走它，内部无回退，别改用仿射近似）、`sheet_part(sheet)`、`parent_ref(view)`、`view_bbox(view)`（含标签余量，仅供视图占位粗估）、`detail_rect(bx,by,half_w,half_h)`（局部放大选框） |
+
+`set_cjk_font`/`dim_diameter` 由 33 号用例覆盖（字体 id 回读、直径尺寸增量 1）；`projected_views`/`save_model_view`/`base_view` 没有回归用例，首次使用按实图核对输出。
 
 `linear_edges` 每条边只返回一次，但只覆盖直边：用来挑轮廓边/尺寸端点，
 不能当零件包盒（回转件带平面时直边包盒只覆盖平面区域）。包盒一律
@@ -186,10 +188,10 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 
 ## 未覆盖范围
 
-A0/A1（c=10）、GB/T 10609.1 全格式标题栏未实现；剖视图部分已通（drafting.md B.4、31 号用例），"成套剖视 + 标注"未解；局部放大 `detail_rect` 的选框外扩系数 `DETAIL_CIRCLE_FACTOR=0.83` 是启发式、来源不可复现（`AskViewBorders` 对 detail 返回选框本身、量不到边界圆），边界圆是否覆盖目标区只能在出图上目视确认、选框须留余量（细则见 `drafting.md` B.4）。
+A0/A1（c=10）、GB/T 10609.1 全格式标题栏未实现；剖视图部分已通（drafting.md B.4、31 号用例），"成套剖视 + 标注"未解；局部放大 `detail_rect` 的 `DETAIL_CIRCLE_FACTOR=0.83` 是圆半径/半对角比的启发式、来源不可复现（`AskViewBorders` 对 detail 返回选框本身、量不到边界圆）；选框半宽/半高 = 对应半宽 / 0.83（即放大 `1/0.83 ≈ 1.205` 倍），边界圆是否覆盖目标区只能在出图上目视确认、选框须留余量（细则见 `drafting.md` B.4）。
 
 ## 装配图
 
-- **包盒**：`standard_views`/`model_bbox` 只接受单 body；装配用 `gb.assembly_bbox([...])` 并集，须计入齿顶、端盖、轴伸（漏算裁顶部）。
+- **包盒**：`standard_views` 的单 body 默认路线用 `model_bbox(body)` 定内容中心；装配件传 `bbox=gb.assembly_bbox([...])` 一次到位（传了 `bbox=` 就不再要求单 body），并集须计入齿顶、端盖、轴伸（漏算裁顶部）。逐视图重钉仍可用 `pin_view(..., bbox=...)` 作为补救。
 - **尺寸值 PDF 文本层复核**：`extreme_edge` + `dim_between` 在装配实例边/剖视上即使两边不同、`AssocDwgPos` 显式给出也可能读错；pymupdf 逐值对账，对不上改写到技术要求。
 - **明细栏**：位于标题栏上方时传 `base_y=明细栏顶边`，避免压字。

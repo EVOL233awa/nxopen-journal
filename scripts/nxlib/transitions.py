@@ -23,9 +23,11 @@
 
 不可达判据（每条都写进 `reason`）：
 
-* 支撑面宽度 < R（圆角要在两侧各吃掉一个 R，撑不住就 NX 报
-  `Radius is too large`，真正的原因是宽度）；
-* 二面角不在 20°–160°（更尖的边倒圆会自交，更平的边没有料可去）。
+* 二面角不在 20°–160°（更尖的边倒圆会自交，更平的边没有料可去）；
+* 支撑面宽度 < R 只是**粗估的构建行动项**（`build_obstacle`），不置
+  `reachable=False`：面表里的宽度由包围盒投影得到，斜置窄壁会严重低估
+  （10 mm 宽 45° 支撑算成 2.93 mm），用它否掉跑道会假阴性。边界上的
+  跑道必须回到 `structures.fillet_feasible` 按边几何复算。
 
 跑道长度（容不容得下一个常半径圆角）不在这里判：`plan_runway` 的判据里
 没有那条边的长度（run 行虽带 `samples`/`bbox`，计划层没把它做成长度判据），
@@ -38,6 +40,8 @@ import math
 
 import nxlib.measure as ms
 import nxlib.reverse as rv
+# 向量原语只留一份：与 session 的 _dot/_unit 同签名，直接委托。
+from nxlib.session import _dot, _unit
 
 # 通用阈值（不含任何零件量值）
 DIHEDRAL_RANGE = (20.0, 160.0)
@@ -47,16 +51,6 @@ def _round(v, nd=6):
     """定量输出：-0.0 归一（判据 JSON 要可复现）。"""
     r = round(float(v), nd)
     return 0.0 if r == 0.0 else r
-
-
-def _dot(a, b):
-    return sum(float(a[i]) * float(b[i]) for i in range(3))
-
-
-def _unit(v):
-    """单位向量；零向量返回零向量。"""
-    n = math.sqrt(sum(float(x) ** 2 for x in v))
-    return [float(x) / n for x in v] if n > 1e-12 else [0.0, 0.0, 0.0]
 
 
 def _dihedral(face_a, face_b):
@@ -201,6 +195,7 @@ def plan_runway(run, faces_by_tag, radius=None):
             continue          # 同半径延续，不是支撑面
         supports_only.append(f)
     widths = [w for w in (_face_width(f) for f in supports_only) if w]
+    width_short = False
     if widths and r > 0.0:
         # 一个滚球圆角只需要**两侧各一条**撑得住的面，不是要求每个邻面都宽。
         # 一条跑道的邻面常常有几十个（尽端面、侧壁、相邻跑道），按"最窄的
@@ -209,17 +204,16 @@ def plan_runway(run, faces_by_tag, radius=None):
         #
         # 每个支撑面要承担一个 roll 半径，所以门槛是 R（不是 2R：
         # 那个两倍半径的余量是给"每个面都要独立撑 2R"的误读，与
-        # `structures.fillet_feasible` 的单面判据一致）。
+        # `structures.fillet_feasible` 的单面判据一致）。`_face_width` 不是
+        # 上界，宽度不足只记构建行动项，不构成 BLOCKED 证据。
         need = r
         adequate = [w for w in widths if w >= need]
         if len(adequate) < 2:
-            out["reachable"] = False
+            width_short = True
             out["reasons"].append(
-                "only %d support(s) wide enough (%.3f each, need %d "
-                "supports each >= R = %.3f); widest=%.3f"
-                % (len(adequate),
-                   max(adequate) if adequate else 0.0, 2,
-                   need, max(widths)))
+                "width_suspect: only %d support(s) estimated wide enough "
+                "(need 2 supports each >= R = %.3f); widest=%.3f"
+                % (len(adequate), need, max(widths)))
         out["support_widths"] = [_round(w) for w in sorted(widths, reverse=True)]
         out["support_need"] = _round(need)
 
@@ -234,12 +228,12 @@ def plan_runway(run, faces_by_tag, radius=None):
                     "dihedral %.2f deg outside [%.0f, %.0f]"
                     % (ang, lo, hi))
 
-    # 机制选择
+    # 机制选择：分母用剔除同半径延续后的支撑面（§9.1b），延续面不是支撑。
     closed = bool(run.get("closed"))
-    n_plane = len([f for f in sup_faces if f.get("type") == ms.PLANE])
-    n_curved = len([f for f in sup_faces
+    n_plane = len([f for f in supports_only if f.get("type") == ms.PLANE])
+    n_curved = len([f for f in supports_only
                     if f.get("type") in (ms.CYLINDER, ms.CONE, ms.TORUS)])
-    if closed and len(sup_faces) >= 2 and r > 0.0:
+    if closed and len(supports_only) >= 2 and r > 0.0:
         mech = "roll_general"
     elif n_plane == 2 and n_curved == 0:
         mech = "roll_edge"
@@ -251,15 +245,9 @@ def plan_runway(run, faces_by_tag, radius=None):
         mech = "measured_section"
     out["mechanism"] = mech
 
-    # 不可达分两档，只有第二档能进 G7 的 BLOCKED：
-    #
-    #  * 宽度不足是**构建约束**——NX 的圆角要在支撑面上各吃掉一个 R，支撑比
-    #    R 窄时倒不出来。但参考件自己的圆角已经存在，所以"宽度不足"证明
-    #    的是"复刻难"而不是"这处圆角物理上不可达"。这一档记 `build_obstacle`，
-    #    是构建阶段的行动项（改支撑/改刀），不构成 BLOCKED 证据。
-    #  * 二面角越界是**拓扑不可达**——近共面缝、相切缝无论用什么机制都不该
-    #    倒，这才是 BLOCKED 的证据。
-    if not out["reachable"]:
+    # 宽度不足是**构建约束**（粗估），记 `build_obstacle` 作为行动项，不构成
+    # BLOCKED；只有二面角越界才是拓扑不可达，能进 G7 的 BLOCKED 证据。
+    if not out["reachable"] or width_short:
         topo = [x for x in out["reasons"] if x.startswith("dihedral")]
         out["build_obstacle"] = {
             "runway_faces": out["faces"],
