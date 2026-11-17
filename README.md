@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.5.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
+当前版本 1.6.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran

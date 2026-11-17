@@ -4,7 +4,9 @@
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 记录从 1.1.0 起；查 1.0.0 的变更用 `git tag v1.0.0` 与对应 GitHub Release。
 
-## [Unreleased]
+## [1.6.0] - 2026-11-17
+
+运动与装配回归补齐，交付件链统一。
 
 ### Added
 

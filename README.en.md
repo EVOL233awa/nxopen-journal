@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Current version 1.5.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Current version 1.6.0 (see [CHANGELOG.md](CHANGELOG.md)).
 
 An agent skill for Siemens NX 12. After installation, an agent can write NXOpen Python journal
 scripts from natural-language instructions, run them headlessly through NX 12 in batch mode, and
