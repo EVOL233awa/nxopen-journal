@@ -162,7 +162,8 @@ To use OpenAI-compatible remote embedding and reranking instead (on this machine
 `NXOPEN_MCP_RERANK=1`, `NXOPEN_MCP_RERANK_URL`, `NXOPEN_MCP_RERANK_MODEL` and
 `NXOPEN_MCP_RERANK_API_KEY`. That mode depends on the network and takes about 1 s per semantic
 query; remote embedding and reranking require source-side support that upstream v0.2.0 does not
-include. If the embedding service is unreachable, exact-name queries through `search_api` /
+include. Queries that mix Chinese with English API terms (e.g. `创建拉伸特征 extrusion`) retrieve
+much better; bare Chinese words are unreliable. If the embedding service is unreachable, exact-name queries through `search_api` /
 `find_builder` fall back to local exact matches with a notice on the first line, other queries
 fail, and `get_class` / `get_member` keep working; if the reranker is unreachable, the call waits
 for the 60 s timeout and then falls back to the unranked order.

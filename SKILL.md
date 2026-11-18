@@ -14,7 +14,7 @@ NX 自动化唯一入口是 NXOpen API。本技能生成可在 NX 12 回放的 P
 
 本节收跨域通用且高发的陷阱（静默失败/崩溃）；单域负面事实写在对应路线里。本节固定 9 条，**不参与** `check_repo.py` 的 8 条上限；只有带 `<!-- trap-list -->` 标记的清单才受该上限约束。
 
-1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实。不确定类名时用中文/英文语义检索（`search_api` / `find_builder`）；已知类名或成员名用 `get_class` / `get_member` 精确查。
+1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实。不确定类名时用语义检索（`search_api` / `find_builder`）；中文查询夹英文术语（如 `创建拉伸特征 extrusion`），纯中文短词命中差。已知类名或成员名用 `get_class` / `get_member` 精确查。
 2. **MCP 核实“存在” ≠ Python 封装“可调用”**：新 API 必须先最小批处理验证，通过后才写入本技能。
 3. **MCP 查不到 ≠ 不存在，MCP 查得到也 ≠ 运行期存在**：按 `dir()` 运行期对象 → `%NX_HOME%\UGOPEN\*.h` 与同目录 `*.c` 样例的顺序核实。反例：MCP 有 `NXOpen.UF.UFDrf.CreateIdSymbol`，运行期没有 `UFDrf`，真实入口是 `NXOpen.UF.Drf`/`ufs.Drf`。
 4. **属性只读 ≠ 设不进去**：先看属性返回的是不是 `SelectObject`/`ScCollector` 等容器，容器自身的 `.Value` 往往可写；穷尽 builder 容器通道后再退回 UF。
