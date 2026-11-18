@@ -42,7 +42,7 @@ def say(msg):
 - **包装 `run_journal.exe` 的入口必须隔离 stdin**（`.bat` 用 `< NUL`，Python 用 `stdin=subprocess.DEVNULL`）：DEX 的 `step214ug.cmd` 在转换器非零返回时执行 `pause`，继承控制台 stdin 会把失败路径变成永久挂死。
 - 批处理无已打开部件：`Parts.Work` 为 `None`；`UI.GetUI()` 与 `Parts.Display` 仅交互回放有意义。
 - mm 模板：`%NX_HOME%\UGII\templates\model-plain-1-mm-template.prt`。
-- nxopen MCP：`get_class`/`get_member` 只查本地索引；`search_api`/`find_builder` 走外部嵌入服务（本机为硅基流动 `BAAI/bge-m3`，前 20 候选再经 `BAAI/bge-reranker-v2-m3` 重排），单次约 1 s 且依赖网络。嵌入不可达时，整串类名/成员名（含 `Part`、`Session` 这类单字名和全限定名）以及查询里的驼峰标识符会退回本地精确匹配并在结果首行标注，其余查询报错，此时改用 `get_class`/`get_member` 按名核实。重排不可达等待 15 s、嵌入不可达等待 60 s 后回退，等待期间其他工具调用不受影响。重排不可达只改变顺序来源，结果回退到未重排顺序。
+- nxopen MCP：`get_class`/`get_member` 只查本地索引；`search_api`/`find_builder` 走外部嵌入服务（本机为硅基流动 `BAAI/bge-m3`，前 20 候选再经 `BAAI/bge-reranker-v2-m3` 重排），单次约 1 s 且依赖网络。嵌入不可达时，整串类名/成员名（含 `Part`、`Session` 这类单字名和全限定名）以及查询里的驼峰标识符会退回本地精确匹配并在结果首行标注，其余查询报错，此时改用 `get_class`/`get_member` 按名核实。重排不可达等待 15 s、嵌入不可达等待 60 s 后回退，等待期间其他工具调用不受影响。重排不可达只改变顺序来源，结果回退到未重排顺序。`get_class` 默认只列前 200 个成员，末尾标注总数与下一个 `offset`，大类别按页续取。
 - 交互回放：中文 工具→操作记录→运行；英文 Tools→Journal→Run。
 - 批处理 `.bat` 必须纯 ASCII（cmd 按 GBK 解析）。
 

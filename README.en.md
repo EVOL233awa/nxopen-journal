@@ -169,6 +169,8 @@ CamelCase identifiers inside the query fall back to local exact matches with a n
 line, other queries fail, and `get_class` / `get_member` stay available without waiting on the
 embedding call; if the reranker is unreachable, the call waits for the 15 s timeout and then falls
 back to the unranked order. A hung embedding service holds a semantic query for at most 60 s.
+`get_class` returns the first 200 members by default and prints the total plus the next `offset`;
+large classes are paged with `offset` / `limit`.
 
 ## Install
 
