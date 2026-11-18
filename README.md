@@ -135,9 +135,10 @@ nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github
 `NXOPEN_MCP_RERANK_URL`、`NXOPEN_MCP_RERANK_MODEL`、`NXOPEN_MCP_RERANK_API_KEY`。
 该模式依赖网络，语义检索约 1 s/次；远程嵌入与重排需要源码侧实现，上游 v0.2.0 不含这两项。
 查询时中文夹英文术语（如 `创建拉伸特征 extrusion`）命中明显更好，纯中文短词不可靠。
-嵌入服务不可达时 `search_api`/`find_builder` 的精确名查询退回本地精确匹配并在结果首行标注，
-其余查询报错，`get_class`/`get_member` 不受影响；重排服务不可达时等一次超时（60 s）后回退到
-未重排顺序。
+嵌入服务不可达时 `search_api`/`find_builder` 的整串名（含 `Part`、`Session` 这类单字名与全限
+定名）和查询中的驼峰标识符退回本地精确匹配并在结果首行标注，其余查询报错；`get_class`/
+`get_member` 不依赖嵌入服务，等待期间也不被阻塞。重排服务不可达时等一次超时（15 s）后回退到
+未重排顺序；嵌入服务挂起时单次查询最长等 60 s。
 
 ## 安装与使用
 
