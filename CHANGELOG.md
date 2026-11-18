@@ -11,7 +11,7 @@ MCP 检索说明对齐远程嵌入与重排。
 ### Changed
 
 - `SKILL.md`：MCP 环境事实改为语义检索走外部嵌入服务（本机硅基流动 `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`，约 1 s/次、依赖网络），报错时按名核实；铁律 1 补语义检索与精确查询的工具分工。
-- `README.md`、`README.en.md`：MCP 配置段补远程嵌入/重排的环境变量与网络依赖，保留上游默认进程内模型说明。
+- `README.md`、`README.en.md`：MCP 配置段补远程嵌入/重排的环境变量与网络依赖，保留上游默认进程内模型说明；记录失败边界——嵌入服务不可达时 `search_api`/`find_builder` 整体报错（含精确名查询），`get_class`/`get_member` 不受影响；重排不可达等 60 s 后回退。
 
 ## [1.6.0] - 2026-11-17
 

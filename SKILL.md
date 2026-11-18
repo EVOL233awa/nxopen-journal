@@ -42,7 +42,7 @@ def say(msg):
 - **包装 `run_journal.exe` 的入口必须隔离 stdin**（`.bat` 用 `< NUL`，Python 用 `stdin=subprocess.DEVNULL`）：DEX 的 `step214ug.cmd` 在转换器非零返回时执行 `pause`，继承控制台 stdin 会把失败路径变成永久挂死。
 - 批处理无已打开部件：`Parts.Work` 为 `None`；`UI.GetUI()` 与 `Parts.Display` 仅交互回放有意义。
 - mm 模板：`%NX_HOME%\UGII\templates\model-plain-1-mm-template.prt`。
-- nxopen MCP：`get_class`/`get_member` 只查本地索引；`search_api`/`find_builder` 走外部嵌入服务（本机为硅基流动 `BAAI/bge-m3`，前 20 候选再经 `BAAI/bge-reranker-v2-m3` 重排），单次约 1 s 且依赖网络。语义通道报错时改用 `get_class`/`get_member` 按名核实。
+- nxopen MCP：`get_class`/`get_member` 只查本地索引；`search_api`/`find_builder` 走外部嵌入服务（本机为硅基流动 `BAAI/bge-m3`，前 20 候选再经 `BAAI/bge-reranker-v2-m3` 重排），单次约 1 s 且依赖网络。嵌入服务不可达时这两个工具整体报错（精确名查询也一样），改用 `get_class`/`get_member` 按名核实；重排不可达只增加等待，结果回退到未重排顺序。
 - 交互回放：中文 工具→操作记录→运行；英文 Tools→Journal→Run。
 - 批处理 `.bat` 必须纯 ASCII（cmd 按 GBK 解析）。
 
