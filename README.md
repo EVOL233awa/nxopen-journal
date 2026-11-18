@@ -134,8 +134,9 @@ nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github
 `NXOPEN_MCP_EMBED_MODEL`、`NXOPEN_MCP_EMBED_API_KEY`，以及 `NXOPEN_MCP_RERANK=1`、
 `NXOPEN_MCP_RERANK_URL`、`NXOPEN_MCP_RERANK_MODEL`、`NXOPEN_MCP_RERANK_API_KEY`。
 该模式依赖网络，语义检索约 1 s/次；远程嵌入与重排需要源码侧实现，上游 v0.2.0 不含这两项。
-嵌入服务不可达时 `search_api`/`find_builder` 整体报错（精确名查询也一样），`get_class`/`get_member`
-不受影响；重排服务不可达时等一次超时（60 s）后回退到未重排顺序。
+嵌入服务不可达时 `search_api`/`find_builder` 的精确名查询退回本地精确匹配并在结果首行标注，
+其余查询报错，`get_class`/`get_member` 不受影响；重排服务不可达时等一次超时（60 s）后回退到
+未重排顺序。
 
 ## 安装与使用
 
