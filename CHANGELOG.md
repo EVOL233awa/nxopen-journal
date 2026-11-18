@@ -4,6 +4,15 @@
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 记录从 1.1.0 起；查 1.0.0 的变更用 `git tag v1.0.0` 与对应 GitHub Release。
 
+## [Unreleased]
+
+MCP 检索说明对齐远程嵌入与重排。
+
+### Changed
+
+- `SKILL.md`：MCP 环境事实改为语义检索走外部嵌入服务（本机硅基流动 `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`，约 1 s/次、依赖网络），报错时按名核实；铁律 1 补语义检索与精确查询的工具分工。
+- `README.md`、`README.en.md`：MCP 配置段补远程嵌入/重排的环境变量与网络依赖，保留上游默认进程内模型说明。
+
 ## [1.6.0] - 2026-11-17
 
 运动与装配回归补齐，交付件链统一。

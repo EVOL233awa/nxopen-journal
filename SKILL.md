@@ -14,7 +14,7 @@ NX 自动化唯一入口是 NXOpen API。本技能生成可在 NX 12 回放的 P
 
 本节收跨域通用且高发的陷阱（静默失败/崩溃）；单域负面事实写在对应路线里。本节固定 9 条，**不参与** `check_repo.py` 的 8 条上限；只有带 `<!-- trap-list -->` 标记的清单才受该上限约束。
 
-1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实（`search_api` / `get_class` / `get_member`）。
+1. **API 零幻觉**：写任何 NXOpen 类/成员前，先用 `nxopen` MCP 核实。不确定类名时用中文/英文语义检索（`search_api` / `find_builder`）；已知类名或成员名用 `get_class` / `get_member` 精确查。
 2. **MCP 核实“存在” ≠ Python 封装“可调用”**：新 API 必须先最小批处理验证，通过后才写入本技能。
 3. **MCP 查不到 ≠ 不存在，MCP 查得到也 ≠ 运行期存在**：按 `dir()` 运行期对象 → `%NX_HOME%\UGOPEN\*.h` 与同目录 `*.c` 样例的顺序核实。反例：MCP 有 `NXOpen.UF.UFDrf.CreateIdSymbol`，运行期没有 `UFDrf`，真实入口是 `NXOpen.UF.Drf`/`ufs.Drf`。
 4. **属性只读 ≠ 设不进去**：先看属性返回的是不是 `SelectObject`/`ScCollector` 等容器，容器自身的 `.Value` 往往可写；穷尽 builder 容器通道后再退回 UF。
@@ -42,7 +42,7 @@ def say(msg):
 - **包装 `run_journal.exe` 的入口必须隔离 stdin**（`.bat` 用 `< NUL`，Python 用 `stdin=subprocess.DEVNULL`）：DEX 的 `step214ug.cmd` 在转换器非零返回时执行 `pause`，继承控制台 stdin 会把失败路径变成永久挂死。
 - 批处理无已打开部件：`Parts.Work` 为 `None`；`UI.GetUI()` 与 `Parts.Display` 仅交互回放有意义。
 - mm 模板：`%NX_HOME%\UGII\templates\model-plain-1-mm-template.prt`。
-- nxopen MCP 嵌入端点 = `http://127.0.0.1:11436`（llama-server + bge-m3）。服务未起时 `search_api`/`find_builder` 直接报错，改用 `get_class`/`get_member`。
+- nxopen MCP：`get_class`/`get_member` 只查本地索引；`search_api`/`find_builder` 走外部嵌入服务（本机为硅基流动 `BAAI/bge-m3`，前 20 候选再经 `BAAI/bge-reranker-v2-m3` 重排），单次约 1 s 且依赖网络。语义通道报错时改用 `get_class`/`get_member` 按名核实。
 - 交互回放：中文 工具→操作记录→运行；英文 Tools→Journal→Run。
 - 批处理 `.bat` 必须纯 ASCII（cmd 按 GBK 解析）。
 

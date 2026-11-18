@@ -118,9 +118,9 @@ Drafting 图取自一次独立的出图运行：9 道尺寸都关联在几何上
 
 nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github.com/mingfeng6684/nxopen-mcp)），
 需要单独安装。它直接查 NX 自己的 API 文档，是这个技能避免 API 幻觉的主要手段。其中
-`get_class` 和 `get_member` 只用本地索引；`search_api` 和 `find_builder` 在进程内用 BGE-M3
-编码查询，首次语义查询要等模型加载（约 1–2 分钟），模型加载失败直接报错，不会退化成
-关键词检索。
+`get_class` 和 `get_member` 只用本地索引；`search_api` 和 `find_builder` 做语义检索，
+上游默认在进程内用 BGE-M3 编码查询，首次语义查询要等模型加载（约 1–2 分钟），模型加载
+失败直接报错，不会退化成关键词检索。
 
 上游已发布 v0.2.0（最新）与 v0.1.0，带 tag 和 release。安装方式：
 `pip install "nxopen-mcp[embed,reflect]"`（上游 `requires-python` 为 >=3.11），或按上游 README 用
@@ -128,6 +128,12 @@ nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github
 `BAAI/bge-m3` 模型，索引与查询共用这一个模型。安装后要对着本机的 NX 安装目录建一次索引：
 `nxopen-mcp index --nx-path <NX 安装根>`。上游 v0.2.0 没有嵌入服务相关的配置项：模型在 MCP
 进程内加载，不需要另起服务，也没有要设的环境变量。
+
+若改用 OpenAI 兼容的远程嵌入与重排（本机为硅基流动 `BAAI/bge-m3` +
+`BAAI/bge-reranker-v2-m3`），设 `NXOPEN_MCP_EMBEDDER=remote`、`NXOPEN_MCP_EMBED_URL`、
+`NXOPEN_MCP_EMBED_MODEL`、`NXOPEN_MCP_EMBED_API_KEY`，以及 `NXOPEN_MCP_RERANK=1`、
+`NXOPEN_MCP_RERANK_URL`、`NXOPEN_MCP_RERANK_MODEL`、`NXOPEN_MCP_RERANK_API_KEY`。
+该模式依赖网络，语义检索约 1 s/次；远程嵌入与重排需要源码侧实现，上游 v0.2.0 不含这两项。
 
 ## 安装与使用
 
@@ -165,7 +171,8 @@ nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github
    - 安装：pip install "nxopen-mcp[embed,reflect]"（Python 3.11+），或 uvx nxopen-mcp。
    - 上游最新 release 为 v0.2.0。
    - 按上游 README 用本机 NX 安装目录建索引：nxopen-mcp index --nx-path <NX 安装根>。
-   - 嵌入模型在 MCP 进程内加载：建索引与首次语义查询时加载 BAAI/bge-m3（1024 维，首次约 2GB 下载），不需要另起嵌入服务，也没有需要设置的环境变量。
+   - 默认嵌入模型在 MCP 进程内加载：建索引与首次语义查询时加载 BAAI/bge-m3（1024 维，首次约 2GB 下载），不需要另起嵌入服务，也没有需要设置的环境变量。
+   - 若用远程嵌入/重排（本机为硅基流动 BAAI/bge-m3 + BAAI/bge-reranker-v2-m3），按上一节设置 NXOPEN_MCP_EMBED_* 与 NXOPEN_MCP_RERANK_*；该模式依赖网络，语义检索约 1 s/次。
    - 验证：get_class / get_member 返回成员（只查本地索引），search_api 在模型加载完成后返回结果。
    - 未配置 MCP 时，说明编写 API 会退回 dir() 与 UGOPEN 头文件核实。
 

@@ -144,9 +144,9 @@ analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path ci
 The MCP server is a separate project ([nxopen-mcp](https://github.com/mingfeng6684/nxopen-mcp)) and
 needs a separate install. It looks answers up in NX's own API documentation and is the main defence
 against hallucinated APIs. `get_class` / `get_member` use only the local index; `search_api` /
-`find_builder` encode the query in-process with BGE-M3, and the first semantic query waits for the
-model to load (about 1-2 minutes). If the model fails to load the call errors out; there is no
-keyword-search fallback.
+`find_builder` perform semantic search. Upstream encodes the query in-process with BGE-M3, and the
+first semantic query waits for the model to load (about 1-2 minutes). If the model fails to load the
+call errors out; there is no keyword-search fallback.
 
 Upstream has published v0.2.0 (latest) and v0.1.0, with tags and releases. Install with
 `pip install "nxopen-mcp[embed,reflect]"` (upstream `requires-python` is >=3.11), or run it without
@@ -155,6 +155,14 @@ downloads the ~2 GB `BAAI/bge-m3` model, shared by indexing and queries. Build t
 the local NX installation: `nxopen-mcp index --nx-path <NX install root>`. Upstream v0.2.0 has no
 embedding-service settings: the model loads inside the MCP process, so there is no service to run and
 no environment variable to set.
+
+To use OpenAI-compatible remote embedding and reranking instead (on this machine: SiliconFlow
+`BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`), set `NXOPEN_MCP_EMBEDDER=remote`,
+`NXOPEN_MCP_EMBED_URL`, `NXOPEN_MCP_EMBED_MODEL`, `NXOPEN_MCP_EMBED_API_KEY`, plus
+`NXOPEN_MCP_RERANK=1`, `NXOPEN_MCP_RERANK_URL`, `NXOPEN_MCP_RERANK_MODEL` and
+`NXOPEN_MCP_RERANK_API_KEY`. That mode depends on the network and takes about 1 s per semantic
+query; remote embedding and reranking require source-side support that upstream v0.2.0 does not
+include.
 
 ## Install
 
@@ -194,7 +202,8 @@ Steps:
    - Install: pip install "nxopen-mcp[embed,reflect]" (Python 3.11+), or uvx nxopen-mcp.
    - The latest upstream release is v0.2.0.
    - Build the index against the local NX installation: nxopen-mcp index --nx-path <NX install root>.
-   - The embedding model is loaded inside the MCP process: indexing and the first semantic query download/load BAAI/bge-m3 (1024 dimensions, ~2 GB on first use). There is no separate service and no environment variable to set.
+   - By default the embedding model is loaded inside the MCP process: indexing and the first semantic query download/load BAAI/bge-m3 (1024 dimensions, ~2 GB on first use). There is no separate service and no environment variable to set.
+   - For remote embedding/reranking (on this machine: SiliconFlow BAAI/bge-m3 + BAAI/bge-reranker-v2-m3), set NXOPEN_MCP_EMBED_* and NXOPEN_MCP_RERANK_* as described above; that mode depends on the network and takes about 1 s per semantic query.
    - Verify: get_class / get_member return members from the local index; search_api returns results once the model has loaded.
    - If MCP is not configured, state that API checks will fall back to dir() and the UGOPEN headers.
 
