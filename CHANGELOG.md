@@ -10,6 +10,7 @@ MCP 检索说明对齐远程嵌入与重排。
 
 ### Changed
 
+- `README.md`、`README.en.md`、`SKILL.md`：展示图迁出本仓库，九张实跑图移交 `nxopen-journal-toolkit` 的 `docs/images/` 并在 toolkit README 标注运行环境；本仓库删除 `images/`，README 只保留指向 toolkit 的入口。
 - `SKILL.md`：MCP 环境事实改为语义检索走外部嵌入服务（本机硅基流动 `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`，约 1 s/次、依赖网络），报错时按名核实；铁律 1 补语义检索与精确查询的工具分工。
 - `SKILL.md`：铁律 1 补中文查询夹英文术语的写法，纯中文短词命中差。
 - `README.md`、`README.en.md`：MCP 配置段补远程嵌入/重排的环境变量与网络依赖，保留上游默认进程内模型说明；记录失败边界——嵌入不可达时整串名（含单字名与全限定名）和驼峰标识符退回本地精确匹配并标注，其余查询报错，`get_class`/`get_member` 不被等待中的语义调用阻塞；重排不可达等 15 s 后回退，嵌入挂起单次最长等 60 s。

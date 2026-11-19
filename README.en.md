@@ -56,77 +56,14 @@ marker wrapper `scripts/run_journal_checked.py`.
 
 ## Figures from real runs
 
-The six module images below come from batch replays on this machine (ZCode + GLM-5.3-Flash, max
-thinking effort). Six cold-start agents, each with no memory, ran the modules independently: each
-received only the skill documents and one task sentence, then designed its own part, wrote the
-journal, passed static checks, replayed in batch and verified the result; the coordinator only
-accepted the final figure.
-Solids and assemblies are rendered outside NX from STL exported by the same run (a batch session
-cannot capture an image, see limitations), the drawings are PDFs the run wrote directly, and both
-charts plot real solve data written to disk.
+Figures covering all six domains (modeling, assembly, drafting/GB drawing, FEA, motion,
+reverse engineering), together with the exact host and version annotation, live in the
+**nxopen-journal-toolkit** README:
+<https://github.com/EVOL233awa/nxopen-journal-toolkit>.
 
-The journal behind each figure is not part of this repository (no script here generates these
-images), so the node counts, step counts and part counts in the captions describe that one run.
-Suite cases pin their own mesh, step count and part count, so their numbers differ — do not use
-the captions to judge a suite case.
-
-| Modeling: bearing pedestal, ribs, hole pattern (trimetric render) | Assembly: plate, pins, bushing and cap, mates colour-coded |
-| --- | --- |
-| <img src="images/modeling.png" width="400"> | <img src="images/assembly.png" width="400"> |
-
-The assembly figure comes from one standalone assembly run that colour-codes the four red pins,
-the gold bushing and the dark cap on the grey base plate: 13 persistent constraints hold the seven
-components and every pose was read back and verified against its design value (the assembly cases in
-the suite are much smaller — cases 04 and 10 use two components each).
-
-| Drafting: three views, section A-A, dimensions, centrelines | GB drawing: A4 sheet, frame, title block, notes |
-| --- | --- |
-| <img src="images/drafting-annotation.png" width="400"> | <img src="images/gb-drawing.png" width="400"> |
-
-The drafting figure comes from one standalone drawing run: all nine dimensions are UF-related
-objects attached to geometry and the PDF text layer was token-checked with pymupdf (suite case 19
-creates only three dimensions, so it does not reproduce that count). The GB figure's sheet, frame,
-title block and general notes come from the skill's gb_drawing module in one pass.
-
-| FEA: SOL101 cantilever vs beam theory (two panels) | Motion: rocker angle and angular velocity vs analytic (720 steps) |
-| --- | --- |
-| <img src="images/fea.png" width="900"> | <img src="images/motion.png" width="900"> |
-
-The FEA figure comes from a 14998-node mesh (suite case 09 uses a coarser mesh, hence a different
-node count): it overlays the displacement field on beam theory (free-end ratio 0.982) and samples
-bottom-fibre stress against the analytic distribution (ratio 1.000 mid-span; the Saint-Venant corner
-region is shaded and not used as a criterion). The motion figure plots per-frame data of a 720-step
-solve (suite case 18 uses `NSTEP = 360`): the rocker swing span differs from the closed form by
-0.0014 degrees and the reversal count matches. Both captions describe only their own run.
-
-### Advanced cold start: the ZA crank-rocker assembly
-
-Beyond the base domains the same cold-start discipline ran an advanced round: a crank-rocker
-assembly of 7 part types / 18 instances, modelled, mated and drafted into a complete assembly
-drawing in one pass, then two kinematics charts derived from the assembly parameters. The assembly
-drawing is written directly by an NX 12 batch Drafting session; the two kinematics charts come from
-a verification script that cross-checks an analytic solution against a numeric sweep and plots with
-matplotlib (not NX output). All three figures went through the same acceptance: independent
-recomputation plus a visual gate.
-
-| Assembly drawing: three views + balloons + BOM + title block (A3) | Kinematic diagram: GB symbols, limit positions |
-| --- | --- |
-| <img src="images/za-assembly.png" width="450"> | <img src="images/kin-mechanism.png" width="450"> |
-
-Every one of the 7 balloons attaches to real geometry and the 7 BOM rows map one-to-one onto the
-parts; the three views fill the frame with the notes placed right above the BOM. Vertical dimension
-text is forced parallel to its dimension line through the .NET preferences API (the UF default is
-unstable and stacks digits at random under the same code path). The assembly-drawing script carries
-its own audit gate, and the sheet passed after three visual-review iterations.
-
-| Sweep envelope & interference check: envelope arc, coupler curve, clearance callouts |
-| --- |
-| <img src="images/kin-envelope.png" width="900"> |
-
-The kinematics numbers were recomputed independently: Grashof holds, γmin=55.77°, rocker swing
-49.58°, limit positions 91.79°/141.38°, minimum envelope-to-plate clearance 39.91 mm, with the
-analytic values and a 721-step sweep agreeing within 0.009 mm. The crank path circle projects
-10 mm past the plate edge while the minimum Z clearance is 2 mm, so nothing collides in space.
+They were regenerated by the installed toolkit through NX 12 batch runs (host annotation:
+ZCode + DeepSeek-V4.1-Flash-1017 (max) + toolkit 1.0.0). This repository keeps only the
+skill sources, references and regression suite; showcase images are no longer stored here.
 
 ## Requirements
 
@@ -338,7 +275,6 @@ nxopen-journal/
 ├── .github/workflows/ci.yml        cloud CI (check_repo.py / check_journal rule self-test / journal static check, no NX)
 ├── docs/wiki/                      maintainer guide: architecture / execution flow / modules / data flow / boundaries (entry [docs/wiki/README.md](docs/wiki/README.md))
 ├── references/                     nine domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / verification
-├── images/                         figures from real runs
 ├── scripts/
 │   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)
 │   ├── nxlib/                      case standard layer (test framework + recipe modules, imported by the cases)
