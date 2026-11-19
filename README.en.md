@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Current version 1.6.0 (see [CHANGELOG.md](CHANGELOG.md)).
+Current version 1.7.0 (see [CHANGELOG.md](CHANGELOG.md)).
 
 An agent skill for Siemens NX 12. After installation, an agent can write NXOpen Python journal
 scripts from natural-language instructions, run them headlessly through NX 12 in batch mode, and
@@ -33,7 +33,7 @@ the agent reads. This page is the English entry point.
 | --- | --- |
 | Modeling | sketches, extrude and revolve, boolean, shell and draft, patterns (linear, circular, along path, helix, polygon, general, reference), hole package (three non-threaded types; threads use a pilot hole plus annotation), layers and categories, STL export |
 | Assembly | assembly structure, mating constraints, draggable mechanism, two routes to a revolute joint, two geometric routes for interference checking |
-| Drafting | base and projected views, detail view, sections (stepped, half, revolved), dimensions and centrelines, radius dimensions |
+| Drafting | base and projected views, detail view, sections (stepped, half, revolved), assembly balloons/sections/full title block, dimensions and centrelines, radius dimensions |
 | FEA | Nastran SOL101 static, 2D shell mesh, solve-level calibration, solution and boundary-condition descriptors |
 | Motion | links and joints (revolute, slider, gear coupler), drivers, solving, result extraction |
 | Reverse engineering | structure inventory and sections from a featureless solid, rebuild as an editable structure-feature model, independent recomputation of sections, holes, volume, bounding box, four-view silhouettes and two-way surface deviation |
@@ -41,7 +41,7 @@ the agent reads. This page is the English entry point.
 
 Five tools come with it: `scripts/check_journal.py` (static check of a journal against
 a rule base of measured NX 12 pitfalls), `scripts/run_journal_batch.bat` (headless replay),
-`scripts/gb_drawing.py` (GB-style drawing kit: A4 frame, pinned views, title block, tech
+`scripts/gb_drawing.py` (GB-style drawing kit: A4/A3 frame, pinned views, assembly balloons/sections/full title block, tech
 note and dimension lanes — any journal can `import gb_drawing`), the case standard layer
 `scripts/nxlib/` (test framework plus recipe modules for modeling, assembly, drafting,
 measurement, rolling fillets, parameter templates, the reverse measurement compiler,
@@ -69,7 +69,7 @@ skill sources, references and regression suite; showcase images are no longer st
 
 | # | Requirement | How to check | If missing |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 50 gated cases run, only the static check is left |
+| 1 | Windows 11 + Siemens NX 12 (12.0.0.27) with the NXOpen automation interface | `%NX_HOME%\NXBIN\run_journal.exe` exists | Batch replay cannot run; none of the 51 gated cases run, only the static check is left |
 | 2 | `NX_HOME` pointing at the NX install root | defaults to `D:\UG-NX12`; set `NX_HOME` if yours is elsewhere | The batch wrapper prints an error and exits with code 2 instead of silently using the wrong path |
 | 3 | An agent that loads skills | put the directory into the agent's skill directory and let the agent read `SKILL.md` | The skill never triggers. Routing comes from the frontmatter of `SKILL.md`; nothing to compile or register |
 | 4 | Python 3.11+ (host) | `python -V`. `check_journal.py`, `check_repo.py` and the PDF value check use it (the latter also needs pymupdf) | Journals are unaffected: NX runs them with its embedded Python 3.6.1; the host Python only runs checks and MCP |
@@ -198,7 +198,7 @@ PASS pdf value check - test 19 annotation values
 === ALL TESTS PASSED ===
 ```
 
-50 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
+51 gated cases pass, plus three one-shot API probes that are kept as evidence and are not part of
 the check. By default the run deletes the artifacts under `scripts/tests/parts/`, including the
 Nastran intermediate files, because every run rebuilds them completely.
 
@@ -218,7 +218,7 @@ recorded in `scripts/tests/README.md`.
 | Measurement & reverse engineering | 38 39 40 49 |
 | Deliverable verification | 50 51 52 53 (STEP entity census, STL topology, import matrix, occupancy gate, PMI subtypes) |
 
-The suite is 53 case files: 50 gated cases plus three one-shot API probes that are not part of the check and are kept for reference.
+The suite is 54 case files: 51 gated cases plus three one-shot API probes that are not part of the check and are kept for reference.
 
 ## Why this skill
 
@@ -276,13 +276,13 @@ nxopen-journal/
 ├── docs/wiki/                      maintainer guide: architecture / execution flow / modules / data flow / boundaries (entry [docs/wiki/README.md](docs/wiki/README.md))
 ├── references/                     nine domain files: modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / verification
 ├── scripts/
-│   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / title block / tech note / dimension lanes / PDF)
+│   ├── gb_drawing.py               GB-style drawing kit (frame / pinned views / assembly balloons / sections / full title block / tech note / dimension lanes / PDF)
 │   ├── nxlib/                      case standard layer (test framework + recipe modules, imported by the cases)
 │   ├── check_journal.py            static check (AST + rule base of measured pitfalls)
 │   ├── check_repo.py               repo self-check (eight groups: Py3.6 syntax / case list / doc structure / file list / standard-layer exclusivity / doc conciseness / route-first / maintainer wiki)
 │   ├── run_journal_batch.bat       single-file batch replay (NX_HOME parameterised)
 │   ├── render/                     offline figure chain (shaded STL rendering, PDF rasterising, trim and scale bar)
-│   └── tests/                      regression suite (50 gated cases + 3 one-shot probes) plus its own README
+│   └── tests/                      regression suite (51 gated cases + 3 one-shot probes) plus its own README
 └── agents/openai.yaml              Codex / OpenAI front-end config for cross-agent portability
 ```
 

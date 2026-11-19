@@ -1,6 +1,6 @@
 # nxopen-journal 回归测试套件
 
-本目录是 `nxopen-journal` 技能的回归测试套件：53 个用例（50 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表、可编辑性与交付件验证。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
+本目录是 `nxopen-journal` 技能的回归测试套件：54 个用例（51 个并入令牌校验 + 11-13 三个一次性 API 探针），覆盖建模、装配、配对约束、运动连接、NX Motion、Drafting、FEA、测量、逆向表、可编辑性与交付件验证。用例→文件→判决 token 见下表。改动技能（references 配方、`check_journal.py`、`run_journal_batch.bat`）后应先跑完本套件再交付。
 
 ## 运行方式（需 NX12 已安装；安装根用环境变量 `NX_HOME` 指定，默认 `D:\UG-NX12`）
 
@@ -93,6 +93,7 @@ NX 用例跑完后先做规则自检（host 端）：`verify_check_rules.py` 的
 | 51 | `51_exchange_matrix.py` | `TEST51_DONE` | 导入矩阵：242 `WorkPart` 必须设 `OutputFile` 才出 1 solid/6 面/4000（漏设时 0 bodies）；非空工作件再导入为 2 solid/12 面/5000；`UF_PART_import` 兜底并入 1 solid/6 面/4000；242/214 `NewPart` 均等约 8 s 落盘后重开 1 solid/6 面/4000；判定一律另起进程 `OpenBaseDisplay` 读 `Bodies` |
 | 52 | `52_occupancy_gate.py` | `TEST52_DONE` | 100×60×10 平板 vs 同尺寸挖 20×20×1 浅腔：`FAIL`、Z 轴 ≥1 站命中、体积差 0.667%；同件自比 `PASS`；站距 1.18 > `min_feature/2` 且无差异时 `NO_SIGNAL`（不是 PASS） |
 | 53 | `53_pmi_census.py` | `TEST53_DONE` | PMI 子类型：`FLATNESS_TOLERANCE=1`、`GEOMETRIC_ITEM_SPECIFIC_USAGE=2`、`LENGTH_MEASURE(0.05)` 落盘；关 `PmiData`/`Annotations` 后子类型归零并被 `DELIV_E_PMI_MISSING` 拦住 |
+| 54 | `54_gb_assembly.py` | `TEST54_DONE` | 完整 GB 装配图：`full_title_block` 15 字段、2 个序号球、1 个剖视（旋转=FRONT、Hatch≥1）、对中符号、可见线 0.5 mm、`audit_gb_assembly` 通过 |
 
 ## 反向验证记录
 

@@ -4,12 +4,19 @@
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
 记录从 1.1.0 起；查 1.0.0 的变更用 `git tag v1.0.0` 与对应 GitHub Release。
 
-## [Unreleased]
+## [1.7.0] - 2026-11-19
 
-MCP 检索说明对齐远程嵌入与重排。
+装配图补齐 GB 序号/剖视/标题栏。
+
+### Added
+
+- `scripts/gb_drawing.py`：`full_title_block`（GB/T 10609.1 180×56 完整标题栏）、`balloon`（圆形序号球+引线）、`centering_marks`、`set_view_line_width`、`set_thin_line_widths`、`assembly_section`（`orient_view` 指定观察方向，InheritOrientation+SelectView 出轴对正剖面线）、`audit_gb_assembly`（装配图完整性门）。
+- `references/gb-drawing.md`：补完整 GB 装配图要素的调用骨架、函数表与边界。
 
 ### Changed
 
+- `scripts/gb_drawing.py`：表格外框线宽 0.7→1.4（PDF 0.25→0.5 mm），图框/标题栏/明细栏统一；`full_title_block` 内框用 0.25 mm。
+- `scripts/gb_drawing.py`：`apply_gb_preferences` 清空剖视标注的 `SECTION` 前缀，出图标注为 `A-A`；尺寸线/箭头/尺寸界线/序号球线宽钉到 0.25 mm。
 - `README.md`、`README.en.md`、`SKILL.md`：展示图迁出本仓库，九张实跑图移交 `nxopen-journal-toolkit` 的 `docs/images/` 并在 toolkit README 标注运行环境；本仓库删除 `images/`，README 只保留指向 toolkit 的入口。
 - `SKILL.md`：MCP 环境事实改为语义检索走外部嵌入服务（本机硅基流动 `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`，约 1 s/次、依赖网络），报错时按名核实；铁律 1 补语义检索与精确查询的工具分工。
 - `SKILL.md`：铁律 1 补中文查询夹英文术语的写法，纯中文短词命中差。

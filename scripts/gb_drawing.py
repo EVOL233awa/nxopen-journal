@@ -10,8 +10,11 @@ set_cjk_font -> new_sheet -> frame -> standard_views -> title_block/tech_note
 
 标准依据（本技能可证实部分）：
   * GB/T 14689.1  幅面与边距：装订边 a=25，非装订边 c：A0/A1=10、A2-A4=5
-  * GB/T 10609.1  标题栏字段（设计/校核/日期/图号/比例/材料/图名）；本模块
-    默认版式 = 一张真实工程图纸实测（105x21，3 行 7mm，6 列），字段齐全
+  * GB/T 10609.1  标题栏：`title_block` = 105x21 实测简化版；`full_title_block`
+                  = 180x56 完整版（设计/审核/工艺/标准化/批准/重量/共张第张/
+                  单位名称）
+  * GB/T 4458.2  装配图序号：`balloon`（圆形 ID 符号 + 图纸引线）
+  * GB/T 14689.1 对中符号：`centering_marks`（四边中点 5 mm 入框）
   * GB/T 4458.4   尺寸道位：第一道距轮廓约 10mm、相邻道约 7mm（通行做法）；
                 同向多道按数值升序外推（小尺寸在内道、大尺寸在外道）。
                 成组等径孔只标一条数量引线（2x<O>10，quantity_label）；直径尺寸对象
@@ -25,6 +28,7 @@ import time
 
 import NXOpen
 import NXOpen.UF
+import NXOpen.Preferences
 
 # ------------------------------------------------------------ GB constants
 SHEET = {"A4": (297.0, 210.0), "A3": (420.0, 297.0)}
@@ -45,6 +49,12 @@ VIEW_MARGIN = 18.0                        # 视图组离图框
 TB_W, TB_H = 105.0, 21.0
 TB_COLS = [10.0, 25.0, 10.0, 25.0, 10.0, 25.0]
 TB_ROWS = [7.0, 7.0, 7.0]
+# Full GB/T 10609.1 assembly title block: 180x56, 6 columns, 6 rows.
+TB_FULL_W, TB_FULL_H = 180.0, 56.0
+TB_FULL_COLS = [30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+TB_FULL_ROWS = [10.0, 9.0, 9.0, 9.0, 9.0, 10.0]
+# NX line width indices measured in PDF: 3 -> 0.25 mm, 5 -> 0.5 mm.
+LINE_THIN, LINE_THICK = 3, 5
 # detail_rect() 的选框放大系数。0.83 是早期启发式，来源已不可复现
 # （AskViewBorders 对 detail 返回选框本身、量不到边界圆，见
 # references/drafting.md B.4），保留只为不退化成 0；改前必须在实图上
@@ -116,7 +126,30 @@ def apply_gb_preferences(part, dim_text=TEXT_DIM, small_text=TEXT_SMALL):
     lap.LinePastArrowDistance = 0.0
     lap.FirstArrowType = NXOpen.Annotations.ArrowheadType.FilledArrow
     lap.SecondArrowType = NXOpen.Annotations.ArrowheadType.FilledArrow
+    # GB 细线 0.25 mm（粗线 0.5 的一半）：尺寸线、箭头、尺寸界线。
+    # 对象级 LineWidth 只改了中心线/符号，尺寸线仍按这里的全局 CFW 出图。
+    for getter, setter in (
+            (lap.GetFirstArrowLineCfw, lap.SetFirstArrowLineCfw),
+            (lap.GetSecondArrowLineCfw, lap.SetSecondArrowLineCfw),
+            (lap.GetFirstArrowheadCfw, lap.SetFirstArrowheadCfw),
+            (lap.GetSecondArrowheadCfw, lap.SetSecondArrowheadCfw),
+            (lap.GetFirstExtensionLineCfw, lap.SetFirstExtensionLineCfw),
+            (lap.GetSecondExtensionLineCfw, lap.SetSecondExtensionLineCfw)):
+        cfw = getter()
+        cfw.Width = NXOpen.Annotations.LineWidth.Three
+        setter(cfw)
     ap.SetLineAndArrowPreferences(lap)
+    sp = ap.GetSymbolPreferences()
+    cfw = sp.GetIdSymbolCfw()
+    cfw.Width = NXOpen.Annotations.LineWidth.Three
+    sp.SetIdSymbolCfw(cfw)
+    ap.SetSymbolPreferences(sp)
+    # GB 剖视标注只用 "A-A"；NX 默认前缀 "SECTION" 在 PDF 里会写成
+    # "SECTION A-A"，与国标不符。清空前缀后出图文本层即为 "A-A"。
+    pb = part.SettingsManager.CreatePreferencesBuilder()
+    pb.ViewSectionLabel.LabelPrefix = ""
+    pb.Commit()
+    pb.Destroy()
 
 
 # ------------------------------------------------------- table primitives
@@ -151,7 +184,8 @@ def _drain(tn):
         ufs.Tabnot.RemoveColumn(_norm(ufs.Tabnot.AskNthColumn(tn, 0)))
 
 
-def _new_table(origin, col_widths, row_heights, thick_border=False):
+def _new_table(origin, col_widths, row_heights, thick_border=False,
+               border_width=1.4):
     """Table with origin = top-left corner, grows down (measured).  Row
     heights only take effect once every cell's auto-fit is off (uf_tabnot.h:
     "Fit methods auto size row and auto size text must be disabled")."""
@@ -159,7 +193,7 @@ def _new_table(origin, col_widths, row_heights, thick_border=False):
     sp = ufs.Tabnot.AskDefaultSectionPrefs()
     if thick_border:
         sp.UseDoubleWidthBorder = True
-        sp.BorderWidth = 0.7
+        sp.BorderWidth = float(border_width)
     sp.AttachPoint = NXOpen.UF.Tabnot.AttachPoint.ATTACH_POINT_TOP_LEFT
     tn = _norm(ufs.Tabnot.Create(sp, [float(origin[0]), float(origin[1]), 0.0]))
     _drain(tn)
@@ -169,6 +203,32 @@ def _new_table(origin, col_widths, row_heights, thick_border=False):
         ufs.Tabnot.AddRow(tn, _norm(ufs.Tabnot.CreateRow(float(h))), -1)
     _pin_rows(tn, row_heights, len(col_widths))
     return tn
+
+
+def _set_cell_border(tn, ri, ci, bottom_width=None, right_width=None):
+    """Set one cell's bottom/right line width (NX width index 1..9).
+
+    GB tables need a thick outer border and thin inner rules; the table-level
+    BorderWidth only sets the outer frame, so the inner rules are pinned per
+    cell.  Width index 3 = 0.25 mm, 5 = 0.5 mm (measured in PDF)."""
+    cell = _cell(tn, ri, ci)
+    cp = _ufs().Tabnot.AskCellPrefs(cell)
+    if bottom_width is not None:
+        cp.BottomLineCfw = [-1, 1, int(bottom_width)]
+    if right_width is not None:
+        cp.RightLineCfw = [-1, 1, int(right_width)]
+    _ufs().Tabnot.SetCellPrefs(cell, cp)
+
+
+def _grid_borders(tn, nrows, ncols, thin=3, thick=5):
+    """Thin inner rules, thick bottom/right outer rules.  The top/left outer
+    rules come from the table BorderWidth set in _new_table."""
+    for ri in range(nrows):
+        for ci in range(ncols):
+            _set_cell_border(
+                tn, ri, ci,
+                bottom_width=(thick if ri == nrows - 1 else thin),
+                right_width=(thick if ci == ncols - 1 else thin))
 
 
 def _pin_rows(tn, row_heights, ncols):
@@ -260,6 +320,285 @@ def title_block(sheet, frame_geo, name=None, design=None, check=None,
                                % (ri, ci, got, expect))
     return {"tag": tn, "left": left, "right": frame_geo["right"],
             "top": top, "bottom": frame_geo["bottom"]}
+
+
+def full_title_block(sheet, frame_geo, name=None, dwg_no=None, material=None,
+                     scale_txt="1:1", weight=None, design=None, review=None,
+                     process=None, standardization=None, approve=None,
+                     date=None, review_date=None, process_date=None,
+                     standardization_date=None, approve_date=None,
+                     unit_name=None, total_sheets=None, sheet_no=None):
+    """GB/T 10609.1 full assembly title block, 180x56 mm.
+
+    The shipped 105x21 block is a measured real-drawing layout with only six
+    fields; this one carries the standard's approval/signature, weight,
+    sheet-count and unit-name cells.  Empty arguments stay empty (no invented
+    signatures); date defaults to today because the generation date is a
+    fact.  Returns the geometry dict plus a ``fields`` map for the gate.
+    """
+    sheet.Open()
+    ufs = _ufs()
+    if frame_geo["right"] - frame_geo["left"] < TB_FULL_W:
+        raise RuntimeError("full_title_block: frame is narrower than %.1f mm"
+                           % TB_FULL_W)
+    left = frame_geo["right"] - TB_FULL_W
+    top = frame_geo["bottom"] + TB_FULL_H
+    dp = ufs.Tabnot.AskDefaultCellPrefs()
+    dp.TextHeight = TEXT_SMALL
+    ufs.Tabnot.SetDefaultCellPrefs(dp)
+    tn = _new_table((left, top), TB_FULL_COLS, TB_FULL_ROWS,
+                    thick_border=True, border_width=1.4)
+    _grid_borders(tn, len(TB_FULL_ROWS), len(TB_FULL_COLS),
+                  thin=LINE_THIN, thick=LINE_THICK)
+    # Row 0: name spans cols 1-3; row 5: unit name spans cols 1-5.
+    ufs.Tabnot.MergeCells(_cell(tn, 0, 1), _cell(tn, 0, 3))
+    ufs.Tabnot.MergeCells(_cell(tn, 5, 1), _cell(tn, 5, 5))
+    today = time.strftime("%Y-%m-%d")
+    values = [
+        [u"图样名称", name or "", "", "", u"图样代号", dwg_no or ""],
+        [u"设计", design or "", u"日期", date or today,
+         u"比例", scale_txt or ""],
+        [u"审核", review or "", u"日期", review_date or today,
+         u"材料", material or ""],
+        [u"工艺", process or "", u"标准化", standardization or "",
+         u"重量", weight or ""],
+        [u"批准", approve or "", u"共 张", total_sheets or "",
+         u"第 张", sheet_no or ""],
+        [u"单位名称", unit_name or "", "", "", "", ""],
+    ]
+    for ri, row in enumerate(values):
+        for ci, val in enumerate(row):
+            if val != "":
+                ufs.Tabnot.SetCellText(_cell(tn, ri, ci), val)
+                cp = ufs.Tabnot.AskCellPrefs(_cell(tn, ri, ci))
+                cp.TextHeight = TEXT_SMALL if ci % 2 == 0 and ri < 5 \
+                    else TEXT_DIM
+                ufs.Tabnot.SetCellPrefs(_cell(tn, ri, ci), cp)
+                _center_cell(tn, ri, ci)
+    _pin_rows(tn, TB_FULL_ROWS, len(TB_FULL_COLS))
+    # Read back every filled cell and expose a label -> value map for the gate.
+    for ri, row in enumerate(values):
+        for ci, val in enumerate(row):
+            if val != "":
+                got = _read_cell(tn, ri, ci)
+                if got != val:
+                    raise RuntimeError(
+                        "full_title_block r%d c%d read-back %r != %r"
+                        % (ri, ci, got, val))
+    fields = {
+        u"图样名称": _read_cell(tn, 0, 1),
+        u"图样代号": _read_cell(tn, 0, 5),
+        u"设计": _read_cell(tn, 1, 1),
+        u"日期": _read_cell(tn, 1, 3),
+        u"比例": _read_cell(tn, 1, 5),
+        u"审核": _read_cell(tn, 2, 1),
+        u"审核日期": _read_cell(tn, 2, 3),
+        u"材料": _read_cell(tn, 2, 5),
+        u"工艺": _read_cell(tn, 3, 1),
+        u"标准化": _read_cell(tn, 3, 3),
+        u"重量": _read_cell(tn, 3, 5),
+        u"批准": _read_cell(tn, 4, 1),
+        u"共 张": _read_cell(tn, 4, 3),
+        u"第 张": _read_cell(tn, 4, 5),
+        u"单位名称": _read_cell(tn, 5, 1),
+    }
+    return {"tag": tn, "left": left, "right": frame_geo["right"],
+            "top": top, "bottom": frame_geo["bottom"],
+            "fields": fields}
+
+
+def centering_marks(sheet, size="A3"):
+    """GB/T 14689 centering marks: four short thick bars at paper-edge
+    midpoints, 5 mm past the frame into the sheet.
+
+    The NX BordersAndZones builder cannot be created from Python (it wants an
+    existing BordersAndZones object, and the insert-sheet route leaves it
+    null), so the marks are one-cell tables; at 0.5 mm height they read as
+    thick line segments and plot with the sheet.
+    """
+    w, h = SHEET[size]
+    c = NONBIND_C[size]
+    a = BINDING_A
+    bars = [
+        (0.0, h / 2.0 + 0.25, a + 5.0, 0.5),            # left, through binding
+        (w - (c + 5.0), h / 2.0 + 0.25, c + 5.0, 0.5),  # right
+        (w / 2.0, h, 0.5, c + 5.0),                     # top
+        (w / 2.0, c + 5.0, 0.5, c + 5.0),               # bottom
+    ]
+    tags = []
+    for x, y, bw, bh in bars:
+        tn = _new_table((x, y), [bw], [bh], thick_border=True,
+                        border_width=1.4)
+        ufs = _ufs()
+        ufs.Tabnot.SetCellText(_cell(tn, 0, 0), "")
+        tags.append(tn)
+    return tags
+
+
+def balloon(part, text, anchor_xy, origin_xy, leader=True, circular=True):
+    """Create a GB part-number balloon (ID symbol) in sheet coordinates.
+
+    ``anchor_xy`` and ``origin_xy`` are sheet mm.  The leader is attached to a
+    screen point (not to model geometry), which is enough for a plotted
+    assembly drawing and avoids the assembly-instance associativity traps.
+    Returns the created tag.
+    """
+    ufs = _ufs()
+    type_member = (NXOpen.UF.DrfIdSymbolType.SYM_CIRCLE if circular
+                   else NXOpen.UF.DrfIdSymbolType.SYM_SQUARE)
+    mode = (NXOpen.UF.DrfLeaderMode.WITH_LEADER if leader
+            else NXOpen.UF.DrfLeaderMode.WITHOUT_LEADER)
+    anchor = [float(anchor_xy[0]), float(anchor_xy[1]), 0.0]
+    origin = [float(origin_xy[0]), float(origin_xy[1]), 0.0]
+    tag = ufs.Drf.CreateIdSymbol(
+        type_member, str(text), "", origin, mode,
+        NXOpen.UF.DrfLeaderAttachType.LEADER_ATTACH_SCREEN, None, anchor)
+    return tag
+
+
+def set_view_line_width(part, views, visible=NXOpen.Preferences.Width.Five,
+                        hidden=None):
+    """Set drafting view line widths; Width.Five maps to 0.5 mm in PDF.
+
+    ``hidden=None`` leaves the hidden-line width untouched (the caller can
+    switch hidden lines off first).  Returns the builder's committed view
+    count only after Commit succeeds.
+    """
+    b = part.SettingsManager.CreateDrawingEditViewSettingsBuilder(list(views))
+    b.ViewStyle.ViewStyleVisibleLines.VisibleWidth = visible
+    if hidden is not None:
+        b.ViewStyle.ViewStyleHiddenLines.Width = hidden
+    b.Commit()
+    b.Destroy()
+    return len(list(views))
+
+
+def set_thin_line_widths(part, width=NXOpen.DisplayableObject.ObjectWidth.Three):
+    """Set the GB thin-line width on centerlines and section hatch objects.
+
+    Dimensions, arrowheads and ID symbols are pinned globally in
+    ``apply_gb_preferences`` (that is what reaches the PDF); this helper sets
+    the object width of centerlines and hatch objects.  NX 12 exposes no
+    drafting section-hatch width preference: the PDF keeps hatching at the NX
+    default (0.13 mm), below GB/T 17450's 0.25 mm thin line.  Call after the
+    dimensions, centerlines and section views exist.  Returns the number of
+    objects touched.
+    """
+    targets = (list(part.Dimensions)
+               + list(part.Annotations.Centerlines)
+               + list(part.Annotations.Hatches)
+               + list(part.Annotations.IdSymbols))
+    for obj in targets:
+        obj.LineWidth = width
+    return len(targets)
+
+
+def assembly_section(part, parent, cut_points, placement_xy,
+                     section_type=None, orient_view=None):
+    """Create a hatched section view from model-space cut points.
+
+    ``parent`` must be the view whose projection plane contains the cut
+    points (TOP for an XY cut, FRONT for an XZ cut).  ``placement_xy`` is
+    sheet mm.  ``orient_view`` is the view whose direction the section looks
+    along: for an X cut in TOP pass the FRONT view, for a Y cut in TOP pass
+    the RIGHT view.  NX 12's default orientation is oblique and
+    ``UseParentOrientation`` keeps the parent direction, which yields a plain
+    plan with no hatching (measured: 0 Hatch objects); only
+    ``InheritOrientation`` + ``SelectView`` gives an axis-aligned, hatched
+    section.  Pass ``None`` only if an oblique view is acceptable.  The cut
+    line is anchored at the parent view center; ``placement_xy`` moves only
+    the new view on the sheet.  Returns the committed SectionView.
+    """
+    svb = part.DraftingViews.CreateSectionViewBuilder(
+        NXOpen.Drawings.SectionView.Null)
+    svb.ParentView.View.Value = parent
+    svb.SectionViewType = (section_type if section_type is not None else
+                           NXOpen.Drawings.SectionViewBuilder.
+                           SectionLineType.SimpleStepped)
+    loc = svb.SectionLineSegments.SegmentLocation
+    for p in cut_points:
+        loc.AddCutSegment(part.Points.CreatePoint(
+            NXOpen.Point3d(float(p[0]), float(p[1]), float(p[2]))))
+    # The section-line origin is where the cut line sits on the parent view,
+    # not where the new view goes.  Setting both to placement_xy clips the
+    # cut to a sliver when the view is placed far from the parent (measured:
+    # 29 mm border instead of 213 mm); use the parent view center instead.
+    pb = _ufs().Draw.AskViewBorders(parent.Tag)
+    svb.SectionLineSegments.SectionLineOnlyPlacementOrigin = NXOpen.Point3d(
+        (float(pb[0]) + float(pb[2])) / 2.0,
+        (float(pb[1]) + float(pb[3])) / 2.0, 0.0)
+    origin = NXOpen.Point3d(float(placement_xy[0]),
+                            float(placement_xy[1]), 0.0)
+    svb.ViewPlacement.Placement.Value = part.Points.CreatePoint(origin)
+    if orient_view is not None:
+        svb.ViewOrientation.OrientationType = (
+            NXOpen.Drawings.ViewOrientationBuilder.Orientation.
+            InheritOrientation)
+        svb.ViewOrientation.SelectView.Value = orient_view
+    view = svb.Commit()
+    svb.Destroy()
+    return view
+
+
+def audit_gb_assembly(part, sheet, title_fields, expected_numbers,
+                      min_dims=3, require_section=True, strict=True):
+    """Gate an assembly drawing against GB content, not just frame/BOM.
+
+    Checks: every expected part number has a balloon (ID symbol), at least
+    ``min_dims`` dimensions, at least one section view that actually hatches
+    (a section made with ``UseParentOrientation`` has 0 Hatch objects and
+    fails), and the required title-block fields are non-empty.
+    ``title_fields`` is the ``fields`` map returned by full_title_block.
+    With ``strict`` a failure raises.
+    """
+    expected = [str(n) for n in expected_numbers]
+    ids = list(part.Annotations.IdSymbols)
+    dims = list(part.Dimensions)
+    ufs = _ufs()
+    sections = []
+    section_hatches = []
+    for v in list(sheet.GetDraftingViews()):
+        try:
+            if _norm(ufs.Draw.IsSxview(v.Tag)):
+                sections.append(v)
+                kinds = {}
+                for o in (v.AskVisibleObjects() or []):
+                    k = type(o).__name__
+                    kinds[k] = kinds.get(k, 0) + 1
+                section_hatches.append(kinds.get("Hatch", 0))
+        except Exception:
+            pass
+    required_title = [u"图样名称", u"图样代号", u"比例", u"材料", u"设计",
+                      u"审核", u"批准", u"日期", u"共 张", u"第 张",
+                      u"单位名称", u"重量"]
+    missing_title = [k for k in required_title if not title_fields.get(k)]
+    report = {
+        "balloons": len(ids),
+        "expected_numbers": expected,
+        "dimensions": len(dims),
+        "sections": len(sections),
+        "section_hatches": section_hatches,
+        "missing_title": missing_title,
+        "pass": True,
+    }
+    reasons = []
+    if len(ids) < len(expected):
+        reasons.append("balloons %d < expected %d"
+                       % (len(ids), len(expected)))
+    if len(dims) < min_dims:
+        reasons.append("dimensions %d < %d" % (len(dims), min_dims))
+    if require_section and not sections:
+        reasons.append("no section view")
+    if require_section and sections and min(section_hatches) < 1:
+        reasons.append("section without hatch (not a real cut)")
+    if missing_title:
+        reasons.append("empty title fields: %s"
+                       % ",".join(sorted(missing_title)))
+    report["reasons"] = reasons
+    report["pass"] = not reasons
+    if strict and reasons:
+        raise RuntimeError("GB assembly gate FAIL: " + "; ".join(reasons))
+    return report
 
 
 def tech_note(sheet, tb_geo, lines=None, size=TEXT_DIM, base_y=None):

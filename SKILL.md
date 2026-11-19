@@ -226,7 +226,7 @@ IGES 同坑。`.x_t` 可直接回读，作为交换格式交付并注明“Paras
 | 工程图（图纸/三视图/投影视图/局部放大/剖视图/PDF 导出/装配图路线） | `references/drafting.md` |
 | 工程图标注（尺寸道位布局/字高箭头风格/注释文字/表格/中心线/球标） | `references/drafting-annotation.md`（前置 `references/drafting.md` §B.1-B.3） |
 | **逆向重建**（原件+一句重建要求→面表→结构目录/圆角地图→结构表+过渡账本→测量链→按结构建特征→过渡→G7 双轨验收） | `references/reverse-engineering.md`（前置 `references/modeling.md` + `references/fea.md`） |
-| **国标成套出图**（GB 图框/标题栏/技术要求/尺寸道位一张图到位） | `scripts/gb_drawing.py` + `references/gb-drawing.md`（验收=33 号用例） |
+| **国标成套出图**（GB 图框/标题栏/技术要求/尺寸道位；装配图序号/剖视/完整标题栏） | `scripts/gb_drawing.py` + `references/gb-drawing.md`（验收=33 号零件图 + 54 号装配图） |
 | 有限元（CAD→FEM→SIM→求解→后处理；实体 CTETRA 与 2D 壳/PSHELL、模态 SOL103） | `references/fea.md` |
 | 运动仿真（Link/转动副/滑动副/驱动/齿轮连接件/求解/结果提取/静不定反力陷阱） | `references/motion.md`（前置本文件 §1 铁律、§3 骨架） |
 | 可编辑性验证 | `references/modeling.md` §6 + `scripts/tests/08_editability_probe.py` |
@@ -247,7 +247,7 @@ python scripts/check_journal.py path/to/journal.py
 # 批处理试跑（journal 用绝对路径；workdir 可选）
 scripts\run_journal_batch.bat C:\abs\path\journal.py [workdir]
 
-# 全量回归（53 例 = 50 个批处理令牌校验 + 11-13 三个一次性探针）
+# 全量回归（54 例 = 51 个批处理令牌校验 + 11-13 三个一次性探针）
 # 逐例覆盖内容在 tests/README.md；gate 令牌以 RUN_TESTS.bat 的 call :gate 为准，两处同改
 # 09 含 Nastran 求解较慢；跑完默认清理 parts\，KEEP_PARTS=1 保留
 # 末尾先跑 check_journal 规则自检（宿主 python），再用 pymupdf 复核 19 号 PDF 文本层
@@ -259,7 +259,7 @@ scripts\tests\RUN_TESTS.bat
 
 **写新用例先 `import nxlib`，不复制配方**：`scripts/nxlib/` 是标准层（`testing`/`session`/`modeling`/`assembly`/`drafting`/`measure`/`rolling`/`template`/`reverse`/`skeleton`/`structures`/`transitions`/`audit`/`structure_inference`/`exchange`）；探针/死路用例保持自包含，名单在 `check_repo.py` 的 `SELF_CONTAINED`，新增必须登记；用例顶层函数与 nxlib 公开 API 同名会被拦截。
 
-⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。50 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现 `FATAL` 行（主门 `run_journal_checked.py` 对 `TESTxx_FATAL` 同样判失败；无宿主 python 的 `findstr` 回退才放行 `TESTxx_FATAL`，缺成功 token 仍判失败）。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 与 50-53 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`）。
+⚠ **检查看输出 token，不看退出码**：未捕获异常返回非零，但脚本吞掉失败时退出码仍为 0。51 个 gate 必须出现期望 token、不得出现 `_FAIL`，也不得出现 `FATAL` 行（主门 `run_journal_checked.py` 对 `TESTxx_FATAL` 同样判失败；无宿主 python 的 `findstr` 回退才放行 `TESTxx_FATAL`，缺成功 token 仍判失败）。成功 token：`TESTxx_DONE`（09/16/18/36 为 `BENCH_PASS`、10 为 `CONSTRAINT_PASS`）；失败必须打 `_FAIL`。逐项 `check()` 型用例单条失败打 `REG_xxx=FAIL`（不含 `_FAIL`），末尾打 `TESTxx_FAIL failed=[...]`（46 打 `TEST46_STOP failed=[...]`，token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓；34/35/37 与 50-54 走 `nxlib.testing.check_finish`，失败打 `TESTxx_FAIL checks=...`）。
 ⚠ **gate 扫的是整份日志的 `_FAIL` 子串**，所以 `check()` 的名字里不能含它：`T47_X_FAILURE_TEXT=PASS ...` 照样命中，全绿的用例会被判失败。判定用的 `TESTxx_FAIL` / `REG_x=FAIL` 只由 `say()`/`print()` 打，不进 `check()`；`check_repo.py` 第 5 组静态拦这类 id。
 ⚠ 已知崩溃探针（26 的 `ThreadedHole`、28 末条）在各自用例内运行，退出码非零不传给后续 gate；崩后用 Undo mark 撤掉残废特征。gate 顺序由 `RUN_TESTS.bat` 固定（09 含 Nastran 求解，放最后）。
 
@@ -290,10 +290,10 @@ nxopen-journal/
 ├── LICENSE                         ← MIT 许可证
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
-├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.6.0）
+├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.7.0）
 ├── docs/wiki/                      ← 维护者导览（架构/主执行流/模块/数据流/边界与风险；不进 agent 必读路径，与 SKILL.md 冲突以 SKILL.md 为准）
 ├── references/*.md                 ← 九个域文件；各自的域与覆盖范围见 §5 路由表
-├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/标题栏/技术要求/尺寸道位/PDF；验收=33 号用例，用法=references/gb-drawing.md）
+├── scripts/gb_drawing.py           ← 国标出图标准件（图框/三视图钉位/装配图序号/剖视/完整标题栏/技术要求/尺寸道位/PDF；验收=33 号零件图 + 54 号装配图，用法=references/gb-drawing.md）
 ├── scripts/nxlib/                  ← 用例标准层（testing/session/modeling/assembly/drafting/measure/rolling/template/reverse/skeleton/structures/transitions/audit/structure_inference/exchange；新用例 import 它、不复制配方）
 ├── scripts/deliverable.py          ← 离线交付件普查/门（STEP/STL/DXF/PMI；三态 PASS/FAIL/NO_SIGNAL）
 ├── scripts/occupancy.py            ← 三轴切片 + 体积差 + 连通分量占用门
@@ -306,7 +306,7 @@ nxopen-journal/
 ├── scripts/check_repo.py           ← 仓库自检（Py3.6 语法 / 用例清单一致 / 文档结构 / 文件清单 / 标准层独占 + check id 禁含 _FAIL / 文档精简 / 路线优先 / wiki 同步）
 ├── scripts/run_journal_batch.bat   ← 批处理试跑（ugiicmd + run_journal.exe；NX 安装根走 NX_HOME）
 ├── scripts/tests/                  ← 回归套件；README.md 有运行方式、用例与判决 token 表、配方归属
-│   ├── 01…53_*.py                  ← 50 个并入令牌校验的用例（RUN_TESTS.bat 全量跑；11–13 探针除外）
+│   ├── 01…54_*.py                  ← 51 个并入令牌校验的用例（RUN_TESTS.bat 全量跑；11–13 探针除外）
 │   ├── 11…13_api_probe*.py         ← 一次性 API 探针，不纳入检查
 │   ├── verify_check_rules.py       ← check_journal 规则自检（宿主解释器，反例必须命中）
 │   ├── verify_runner_markers.py    ← run_journal_checked 标记自检（FATAL/_FAIL/缺 token 必须拒）

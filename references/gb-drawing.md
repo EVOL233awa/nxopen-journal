@@ -36,9 +36,9 @@ gb.export_pdf(part, sheet, "drawing.pdf")
 
 | 条款 | 内容 | 本技能口径 |
 | --- | --- | --- |
-| GB/T 14689.1 | 幅面与边距 | A4/A3；a=25、c=5；单格表格 + 0.7 双线宽 |
+| GB/T 14689.1 | 幅面与边距 | A4/A3；a=25、c=5；单格表格 + 双线宽边框（1.4 单位 ≈ 0.5 mm） |
 | GB/T 14689.1 | 投影角 | 第一角（`ProjectionAngleType.FirstAngle`） |
-| GB/T 10609.1 | 标题栏字段 | 设计/校核/日期/图号/比例/材料/图名；模块实现 105×21 简化版（3 行 7mm、六列），标准全格式 180×56 未实现 |
+| GB/T 10609.1 | 标题栏字段 | `title_block` = 既有 105×21 简化版（设计/校核/日期/图号/比例/材料/图名）；`full_title_block` = 180×56 完整版（设计/审核/工艺/标准化/批准、图名、图号、材料、比例、重量、共张第张、单位名称） |
 | GB/T 4458.4 | 尺寸注法 | 道位 10/7；小内大外；等径孔一条数量引线；UF 关联尺寸（细则见 `drafting-annotation.md` §3/§4b） |
 | GB/T 14691 | 字体 | 3.5（尺寸/技术要求）、2.5（标题栏）；中文**默认就出得来**（模板 general/appended 字型本就是 `chinesef_fs`）；只有**尺寸/公差文字**默认 `blockfont`（无 CJK 字形），要出中文才必须 `set_cjk_font`（它把四类字型统一指向 `chinesef`） |
 | GB/T 1804-m / GB/T 1184-K | 未注公差 | `tech_note` 默认，`lines=` 覆盖 |
@@ -178,6 +178,7 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 | `save_model_view(part,name,rows)`、`base_view(part,sheet,model_view_name)`、`set_cjk_font(part)`（非轴对齐出图与中文出图） |
 | `dim_between(view,...)`、`dim_diameter(view,...)`、`dim_text_box(...)`、`box_overlap(...)`、`quantity_label(part,view,edge,center_model,org_xy,text)`、`centermark`、`centerline_by_points`、`export_pdf(part,sheet,path)`、`scale_text(s)` |
 | `map_point(view,model_xyz)`（模型点转图纸坐标一律走它，内部无回退，别改用仿射近似）、`sheet_part(sheet)`、`parent_ref(view)`、`view_bbox(view)`（含标签余量，仅供视图占位粗估）、`detail_rect(bx,by,half_w,half_h)`（局部放大选框） |
+| `full_title_block(...)`、`centering_marks(sheet,size)`、`balloon(part,text,anchor_xy,origin_xy)`、`set_view_line_width(part,views)`、`assembly_section(part,parent,cut_points,placement_xy)`、`audit_gb_assembly(...)`（装配图完整 GB 要素；见下） |
 
 `set_cjk_font`/`dim_diameter` 由 33 号用例覆盖（字体 id 回读、直径尺寸增量 1）；`projected_views`/`save_model_view`/`base_view` 没有回归用例，首次使用按实图核对输出。
 
@@ -188,10 +189,48 @@ part.Annotations.Preferences.SetLetteringPreferences(lp)
 
 ## 未覆盖范围
 
-A0/A1（c=10）、GB/T 10609.1 全格式标题栏未实现；剖视图部分已通（drafting.md B.4、31 号用例），"成套剖视 + 标注"未解；局部放大 `detail_rect` 的 `DETAIL_CIRCLE_FACTOR=0.83` 是圆半径/半对角比的启发式、来源不可复现（`AskViewBorders` 对 detail 返回选框本身、量不到边界圆）；选框半宽/半高 = 对应半宽 / 0.83（即放大 `1/0.83 ≈ 1.205` 倍），边界圆是否覆盖目标区只能在出图上目视确认、选框须留余量（细则见 `drafting.md` B.4）。
+A0/A1（c=10）未覆盖；局部放大 `detail_rect` 的 `DETAIL_CIRCLE_FACTOR=0.83` 是圆半径/半对角比的启发式、来源不可复现（`AskViewBorders` 对 detail 返回选框本身、量不到边界圆）；选框半宽/半高 = 对应半宽 / 0.83（即放大 `1/0.83 ≈ 1.205` 倍），边界圆是否覆盖目标区只能在出图上目视确认、选框须留余量（细则见 `drafting.md` B.4）。装配图的序号、主要尺寸、剖视与标题栏由下述 helper 提供，自动布点与自动选边仍需调用方按视图几何决定。`full_title_block` 是 180×56 包盒内的 6×6 等宽格、字段齐全（15 项），不复刻 GB/T 10609.1 的授权区/材料标记区逐格拓扑；需要逐格版式时按标准图样改格宽。
 
 ## 装配图
 
 - **包盒**：`standard_views` 的单 body 默认路线用 `model_bbox(body)` 定内容中心；装配件传 `bbox=gb.assembly_bbox([...])` 一次到位（传了 `bbox=` 就不再要求单 body），并集须计入齿顶、端盖、轴伸（漏算裁顶部）。逐视图重钉仍可用 `pin_view(..., bbox=...)` 作为补救。
 - **尺寸值 PDF 文本层复核**：`extreme_edge` + `dim_between` 在装配实例边/剖视上即使两边不同、`AssocDwgPos` 显式给出也可能读错；pymupdf 逐值对账，对不上改写到技术要求。
 - **明细栏**：位于标题栏上方时传 `base_y=明细栏顶边`，避免压字。
+- **在已有图纸的 prt 上重跑出图**：先删旧页再建新页。`ufs.Draw.DeleteDrawing(sheet.Tag)` 成功后该 sheet 包装对象立即失效，再读 `sheet.Name` 抛 `Invalid self parameter passed., Object no longer exists`；删除前把名字取到局部变量，删除后不再访问 wrapper。
+
+### 完整 GB 装配图要素
+
+```python
+tb = gb.full_title_block(
+    sheet, frame, name=u"曲柄摇杆机构总成", dwg_no="NXOJ-CR-01",
+    material=u"HT200", scale_txt="1:1.5", weight="2.35 kg",
+    design="...", review="...", process="...", standardization="...",
+    approve="...", date=None, unit_name="...",
+    total_sheets="1", sheet_no="1")
+gb.centering_marks(sheet, "A3")
+gb.set_view_line_width(part, [views["FRONT"], views["TOP"], views["RIGHT"]])
+# 序号：anchor 为图纸 mm，可由 gb.map_point(view, (x,y,z)) 得到
+gb.balloon(part, "1", gb.map_point(views["TOP"], (0.0, 0.0, 12.0)),
+           (origin_x, origin_y))
+# 剖视：切点模型坐标，parent 是切点所在投影面的视图，
+# orient_view 是剖视的观察方向（X 向切用 FRONT，Y 向切用 RIGHT）
+sec = gb.assembly_section(part, views["TOP"],
+                          [(x0, y0, z), (x1, y1, z)],
+                          (sheet_x, sheet_y), orient_view=views["FRONT"])
+gb.audit_gb_assembly(part, sheet, tb["fields"], [1, 2, 3, 4, 5, 6, 7],
+                     min_dims=3, require_section=True)
+```
+
+- `full_title_block` 180×56，返回 `fields`；`audit_gb_assembly` 要求图名/图号/比例/材料/设计/审核/批准/生成日/共张/第张/单位名称/重量非空。
+- `balloon` 用 `UF_DRF_create_id_symbol` 的 `SYM_CIRCLE`，引线落在图纸点（不关联模型边）；`circular=False` 用方框。
+- `set_view_line_width` 的 `Width.Five` 在 PDF 量得 0.5 mm；表框 `_grid_borders` 外粗 0.5 mm、内细 0.25 mm。
+- 细线 0.25 mm：`apply_gb_preferences` 把尺寸线/箭头/尺寸界线（全局 `LineCfw`）和序号球（`SymbolPreferences.IdSymbolCfw`）钉到 `LineWidth.Three`；`set_thin_line_widths` 设中心线/剖面线对象宽度。**边界**：NX 12 未暴露剖面线宽度偏好，PDF 剖面线仍为默认 0.13 mm。
+- `assembly_section` 默认 `SimpleStepped`；半剖/阶梯剖传 `SectionLineType.Half/SimpleStepped` 与对应切点。**朝向必须用 `orient_view`**：NX 12 的默认朝向是斜置，`UseParentOrientation` 与父视图同向、得到的是无剖面线的平面图（0 个 Hatch）；`InheritOrientation` + `SelectView`（即 `orient_view`）才有轴对正剖面线（Hatch≥1、旋转矩阵与 FRONT 一致）。剖切线锚点取父视图中心（`AskViewBorders` 中点），`placement_xy` 只移新视图；两者混用且远离父视图时剖面被裁成一条（29 mm vs 213 mm）。
+- `audit_gb_assembly(..., strict=True)` 失败直接抛 `GB assembly gate FAIL`；`strict=False` 返回 `{pass,balloons,dimensions,sections,section_hatches,missing_title,reasons}`。剖视 `Hatch=0` 判失败（防 `UseParentOrientation` 的假剖视）。
+
+### A3 装配图版面
+
+- 视图组占左上 2/3：RIGHT 在 FRONT 左侧、TOP 在 FRONT 正下方；三视图内容框互不重叠，也不压右下标题栏区（A3 内框 25…415 × 5…292）。
+- 剖视贴父视图放：X 向切（父 TOP）放 FRONT 右侧，边框宽度应接近剖切长度 × 比例；只剩几十毫米说明剖切线锚点或切点错了。
+- 标题栏 + 明细栏固定在右下（x 235…415、y 5…119）；技术要求与机构参数放左下（x 30…230、y 20…110）；空白留在视图组外侧，不要留在图面中央。
+- 序号球绕被标注视图外缘布置：origin 距 anchor ≤ 40 mm，引线不穿底板或其他零件轮廓，不压明细栏/标题栏/剖视；销轴/轴套/端盖这类叠层件在剖视里标。

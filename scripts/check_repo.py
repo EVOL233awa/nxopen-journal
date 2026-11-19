@@ -10,7 +10,8 @@
                 调试 `=` 与同引号嵌套由词法层补拦。
   2) COVERAGE   tests/ 下的 .py 只允许用例名或 verify_*.py；RUN_TESTS.bat 里 :gate
                 的每个用例号都要有对应文件，且每个用例文件都要在 RUN_TESTS.bat 里
-                被点到名（在跑或在不跑的注释里说明）。
+                被点到名（在跑或在不跑的注释里说明）。.bat 一律 CRLF 行尾，
+                LF-only 会让 cmd 跳过整段 :gate 却仍报 ALL TESTS PASSED。
   3) DOCS       .md 的围栏配平、表格块必须有表头与分隔行、列数一致；README 与
                 README.en.md 里提到的本仓库文件必须存在；两个 README 要互相链接。
   4) TREE       SKILL.md 的文件清单要覆盖磁盘上的每个顶层条目（隐藏项除外），
@@ -61,8 +62,8 @@ SELF_CONTAINED = {
 # 一次性探针：保留证据，但明确不纳入 :gate 令牌校验。
 PROBES = {"11_api_probe.py", "12_api_probe2.py", "13_api_probe3.py"}
 # 期望计数：文档/批次头写错数字时在这里拦，而不是靠人眼比对。
-EXPECTED_CASES = 53
-EXPECTED_GATES = 50
+EXPECTED_CASES = 54
+EXPECTED_GATES = 51
 EXPECTED_PROBES = 3
 # 标准层规模：模块数与公开 API 数在 wiki 里有散文计数，一并钉住（同名函数跨模块
 # 只算一次，与 check_nolib 的 nxlib_apis() 同口径）。
@@ -322,6 +323,17 @@ def check_coverage():
     for n in stray:
         problems.append("COVERAGE %s 不符合用例命名 NN_name.py（改名或登记为 verify_*.py）" % n)
         print("  FAIL %s 不符合用例命名规则" % n)
+    # .bat 必须是 CRLF：cmd 在 LF-only 文件里会把整段 call :gate 序列跳过，
+    # 套件只跑前几例就报 ALL TESTS PASSED（实测 51 例里只跑了 16 例）。
+    for root, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+        for n in names:
+            if n.lower().endswith(".bat"):
+                raw = open(os.path.join(root, n), "rb").read()
+                if raw.count(b"\n") != raw.count(b"\r\n"):
+                    problems.append("COVERAGE %s 是 LF 行尾（cmd 会跳过后续 :gate）"
+                                    % rel(os.path.join(root, n)))
+                    print("  FAIL %s 是 LF 行尾" % rel(os.path.join(root, n)))
     # :gate 必须是行首的 call（允许前导空白）。正则不锚行首时，
     # "if errorlevel 1 exit /b 1call :gate 34_..." 这种拼接行会被算作
     # "已覆盖"，套件实际跳过 34 号却报全绿。

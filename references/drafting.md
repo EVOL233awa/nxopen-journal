@@ -120,13 +120,13 @@ view = svb.Commit(); svb.Destroy()           # -> NXOpen.Drawings.SectionView
 
 1. 空引用写 `NXOpen.Drawings.SectionView.Null`（不能 `None`）。
 2. 父视图只能从 `ParentView.View.Value` 进（`View` 只读但返回 `SelectObject`，`.Value` 可写）；缺则 `AddCutSegment` 抛 `Invalid parent view for section line.`。`ViewPlacementBuilder.Placement` 同理。
-3. 切点用**模型坐标**且落在父视图可见实体内（图纸坐标能 commit 但 `AskSxsolidsOfSxview` 落空）；放置点与 `SectionLineOnlyPlacementOrigin` 用**图纸坐标**（参考点下移 70 mm）。
+3. 切点用**模型坐标**且落在父视图可见实体内（图纸坐标能 commit 但 `AskSxsolidsOfSxview` 落空）。两个图纸点分工不同：`SectionLineOnlyPlacementOrigin` 是**剖切线在父视图上的锚点**（取父视图中心，`AskViewBorders` 中点），`ViewPlacement.Placement` 是**新视图在图纸上的位置**。两者都填视图位置且远离父视图时，剖面被裁成一条（边框 29 mm vs 父中心锚点 213 mm）。
 
 判据分工：`IsSxview` 证"是剖视图"，`AskSxsolidsOfSxview` 证"剖到实体"，`Hatch` 证"画了剖面线"。**`Hatch` 单独说明不了切到没切到孔**——实心块剖开同样打剖面线，还须断言毛坯上存在圆柱面（`AskFaceData` 面类型 16）。
 
 ⚠ 剖视图显示"剖切面 + 面后可见几何"，不是只有切口：两孔在 y=20/60 时对应剖切面读数完全一样；曲线数只反映模型里有什么，不反映切面在哪。
 
-⚠ **剖视朝向**：默认建法**会斜置**——同一切面（Y=0）的四种默认建法（父=主视/俯视 × 直剖/半剖/阶梯）出图内容框全不轴对正（剖切坐标系首向量相对 X 轴 −37.9°/+86.4°/+30.7°）。**批处理里可控制**：Commit 前设 `svb.ViewOrientation.OrientationType = NXOpen.Drawings.ViewOrientationBuilder.Orientation.UseParentOrientation`，出图即与父视图同向、内容框为真实剖切轮廓（同一 Y=0 切面、120×80×12 板、1:1：默认内容框 120×80、`axis_aligned=False`；设后 120×12、`axis_aligned=True`，读回 2）；`Orthographic`（读回 0）仍不正；`InheritOrientation`/`SectionExisting` 需再给 `SelectView`，缺则 Commit 分别报 `Invalid view.` / `The view tag is NULL_TAG`。
+⚠ **剖视朝向**：默认建法**会斜置**——同一切面（Y=0）的四种默认建法（父=主视/俯视 × 直剖/半剖/阶梯）出图内容框全不轴对正（剖切坐标系首向量相对 X 轴 −37.9°/+86.4°/+30.7°）。**批处理里可控制**：Commit 前设 `svb.ViewOrientation.OrientationType = NXOpen.Drawings.ViewOrientationBuilder.Orientation.UseParentOrientation`，出图即与父视图同向、内容框为真实剖切轮廓（同一 Y=0 切面、120×80×12 板、1:1：默认内容框 120×80、`axis_aligned=False`；设后 120×12、`axis_aligned=True`，读回 2）——但 `Hatch=0`，得到的是无剖面线的平面图，**不能当装配剖视**。要轴对正且有剖面线，用 `InheritOrientation` + `SelectView=<同向视图>`（X 向切选 FRONT、Y 向切选 RIGHT）：旋转矩阵与 FRONT 一致、内容框 160×40、`Hatch≥1`。`Orthographic` 仍斜置；`SectionExisting` 会把选中的视图改成剖视（视图名变 `Front@2`），不要用。
 
 #### 阶梯剖
 

@@ -59,7 +59,7 @@ org：`Create*Dim` = 尺寸线名义位置（吸附 2~3mm）；`Tabnot.Create` o
 - `SetDrawingReferencePoint` 钉的是锚点模型点而非内容中心，偏差按视图恒定；不要手填常数，统一用 `gb_drawing.pin_view` 按内容包盒迭代（收敛 <0.05mm）。
 - 后续越界移动**不报错、也不自动回滚**（越界 Set 全部正常返回）；摆位后必须自查内容包盒仍在图幅内。
 - `AskViewBorders` 含标签余量，只配粗估；真值用内容包盒 `model_bbox` + `ufs.View.MapModelToDrawing` 取 min/max（`content_bbox`/`pin_view`），收敛判据内容中心偏差 <0.05mm。
-- 剖视沿父视图对齐轴（同 x/y 中心）时方向正确、包盒精确；定位只用 placement origin（`SectionLineOnlyPlacementOrigin` = `ViewPlacement.Placement.Value`）。斜放会旋转且包盒失真；包盒 pin 仅普通视图。**朝向本身**由 `svb.ViewOrientation.OrientationType` 决定（默认斜置，`UseParentOrientation` 才与父视图同向，见 `drafting.md` B.4）。
+- 剖视沿父视图对齐轴（同 x/y 中心）时方向正确、包盒精确；`SectionLineOnlyPlacementOrigin` 是剖切线在父视图上的锚点（取父视图中心），`ViewPlacement.Placement` 是新视图位置——两者不能都填视图位置，否则远离父视图时剖面被裁成一条。斜放会旋转且包盒失真；包盒 pin 仅普通视图。**朝向本身**由 `svb.ViewOrientation.OrientationType` 决定（默认斜置，剖视要剖面线用 `InheritOrientation` + `SelectView`，见 `drafting.md` B.4）。
 - ⚠ **placement origin ≠ 内容中心**；沿对齐轴用包盒量偏移修正。
 - 剖视 placement 须在图幅内；建完断言可见对象数与 hatch ≥ 1（`view_kinds`）——出图幅时 Commit 成功、scale 1.0、零内容。
 - 改 `view_layout` 后标注坐标全部重算；道位从内容包盒推导（`LANE_FIRST`/`LANE_STEP`）。

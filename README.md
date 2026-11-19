@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-当前版本 1.6.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
+当前版本 1.7.0（变更见 [CHANGELOG.md](CHANGELOG.md)）。
 
 面向 Siemens NX 12 的 agent 技能。安装后，agent 可根据自然语言描述编写 NXOpen Python
 journal，在本机 NX 12 中以批处理方式运行，生成三维模型、装配、Drafting 工程图、Nastran
@@ -31,14 +31,14 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 | --- | --- |
 | 三维建模 | 草图、拉伸与旋转、布尔、抽壳与拔模、阵列（线性、圆周、沿路径、螺旋、正多边形、螺线、目标点、引用已有阵列）、孔包三种非螺纹孔型（螺纹用底孔+标注）、图层与类别、STL 导出 |
 | 装配 | 装配结构、配对约束、可拖动机构、转动副两条路线、干涉检查两条几何路线 |
-| Drafting | 三视图与投影视图、局部放大、剖视（阶梯剖、半剖、旋转剖）、尺寸与中心线标注、半径尺寸 |
+| Drafting | 三视图与投影视图、局部放大、剖视（阶梯剖、半剖、旋转剖）、装配图序号球/剖视/完整标题栏、尺寸与中心线标注、半径尺寸 |
 | 有限元 | Nastran SOL101 静力、2D 壳网格、求解级标定、解算方案与边界条件描述符 |
 | 运动仿真 | 连杆、转动副、滑动副、齿轮连接件，驱动、求解与结果提取 |
 | 逆向重建 | 从无特征实体提取结构清单与截面，按结构特征重建为可编辑模型；用独立脚本复算截面轮廓、孔系、体积、包围盒、四视图和双向表面偏差 |
 | 交付件验证 | STEP 实体普查（实体/面/边、NAUO、PRODUCT、PMI 子类型、悬空引用）、STL 拓扑（水密、绕向、有符号体积、欧拉数）、DXF 布局与实体计数、三轴切片占用与连通分量、图纸 PDF 文本层；判决三态 `PASS`/`FAIL`/`NO_SIGNAL` |
 
 除了生成脚本，技能里还有几样配套工具：静态检查 `scripts/check_journal.py`、批处理入口
-`scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4 图框、三视图钉位、
+`scripts/run_journal_batch.bat`、国标出图模块 `scripts/gb_drawing.py`（A4/A3 图框、三视图钉位、装配图序号/剖视/完整标题栏、
 标题栏、技术要求、尺寸道位，journal 中 `import gb_drawing` 后可直接使用）、用例标准层
 `scripts/nxlib/`（测试框架与建模、装配、制图、测量、圆角滚刀、参数化模板、逆向测量编译/骨架/结构库/结构推断/转换/交换/审计等十五模块配方，回归用例直接 import，不各自复制），以及
 `scripts/render/` 的离线出图链（批处理截不了图，三维图由 STL 在 NX 外渲染，工程图 PDF 转成图片）。
@@ -59,7 +59,7 @@ ZCode + DeepSeek-V4.1-Flash-1017（max）+ toolkit 1.0.0）。本仓库只保留
 
 | # | 条件 | 怎么确认 | 缺了会怎样 |
 | --- | --- | --- | --- |
-| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（50 个带判定的用例）无法执行，只剩静态检查可用 |
+| 1 | Windows 11 + Siemens NX 12（12.0.0.27），且安装了 NXOpen 自动化接口 | `%NX_HOME%\NXBIN\run_journal.exe` 存在 | 批处理无法运行，回归套件（51 个带判定的用例）无法执行，只剩静态检查可用 |
 | 2 | `NX_HOME` 指向 NX 安装根 | 默认 `D:\UG-NX12`，装在别处先设 `NX_HOME`（写法见下一节） | 批处理找不到 `run_journal.exe`，打印报错并以退出码 2 结束，不会进入错误路径 |
 | 3 | 一个能加载技能的 agent | 目录放进 agent 的技能目录后，让它读一次 `SKILL.md` | 技能不会被触发。本技能由 `SKILL.md` 头部的描述触发，不需要注册或编译 |
 | 4 | Python 3.11+（宿主） | `python -V`。`check_journal.py`、`check_repo.py` 与工程图 PDF 数值复核使用它（后者还用到 pymupdf） | journal 不受影响：它由 NX 内嵌的 Python 3.6.1 执行；宿主 Python 只跑检查与 MCP |
@@ -176,7 +176,7 @@ PASS pdf value check - test 19 annotation values
 
 出现 SKIP 说明宿主 Python 或 pymupdf 缺失：装好 Python 3.11+ 并在该解释器里 `pip install pymupdf` 后重跑；打了 SKIP 的步骤不算通过。
 
-50 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
+51 个带判定的用例逐条通过。执行完成后默认删除 `scripts/tests/parts/` 下的产物，其中包括 Nastran 的中间
 文件；这些文件每次运行都会重新生成。
 
 ## 回归用例
@@ -194,7 +194,7 @@ PASS pdf value check - test 19 annotation values
 | 测量与逆向 | 38 39 40 49 |
 | 交付件验证 | 50 51 52 53（STEP 实体普查、STL 拓扑、导入矩阵、占用门、PMI 子类型） |
 
-套件共 53 个用例文件 = 50 个带判定的 gate + 3 个一次性 API 探测脚本（后者不纳入校验，保留作参考）。
+套件共 54 个用例文件 = 51 个带判定的 gate + 3 个一次性 API 探测脚本（后者不纳入校验，保留作参考）。
 
 ## 设计思路
 
@@ -233,13 +233,13 @@ nxopen-journal/
 ├── docs/wiki/                      ← 维护者导览：架构 / 主执行流 / 模块 / 数据流 / 边界与风险（入口 [docs/wiki/README.md](docs/wiki/README.md)）
 ├── references/                     ← 九个域文件：modeling / assembly / drafting / drafting-annotation / fea / motion / gb-drawing / reverse-engineering / verification
 ├── scripts/
-│   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/标题栏/技术要求/尺寸道位/PDF）
+│   ├── gb_drawing.py               ← 国标出图标准件（图框/三视图/装配图序号/剖视/标题栏/技术要求/尺寸道位/PDF）
 │   ├── nxlib/                      ← 用例标准层（测试框架 + 建模/装配/制图/测量/圆角滚刀/模板/逆向五表/骨架/结构库/审计，用例 import 用）
 │   ├── check_journal.py            ← 静态检查（AST + 已固化坑位规则库）
 │   ├── check_repo.py               ← 仓库自检八组（Py3.6 语法 / 用例清单 / 文档结构 / 文件清单 / 标准层独占 / 文档精简 / 路线优先 / 维护者 wiki）
 │   ├── run_journal_batch.bat       ← 单件批处理执行（NX_HOME 参数化）
 │   ├── render/                     ← 离线出图链（STL 着色渲染、PDF 栅格化、裁边与比例尺）
-│   └── tests/                      ← 回归套件（50 个带结果判定的用例 + 3 个一次性 API 探测脚本）+ 套件说明
+│   └── tests/                      ← 回归套件（51 个带结果判定的用例 + 3 个一次性 API 探测脚本）+ 套件说明
 └── agents/openai.yaml              ← Codex 与 OpenAI 端界面配置，跨端迁移用
 ```
 

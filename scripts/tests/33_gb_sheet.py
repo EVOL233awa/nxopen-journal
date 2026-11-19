@@ -329,6 +329,8 @@ def main():
     stage("centerlines", s_centers)
 
     def s_export():
+        n = gb.set_thin_line_widths(state["part"])
+        print("THIN_WIDTH=%d" % n)
         gb.export_pdf(state["part"], state["sheet"], PDF)
         size = os.path.getsize(PDF)
         print("PDF=%d" % size)
