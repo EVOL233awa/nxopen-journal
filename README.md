@@ -51,9 +51,8 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 版本标注，统一维护在 **nxopen-journal-toolkit** 的 README：
 <https://github.com/EVOL233awa/nxopen-journal-toolkit>。
 
-图件是安装后的 toolkit 在 NX 12 批处理中重新生成的（宿主标注为
-ZCode + DeepSeek-V4.1-Flash-1017（max）+ toolkit 1.0.0）。本仓库只保留技能源文件、参考文档与回归套件，
-不再存放展示图。
+图件是安装后的 toolkit 在 NX 12 批处理中重新生成的，不是示意图；本仓库只保留技能源文件、参考
+文档与回归套件。
 
 ## 前置条件
 
@@ -66,32 +65,21 @@ ZCode + DeepSeek-V4.1-Flash-1017（max）+ toolkit 1.0.0）。本仓库只保留
 | 5 | NX Nastran 解算授权 | 求解日志开头打印 `NASTRAN LICENSE:` 行，本机环境为 `DESKTOP BUNDLE`，授权来自本机许可服务 | 用例 09 与 25 无法运行，其余照常；这两个用例会实际调用求解器，不能跳过 |
 | 6 | nxopen MCP | 见下一节 | 不装也能用，但写 API 时要靠 `dir()` 和 UGOPEN 头文件核实 |
 
-### nxopen MCP
+### nxopen MCP（可选）
 
-nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github.com/mingfeng6684/nxopen-mcp)），
-需要单独安装。它直接查 NX 自己的 API 文档，是这个技能避免 API 幻觉的主要手段。其中
-`get_class` 和 `get_member` 只用本地索引；`search_api` 和 `find_builder` 做语义检索，
-上游默认在进程内用 BGE-M3 编码查询，首次语义查询要等模型加载（约 1–2 分钟），模型加载
-失败直接报错，不会退化成关键词检索。
+写 journal 时最容易出错的是 API 名与签名。nxopen MCP 用本机 NX 安装里的官方文档建索引，让 agent
+查真实存在的类、成员与签名，而不是凭记忆写。它不属于本技能，需要单独安装：
 
-上游已发布 v0.2.0（最新）与 v0.1.0，带 tag 和 release。安装方式：
-`pip install "nxopen-mcp[embed,reflect]"`（上游 `requires-python` 为 >=3.11），或按上游 README 用
-`uvx nxopen-mcp` 免安装运行。`[embed]` 拉入 FlagEmbedding，首次使用时下载约 2GB 的
-`BAAI/bge-m3` 模型，索引与查询共用这一个模型。安装后要对着本机的 NX 安装目录建一次索引：
-`nxopen-mcp index --nx-path <NX 安装根>`。上游 v0.2.0 没有嵌入服务相关的配置项：模型在 MCP
-进程内加载，不需要另起服务，也没有要设的环境变量。
+- 整套安装：用 `nxopen-journal-toolkit`，`nxjt install` 会一并注册 MCP 并接好索引。
+- 只装 MCP：本 fork [`nxopen-mcp-enhanced`](https://github.com/EVOL233awa/nxopen-mcp-enhanced)
+  （远程嵌入与重排、重排超时回退、`get_class` 分页），或上游
+  [`nxopen-mcp`](https://github.com/mingfeng6684/nxopen-mcp) v0.2.0。
 
-若改用 OpenAI 兼容的远程嵌入与重排（本机为硅基流动 `BAAI/bge-m3` +
-`BAAI/bge-reranker-v2-m3`），设 `NXOPEN_MCP_EMBEDDER=remote`、`NXOPEN_MCP_EMBED_URL`、
-`NXOPEN_MCP_EMBED_MODEL`、`NXOPEN_MCP_EMBED_API_KEY`，以及 `NXOPEN_MCP_RERANK=1`、
-`NXOPEN_MCP_RERANK_URL`、`NXOPEN_MCP_RERANK_MODEL`、`NXOPEN_MCP_RERANK_API_KEY`。
-该模式依赖网络，语义检索约 1 s/次；远程嵌入与重排需要源码侧实现，上游 v0.2.0 不含这两项。
-查询时中文夹英文术语（如 `创建拉伸特征 extrusion`）命中明显更好，纯中文短词不可靠。
-嵌入服务不可达时 `search_api`/`find_builder` 的整串名（含 `Part`、`Session` 这类单字名与全限
-定名）和查询中的驼峰标识符退回本地精确匹配并在结果首行标注，其余查询报错；`get_class`/
-`get_member` 不依赖嵌入服务，等待期间也不被阻塞。重排服务不可达时等一次超时（15 s）后回退到
-未重排顺序；嵌入服务挂起时单次查询最长等 60 s。`get_class` 默认返回前 200 个成员，末尾标注
-总数与下一个 `offset`，大类别按页续取。
+装好后对 NX 安装目录建一次索引（`nxopen-mcp-enhanced index --nx-path <NX 安装根>` 或
+`nxopen-mcp index --nx-path <NX 安装根>`）。索引、嵌入/重排配置与失败边界见 MCP 仓库的 README。
+
+不装 MCP 也能用，只是 API 核实要退回 `dir()` 与 UGOPEN 头文件；查询中文夹英文术语
+（如 `创建拉伸特征 extrusion`）命中明显更好，纯中文短词不可靠。
 
 ## 安装与使用
 
@@ -126,12 +114,9 @@ nxopen MCP 不在本技能里，是另一个项目（[nxopen-mcp](https://github
    - 若失败，报告用例号、失败项、日志末尾 50 行；不要只报告退出码。
 
 4. 配置 nxopen MCP（可选）
-   - 安装：pip install "nxopen-mcp[embed,reflect]"（Python 3.11+），或 uvx nxopen-mcp。
-   - 上游最新 release 为 v0.2.0。
-   - 按上游 README 用本机 NX 安装目录建索引：nxopen-mcp index --nx-path <NX 安装根>。
-   - 默认嵌入模型在 MCP 进程内加载：建索引与首次语义查询时加载 BAAI/bge-m3（1024 维，首次约 2GB 下载），不需要另起嵌入服务，也没有需要设置的环境变量。
-   - 若用远程嵌入/重排（本机为硅基流动 BAAI/bge-m3 + BAAI/bge-reranker-v2-m3），按上一节设置 NXOPEN_MCP_EMBED_* 与 NXOPEN_MCP_RERANK_*；该模式依赖网络，语义检索约 1 s/次。
-   - 验证：get_class / get_member 返回成员（只查本地索引），search_api 在模型加载完成后返回结果。
+   - 推荐用 nxopen-journal-toolkit 的 nxjt install 一步完成技能与 MCP；也可按上一节单独安装。
+   - 按 MCP 仓库的 README 用本机 NX 安装目录建索引。
+   - 验证：get_class / get_member 返回成员，search_api 返回检索结果。
    - 未配置 MCP 时，说明编写 API 会退回 dir() 与 UGOPEN 头文件核实。
 
 5. 输出报告
@@ -211,7 +196,7 @@ NXOpen 的难点通常不在语法，而在于某个调用在 NX 12 批处理中
 - 验证环境为 Windows 11 + NX 12.0.0.27；其他平台与版本未经测试。
 - 批处理会话不能直接截图：图像捕获 builder 提交后不报错也不写文件，UF 的 `Disp.CreateImage`
   会抛内存访问违例（视图定向与渲染样式可以改）。需要图片时，工程图走 Drafting 导出 PDF，
-  三维模型导出 STL 后在 NX 外渲染；README 里的模型图与装配图就是这样来的。
+  三维模型导出 STL 后在 NX 外渲染；工具包 README 里的展示图就是这样来的。
 - 用例 26 故意保留了一次原生崩溃，用来记录 `ThreadedHole` 的边界；这也是回归判定看日志里的预期输出、不看退出码的原因。崩溃发生在独立的 NX 进程里，不会影响本机 NX 安装或已有模型。
 - 交付件门在仪器看不见时给 `NO_SIGNAL` 而不是 `PASS`，原因随判决一起返回（缺 `ezdxf`、缺 `pymupdf`、站距粗于最小特征的一半、页面无可提取文本）。ASCII DXF 走纯标准库解析、无 `ezdxf` 也能验；二进制 DXF 缺库时只能给 `NO_SIGNAL`。
 - 图纸 PDF 门统计的是可提取 token（默认阈值 3 词），证明页面有文本层，不证明内容画全：标题栏与中文技术要求是矢量路径，由 NX 模型侧回读，内容完整度要看 `--pdf-expect`。
