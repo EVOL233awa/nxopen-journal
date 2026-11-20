@@ -72,7 +72,7 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
 
 - 整套安装：用 `nxopen-journal-toolkit`，`nxjt install` 会一并注册 MCP 并接好索引。
 - 只装 MCP：本 fork [`nxopen-mcp-enhanced`](https://github.com/EVOL233awa/nxopen-mcp-enhanced)
-  （远程嵌入与重排、重排超时回退、`get_class` 分页），或上游
+  1.0.0（远程嵌入与重排、重排超时回退、`get_class` 分页），或上游
   [`nxopen-mcp`](https://github.com/mingfeng6684/nxopen-mcp) v0.2.0。
 
 装好后对 NX 安装目录建一次索引（`nxopen-mcp-enhanced index --nx-path <NX 安装根>` 或

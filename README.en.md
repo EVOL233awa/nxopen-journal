@@ -85,7 +85,7 @@ install:
 - Full install: use `nxopen-journal-toolkit`; `nxjt install` registers the MCP server and wires up
   the index as well.
 - MCP only: this fork [`nxopen-mcp-enhanced`](https://github.com/EVOL233awa/nxopen-mcp-enhanced)
-  (remote embedding and reranking, rerank timeout fallback, `get_class` paging), or upstream
+  1.0.0 (remote embedding and reranking, rerank timeout fallback, `get_class` paging), or upstream
   [`nxopen-mcp`](https://github.com/mingfeng6684/nxopen-mcp) v0.2.0.
 
 Build the index once against the NX installation (`nxopen-mcp-enhanced index --nx-path <NX install root>`
