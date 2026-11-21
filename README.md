@@ -95,7 +95,6 @@ NX 12（当前使用 12.0.0.27）。其他 NX 版本未经测试。
    - 将仓库克隆或下载到 agent 的技能目录，目录名保持 nxopen-journal：
      git clone https://github.com/EVOL233awa/nxopen-journal
    - Codex CLI：~/.codex/skills/
-   - ZCode：~/.zcode/skills/
    - Claude Code：~/.claude/skills/
    - 其他 agent：按其文档放置。
    - 确认目录内存在 SKILL.md、scripts/run_journal_batch.bat、scripts/tests/RUN_TESTS.bat。

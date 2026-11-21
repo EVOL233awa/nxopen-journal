@@ -111,7 +111,6 @@ Steps:
    - Clone or download the repository into the agent's skill directory, keeping the directory name nxopen-journal:
      git clone https://github.com/EVOL233awa/nxopen-journal
    - Codex CLI: ~/.codex/skills/
-   - ZCode: ~/.zcode/skills/
    - Claude Code: ~/.claude/skills/
    - Other agents: follow their documentation.
    - Confirm SKILL.md, scripts/run_journal_batch.bat and scripts/tests/RUN_TESTS.bat exist.
