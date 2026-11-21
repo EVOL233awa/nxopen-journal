@@ -1,85 +1,48 @@
 # Changelog
 
-本文件记录 `nxopen-journal` 技能的版本变更。格式遵循
-[Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；版本号遵循语义化版本。
-记录从 1.1.0 起；查 1.0.0 的变更用 `git tag v1.0.0` 与对应 GitHub Release。
+`nxopen-journal` 技能的版本变更记录。
+
+格式遵循 [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
+记录从 1.1.0 起；1.0.0 见 `git tag v1.0.0` 与对应 GitHub Release。
 
 ## [1.7.0] - 2026-11-19
 
-装配图补齐 GB 序号/剖视/标题栏。
+装配图补齐 GB 序号、剖视与标题栏。
 
 ### Added
 
-- `scripts/gb_drawing.py`：`full_title_block`（GB/T 10609.1 180×56 完整标题栏）、`balloon`（圆形序号球+引线）、`centering_marks`、`set_view_line_width`、`set_thin_line_widths`、`assembly_section`（`orient_view` 指定观察方向，InheritOrientation+SelectView 出轴对正剖面线）、`audit_gb_assembly`（装配图完整性门）。
-- `references/gb-drawing.md`：补完整 GB 装配图要素的调用骨架、函数表与边界。
+- `scripts/gb_drawing.py`：新增 GB 装配图要素——完整标题栏（180×56）、圆形序号球与引线、中心标记、装配剖视、装配图完整性门。
+- `references/gb-drawing.md`：补装配图调用骨架、函数表与边界。
 
 ### Changed
 
-- `scripts/gb_drawing.py`：表格外框线宽 0.7→1.4（PDF 0.25→0.5 mm），图框/标题栏/明细栏统一；`full_title_block` 内框用 0.25 mm。
-- `scripts/gb_drawing.py`：`apply_gb_preferences` 清空剖视标注的 `SECTION` 前缀，出图标注为 `A-A`；尺寸线/箭头/尺寸界线/序号球线宽钉到 0.25 mm。
-- `README.md`、`README.en.md`、`SKILL.md`：展示图迁出本仓库，九张实跑图移交 `nxopen-journal-toolkit` 的 `docs/images/` 并在 toolkit README 标注运行环境；本仓库删除 `images/`，README 只保留指向 toolkit 的入口。
-- `SKILL.md`：MCP 环境事实改为语义检索走外部嵌入服务（本机硅基流动 `BAAI/bge-m3` + `BAAI/bge-reranker-v2-m3`，约 1 s/次、依赖网络），报错时按名核实；铁律 1 补语义检索与精确查询的工具分工。
-- `SKILL.md`：铁律 1 补中文查询夹英文术语的写法，纯中文短词命中差。
-- `README.md`、`README.en.md`：MCP 段收敛为安装入口与中文查询写法；嵌入/重排的环境变量、回退边界与索引细节交给 MCP/toolkit README，不在本仓库重复。
-- `SKILL.md`：补 `get_class` 分页说明（默认前 200 个成员，末尾给总数与下一个 `offset`）。
+- GB 出图线宽统一：图框、标题栏、明细栏 0.7→1.4（PDF 0.25→0.5 mm），内框 0.25 mm；尺寸线、箭头、尺寸界线、序号球线宽统一 0.25 mm。
+- GB 出图偏好设置清空剖视标注的 `SECTION` 前缀，出图标注为 `A-A`。
+- 展示图迁出本仓库，移交 `nxopen-journal-toolkit` 的 `docs/images/`；本仓库删除 `images/`，README 只保留入口。
+- MCP 文档：语义检索走外部嵌入服务（本机硅基流动 `bge-m3` + `bge-reranker-v2-m3`，约 1 s/次、依赖网络）；失败时按名核实。补中文夹英文查询写法与 `get_class` 分页说明。
 
 ## [1.6.0] - 2026-11-17
 
-运动与装配回归补齐，交付件链统一。
+运动与装配能力补齐，交付件链统一。
 
 ### Added
 
-- `scripts/tests/verify_runner_markers.py`：新增 stdin 隔离正反例与批处理 `< NUL` 检查。
-- `scripts/tests/33_gb_sheet.py`：补 `set_cjk_font` 字体 id 与 `dim_diameter` 增量断言。
-- `scripts/tests/49_structure_inference.py`：补闭合跑道 `roll_general` 与宽度粗筛不置不可达的断言。
-- `scripts/tests/verify_check_rules.py`：补 0.0 容差、`nxlib.session.save_checked` 点号、`UFDraw` from-import 样本。
-- `scripts/nxlib/measure.py`：`fillet_run_samples` 输出 `closed`（面邻接环 + 至少两条支撑）。
-- `scripts/tests/35_assembly_preload.py`：补嵌套子装配孙件、`LoadOptions.Save` 写回、装配图 `standard_views(bbox=)` 三视图。
-- `scripts/tests/20_drafting_views.py`：补 `save_model_view`/`base_view`/`projected_views` 回归。
-- `scripts/tests/10_assembly_constraints.py`：补组件阵列份数、`MoveComponent` 增量与全局枢轴断言。
-- `scripts/tests/16_motion_constraints.py`：补 Fit 铰拖 90°/轴向滑 5 mm/`1T+1R` 枢轴断言（孔轴偏置 100 mm 的臂）。
-- `scripts/tests/18_motion_sim.py`：补 UF 四参速度/加速度、`Coupler` 可建、`ScalarTorque` 求解前建出并与 `AskTorqueResults` 读数对账、`PostProcess` 失败形态。
-- `scripts/tests/23_motion_connectors.py`：补 `MotionTranslationZ` 驱动、14 种关节的 `AskSolverDofCount` 增量、无 `Hinge`/`Ball` 与 `ValueOf` 内建方法断言、Atpoint/Perpendicular/Constantvelocity 驱动全拒、Screw 与 Cylindrical 同对的 DOF 2→1。
-- `scripts/tests/17_motion_deadends.py`：补 `Fix`+`AlignLock` 静不定负例。
-- `scripts/tests/verify_load_options.py`：两进程 `UGII_LOAD_OPTIONS` 差分 gate（AsSaved 载入 / FromDirectory 缺件）。
-- `scripts/tests/10_assembly_constraints.py`：`Fix`+两平面 `Touch` 滑块（DOF `1T+0R`、Y/Z 拉回、X 放行）与 `NonMovingGroupGrounded` 默认/可写。
-- `scripts/tests/36_motion_slider.py`：`MotionTranslationZ` 符号/幅值、齿轮副输出比与主动速率、Screw+Cylindrical 导程耦合（2 mm/rev、90°→−0.5 mm）。
-- `scripts/tests/35_assembly_preload.py`：装配件 `export_mesh(scope=auto)`、`LoadOptions` 同会话 `Restore`。
+- 运动：Fit 铰可拖动、轴向滑动、`1T+1R` 枢轴、UF 四参速度/加速度、齿轮副、Screw+Cylindrical 导程耦合、14 种关节 DOF 读数。
+- 装配：嵌套子装配预载、组件阵列份数、`MoveComponent` 增量、`Fix` + 两平面 `Touch` 滑块。
+- 交付件链：STL 拓扑（水密、绕向、体积、欧拉数）统一实现；`import_step(target="work")` 在实体数未增加时用 `UF_PART_import` 兜底。
 
 ### Changed
 
-- `scripts/gb_drawing.py`：`standard_views` 按 GB 第一角摆位（RIGHT 在 FRONT 左侧、TOP 在下方），钉位后逐视图校验内容框不越图框；新增 `bbox=` 供装配图一次到位。
-- `scripts/nxlib/measure.py`、`scripts/nxlib/audit.py`：G9 与 `budget` 只接受结构表，传 `structure_count` 整数直接 `ValueError`。
-- `scripts/nxlib/reverse.py`：`interface_table` 行补 `half_angle_deg`。
-- `scripts/nxlib/exchange.py`：`export_step` 的 `annotations=None` 跟随 `pmi`；显式只开 PMI 打警告。
-- `scripts/deliverable.py`：`pmi_gate` 只收实体类型名，值类判据传进 `--pmi` 直接 `ValueError`；STL 焊点默认改 5 位。
-- `scripts/nxlib/transitions.py`：支撑面宽度改为构建警告（`width_suspect`），不再置 `reachable=False`；`_dot/_unit` 委托 `session`。
-- `scripts/nxlib/audit.py`：局部性还原路径读 `do_update` 返回值，失败即抛。
-- `scripts/gb_drawing.py`、`scripts/tests/07_center_marks.py`：整圆边孔心改取 `AskFaceData(face)[1]`，`p1` 只作圆周参考点。
-- `scripts/nxlib/assembly.py`：`preload_components` 文档改为直接子件，嵌套子装配由调用方递归。
-- `scripts/nxlib/session.py`、`modeling.py`、`measure.py`、`template.py`：质量属性单位列表收进 `_mass_units`。
-- `scripts/nxlib/structures.py`、`modeling.py`、`rolling.py`：`_unit3` 同名不同义改名 `_dir_between`；删重复 import。
-- `scripts/check_repo.py`：references 名册行数纳入核对；scripts 名册递归 `render/`。
-- `scripts/tests/23_motion_connectors.py`：阻尼不设 `CoefficientType` 也能提交；补 `AttachmentType` 可读、赋值只读断言。
-- `scripts/tests/51_exchange_matrix.py`：新增非空工作件（2 体/12 面/5000）与 `UF_PART_import` 兜底断言。
-- `scripts/stl_math.py`：新增 `topology()`（焊接/有向边/分量/欧拉数），STL 拓扑唯一实现。
-- `scripts/nxlib/measure.py`：`read_stl`/`mesh_bbox` 委托 `stl_math`，删本地解析副本。
-- `scripts/deliverable.py`：`stl_census` 改用 `stl_math.topology`，删 `_weld_key`/`_UnionFind`。
-- `scripts/nxlib/measure.py`：`export_mesh` 增 `scope=bodies|entire_part|auto`，装配实例体走 `Prototype.Bodies+FindOccurrence`，`<=84` 字节判无几何。
-- `scripts/nxlib/assembly.py`：新增 `preload_tree` 递归预载整棵组件树（路径去重）。
-- `scripts/render/export_stl.py`：删本地 `STLCreator`，委托 `measure.export_mesh` 与 `assembly.preload_tree`。
-- `scripts/tests/RUN_TESTS.bat`：加 `:loadopt` 宿主步骤，跑两次新 NX 进程做跨会话差分。
-- `SKILL.md`、`references/*.md`、`docs/wiki/*.md`、`scripts/tests/README.md`：同步第一角、PMI 开关、占用门、回退口径与 `set_cjk_font`/`dim_diameter` 覆盖说明。
-- `references/assembly.md`、`references/motion.md`、`scripts/tests/README.md`：同步 Fit 铰 90°/`1T+1R` 枢轴、14 种关节 DOF 增量与驱动接受度、Screw 导程、`ScalarTorque` 读数与 `Hinge`/`Ball` 枚举口径。
+- GB 三视图按第一角摆位（RIGHT 在 FRONT 左侧、TOP 在下方），钉位后逐视图校验内容框不越图框；新增装配图 `bbox=`。
+- 交付件门收紧：PMI 门只接受实体类型名，传值类型直接报错；支撑面宽度改为构建警告。
+- STEP 导出的 `annotations=None` 跟随 PMI；显式只开 PMI 时打警告。
 
 ### Fixed
 
-- `scripts/run_journal_checked.py`、`scripts/run_journal_batch.bat`：隔离 `run_journal` 的 stdin，DEX `step214ug.cmd` 的 `pause` 不再把失败路径变成永久挂死。
-- `scripts/nxlib/exchange.py`：`import_step(target="work")` 在实体数未增加时用 `UF_PART_import` 并入中间件，DEX 空转的安装不再返回 0 实体工作件。
-- `scripts/tests/17_motion_deadends.py`：internal-only 枚举 7 项补到 13 项，与 `assembly.md` 的“全拒”逐字一致。
-- `scripts/tests/36_motion_slider.py`：补 `nfr == NSTEP + 1` 帧数断言。
-- `scripts/tests/07_center_marks.py`：中心标记改用面心，不再用圆周参考点 `p1` 定位。
-- `references/assembly.md`：`DragByTranslation`+`Solve` 不回收越界位移（约束仍报 Solved），判据改为 `MoveComponent`+重建网络求解；滑块路线补 `Fix(导轨)` 前提。
+- 中心标记改用面心，不再用圆周参考点。
+- `DragByTranslation` + `Solve` 不回收越界位移，改用 `MoveComponent` + 重建网络求解；滑块路线补 `Fix(导轨)` 前提。
+- 批处理包装器隔离 `run_journal` 的 stdin，DEX 转换失败时不再永久挂死。
+- 修复 `import_step` 在部分安装上返回 0 实体工作件。
 
 ## [1.5.0] - 2026-11-05
 
@@ -87,605 +50,143 @@
 
 ### Added
 
-- `scripts/nxlib/exchange.py`：STEP 交换层——导出（`InputFile` + `ObjectTypes.Solids=True` + `ProcessHoldFlag`，AP214 取 `ugstep214.def`、AP242 不设 def）、导入（WorkPart 补 `OutputFile`，NewPart 等待落盘后由调用方重开）、回读与 B-rep 事实表；注册进 `scripts/nxlib/__init__.py`。
-- `scripts/deliverable.py`：离线交付件普查——STEP 实体（solid/face/edge、NAUO、PRODUCT、PMI 子类型、悬空引用）、STL 拓扑（水密/绕向/有符号体积/χ=2C−2g/分量）、DXF 布局感知实体统计；错误码 `DELIV_E_*`，判决三态 PASS/FAIL/NO_SIGNAL。
-- `scripts/occupancy.py`：Z/X/Y 三轴切片 + 体积差 + 连通分量占用门。
-- `scripts/check_deliverables.py`：宿主侧交付件门 CLI，汇总 STEP/STL/DXF/PMI/占用/PDF 判决。
-- `scripts/api_index.py`：pyi / 运行期反射 / hxx 三源索引，修正 `class NX_DEPRECATED(...) EXPORT Name` 的括号转义与嵌套命名空间解析。
-- `scripts/run_journal_checked.py`：批处理输出标记包装器；`--token` 必现（无 token 场景须显式 `allow_missing_token`），`FATAL`/`_FAIL`/`STAGE_FAIL`/`Traceback`/内存访问违例必拒。
-- `scripts/render/pdf_audit.py`：PDF 文本层审计，词数不足判 NO_SIGNAL。
-- `references/verification.md`：交付件验证域文件（STEP/STL/DXF/PMI/占用/PDF/离线索引）。
-- `scripts/tests/50_deliverable_gates.py`、`51_exchange_matrix.py`、`52_occupancy_gate.py`、`53_pmi_census.py`：交付件门、导入矩阵、占用门、PMI 子类型的正负控。
+- 交付件验证层：STEP 实体普查（solid/face/edge、NAUO、PRODUCT、PMI 子类型、悬空引用）、STL 拓扑、DXF 布局感知统计、三轴占用门、图纸 PDF 文本层审计。
+- 宿主侧入口：`check_deliverables.py` 汇总 STEP/STL/DXF/PMI/占用/PDF 判决；`run_journal_checked.py` 检查输出标记；`api_index.py` 三源 API 索引。
+- `references/verification.md`：交付件验证域文件。
 
 ### Changed
 
-- `scripts/check_deliverables.py`、`scripts/render/pdf_audit.py`：`--pdf-min-words` 默认 20 → 3。
-- `scripts/nxlib/measure.py`：`station_report` 把截面开环（`open>0`）判 FAIL；面类型常量补 18/23/43。
-- `scripts/nxlib/transitions.py`：路由分母改切向支撑面；支撑宽度门槛 `R + 0.5` → `R`。
-- `scripts/nxlib/modeling.py`：`face_blend` 半径改 `SetRadius(str(radius))`；`section_profile` 由 `rolling` 迁入并统一夹角门 20°–160°。
-- `scripts/nxlib/drafting.py`：`export_pdf` 补 `OwningPart` 校验，外来 sheet 直接抛错，不再静默出空白页。
-- `scripts/nxlib/exchange.py`：`part_facts` 增 `instances`/`prototypes`/`nauo`/`products`，装配几何按去重原型件计；`scripts/deliverable.py` 的 `step_gate` 增 NAUO/PRODUCT 相等比较。
-- `scripts/deliverable.py`：ASCII DXF 无 ezdxf 时走纯标准库解析（`$INSUNITS` 与 ENTITIES 实体计数），audit 记未检查；二进制 DXF 缺 ezdxf 仍 NO_SIGNAL。
-- `scripts/gb_drawing.py`：`dim_between`/`dim_diameter` 删 `part`/`text` 形参，调用改为 `dim_between(view, ...)`。
-- `scripts/render/export_stl.py`：`MIN_STL_BYTES=84`，0 字节不再算成功，失败不打 `DONE_EXPORT_STL`。
-- `scripts/check_journal.py` 5.13：每个 `SaveAs` 各自要有同路径落盘校验。
-- `scripts/check_journal.py`：builder 变量绑定扩到 `AnnAssign`/`with as`/`for`/推导式目标并展开 Tuple/List/Starred（5.2/5.5/5.9/5.14/5.15 随之生效）；5.1d 的 `ReplaceRules` 少于 2 参报错；5.2 非字面量 `NewFileName` 只提示；5.11 要求存在 `X.ProcessHoldFlag = True` 赋值；5.16 按 AST 的「模块 + 属性名」判定并排除被本地重绑定的名字；豁免标记只认 `tokenize.COMMENT`。
-- `SKILL.md`：§3 STEP 导出改为 `InputFile + Solids=True + AP214 def` 配方；§5 增交付件验证路由、路由表写前置并删「域文件互不依赖」；域文件数 8 → 9，`nxlib` 名册补 `exchange`、§8 补 `stl_math.py`；豁免标记适用范围补 5.8/5.10/5.12/5.16/5.18；检查 token 归属改为「34/35/37 与 50-53」；§3 片段统一用 `theSession`/`workPart`；CONCISE/ROUTE 只扫 agent 文档。
-- `references/*.md`：判据与实现口径对齐（建模回转与圆周间距、齿轮越界角、装配 DOF 改几何判据、工程图越界移动条件句、G7 宽度项移出 BLOCKED 证据、PDF 与 DXF 门判据范围、FEA 收敛口径）。
-- 内部：新增 `scripts/stl_math.py`（STL 读取/截面环/体积包盒），`scripts/occupancy.py` 与 `scripts/render/render_stl.py` 共用，后者的 `read_stl` 改调它；`scripts/deliverable.py` 的 STL 读取与三态常量收敛到单一定义，`step_gate` 删 `bbox` 死分支。
-- 内部：新增 `scripts/tests/verify_runner_markers.py` 输出标记判定自检，接入 `RUN_TESTS.bat`；`RUN_TESTS.bat` 的 `:gate` 判决源、gate 计数与无 python 时的回退分支，`.github/workflows/ci.yml` 静态检查补 `scripts/render/export_stl.py`，`.gitignore` 删重复项并补 `.ruff_cache/`，`docs/wiki/*` 与 `README.md`/`README.en.md`/`scripts/tests/README.md` 的名册与计数同步。
-- 内部：`scripts/check_repo.py` 八组判据与计数常量；`scripts/tests/verify_check_rules.py` 反例与阴性样本；`scripts/tests/` 的 08/09/10/14/19/24/31/39/43/46/49/50 判据、引用与行尾调整。
-- 内部：nxlib 内部重构——`GetUFSession()` 与向量 helper 收敛到 `scripts/nxlib/session.py`（`audit`/`reverse`/`skeleton` 等调用点改用公开名）；`find_planar_face` 委托 `find_face`；`modeling.make_sketch` 的 docstring 改为 AutoDimension 不产生可用尺寸；删 `_band_faces` 遗留形参、`audit`/`measure` 死常量、`structure_inference` 的 `ROLE_TRANSITION`/`ROLE_UNKNOWN`。
+- 判决三态 `PASS`/`FAIL`/`NO_SIGNAL`；PDF 文本层默认阈值 20→3 词。
+- STEP 导出配方：`InputFile` + `ObjectTypes.Solids=True` + `ProcessHoldFlag`；AP214 用 `ugstep214.def`，AP242 不设 def。
+- 支撑面宽度门槛统一为 `R + 0.5`；开环截面判 FAIL。
+- 文档与域文件计数同步：域文件 8→9，`nxlib` 增 `exchange`。
 
 ### Removed
 
-- `scripts/nxlib/rolling.py` `edge_tangent`、`scripts/nxlib/template.py` `structure_template`、`scripts/nxlib/testing.py` `reset`：删除零引用公开函数，仓库内无调用点、无替代。
+- 删除零引用的公开函数：`edge_tangent`、`structure_template`、`testing.reset`。
 
 ### Fixed
 
-- `scripts/nxlib/transitions.py` `transitions_plan`：默认路径调不存在的 `measure.fillet_radius_seed` 抛 `AttributeError`，改调 `reverse.fillet_radius_seed`。
-- `scripts/nxlib/measure.py` `_fillet_support`、`scripts/nxlib/transitions.py` `supports_only`：同半径延续容差 0.05 与 0.01R 两套并存 → 统一 0.5 mm。
-- `scripts/nxlib/transitions.py` `_dihedral`：柱面-平面分支与「支撑对」路由冲突，改为只对平面-平面支撑算二面角。
-- `scripts/nxlib/measure.py` `verify_parts`：G2 补 `status`，无孔件按 N/A 记，不再被补判成 PASS。
-- `scripts/nxlib/structure_inference.py`：锥口对账由复数 `mouth_cones` 改读 `mouth_cone`，同轴孔链由 2 段并为 1 段；`_json_default` 支持 `skeleton.Frame`，同值 Frame 两次编码逐字节一致。
-- `scripts/nxlib/assembly.py` `preload_components`：只吞异常文本含 `file already exists` 的幂等情形，接收 `(part, loadStatus)`，`NumberUnloadedParts` 非 0 抛 `RuntimeError`。
-- `scripts/nxlib/template.py` `load_json`：显式 `encoding="utf-8"`（NX 内嵌解释器默认 cp936）。
-- `scripts/nxlib/drafting.py` `read_cell`：元组分支取首项 `got[0]`。
-- `scripts/run_journal_checked.py` `strip_clean_exit`：吞 `SystemExit: 0` 块前先按 `_MARKERS` 查块内内容，`USER FATAL MESSAGE` 与 `TESTxx_FAIL` 不再被整段吞掉。
-- `scripts/deliverable.py`：抽实体引用前先剥引号串，`FILE_NAME('bracket#7.stp')` 的 `#7` 不再被当悬空引用。
-- `scripts/check_deliverables.py`：`--pmi` 移出 `if args.step` 分支，单独给出时不再被丢弃并报 PASS。
-- `scripts/gb_drawing.py`：`GeneralText`/`AppendedText` 字高回到 `dim_text`(3.5) 并补 `FirstPosToExtLineDist`/`LinePastArrowDistance`；`linear_edges` 按 `Edge.EdgeType.Linear` 筛且每条边只返回一次；`model_bbox` 的 `AskBoundingBox` 失败直接报错，不再回退直边包盒；`frame`/`title_block` 先 `sheet.Open()`。
-- `scripts/nxlib/structures.py`、`references/reverse-engineering.md`、`scripts/tests/02_flange.py`：单次 360° 回转能吃单调的带台阶/凹陷轮廓，删「只吃凸轮廓」。
-- `references/drafting.md`：原生 `FrontTopRight` 在 FirstAngle 下 `Right` 排左侧。
-- `references/assembly.md`：`DragByTransform` 的矩阵按转置应用（按列写法传 +90° 实际 −90°），`MoveComponent` 原样回存；删未复现的列序/枢轴读数。
-- `references/verification.md`：通孔负控百分比按 `ΔV/V_ref` 口径写。
-- `scripts/check_journal.py`：数值字面量判据先剥 `±`，5.20 遇负数不再抛 `AttributeError`。
+- 过渡规划调错模块导致 `AttributeError`。
+- 圆角支撑容差两套并存，统一 0.5 mm。
+- G2 无孔件补 `status`，不再误判 PASS。
+- 输出标记包装器吞掉 `USER FATAL MESSAGE` 与 `TESTxx_FAIL`。
+- `--pmi` 单独给出时被丢弃并报 PASS。
+- 球标第 7 参类型、`linear_edges` 重复边、`model_bbox` 回退直边包盒。
 
 ## [1.4.0] - 2026-11-03
 
+逆向重建与审计层成形。
+
 ### Added
 
-- `references/reverse-engineering.md` §12.2：派生量按"几何是否连续变形"定性——上游改名后几何连续跟随则建派生表达式（`A = B/2`），接公式会让轮廓自交/退化则留 data 字面量并披露。两种做法都要在 schema 标 `derived`/`data`，不许既不声明也不披露。反例：腿长恰等于 `sqrt(R²−r²)` 接公式后草图自交；帽半径不接公式则上游改大后截面拓扑跳变、改回残留告警。
-- `references/reverse-engineering.md` §9.4：多边圆角链的拆分点由支撑面归属定，不由边数定。整圈一条链在上游改尺寸时报 `Blend faces overlap`，逐边全拆报 `Unable to terminate the blend faces`；判据是"链两端是否有终止面"，按子体（板周/凸台周/塔周）各自成链。
-- `references/modeling.md` §1.13：`CreateSketchPolygonBuilder` 的尺寸点必须落在多边形原语自己的默认半径上（先读 `RadiusDimension.RightHandSide` 取种子值，再对圆心与尺寸点各加固定约束）；放在目标半径再改绑会让多边形整体平移而不是缩放。
-- `references/modeling.md` §2 倒角段：`ChamferBuilder.FirstOffset`/`.Angle` 是普通 `str` 属性不是 `Expression`，写 `.RightHandSide` 抛 `'str' object has no attribute`；驱动命名表达式直接赋表达式名字符串。
-- `references/reverse-engineering.md` §9.3：滚边长度门槛按机制分工——`apply_roll`/`rolling` 默认 ≥`4R`（刀具行程），候选边粗筛 ≥`max(1.2R, 面宽)`（预筛，非可行性判据），`structures.fillet_feasible` 的 ≥`0.5R`（几何下限）。判"倒不出来"以 `fillet_feasible` 为准。
-
-- `scripts/nxlib/measure.py` `face_area` + `face_table(with_area=True)`：每面带 `area`（`MeasureManager.NewFaceProperties().Area`）。平面族分带、板面积占比与堆叠判据都以面积为输入，缺面积时它们静默退化成"面积恒 0、比值恒 1"——即"偏置数 ≥6 就判堆叠"。合成夹具手工传 `area`，所以这个缺口一直没被测出来。
-- `scripts/nxlib/transitions.py` `plan_runway` 可达性判据：由"所有邻面的最小宽度 ≥ 2R+0.5"改为"至少两条支撑面各 ≥ R+0.5"。一个滚球圆角只需要两侧各一条撑得住的面；按最窄邻面判会把 114 条跑道里的 88 条标成障碍，而其中 43 条其实有两条合格支撑（可达圆角面 36/509 → 413/509）。返回补 `support_widths`/`support_need`，`_round` 归一到判据层。
-- `scripts/nxlib/structure_inference.py` `_bands` 一个法向族只出一条厚度带（取面积最大的那一对）；其余相邻对逐对进 `unresolved`（`kind="unclaimed_offsets"`）。按"每对相邻偏置一块板"出表会把 L 形件在 X 方向的两个跨度、六角头的三个相邻侧面都切成两块板，而真实的板只有一个厚度方向。
-- `scripts/nxlib/structure_inference.py` `_explained_offsets` 堆叠判据补"等节距"：相邻层面积比 ≥0.95 **且**层厚差 ≤2% 才算一条堆叠链。只看面积会把斜臂/扇形上的一组台阶面判成堆叠（相邻面积比 0.5–0.99、层厚按台阶交替），连带整族不出结构。
-- `scripts/nxlib/structure_inference.py` 面归属对账：`infer_structures` 返回 `claimed_faces`/`unclaimed_faces`/`face_coverage`，未被认领的面按 (类型, 半径) 分组进 `unresolved`（`kind="unclaimed_faces"`）。推断层只建模平面/柱/锥/环，球面(18)/B 曲面(23)/圆角(43) 不点名就等于静默丢弃。
-- `scripts/nxlib/structure_inference.py` 臂/板共存：臂的证据取行程方向的两张端面，不再把整族面算给臂（否则板的上下宽面被认领、板行因证据为空整行消失）。板行被臂拿走少量面时只摘掉那些面并记 `shared_with_arm`。
-- `scripts/tests/49_structure_inference.py`：31 → 34 项（一个法向族只出一块板、堆叠需要等节距、跑道宽度按"两条支撑各 R+0.5"判）。
-- `scripts/nxlib/structure_inference.py` 平面堆叠判据："同法向 ≥6 偏置"改判为"相邻层面积一致"（`_explained_offsets`）——多结构组合件有大量同法向面但分属不同轮廓，按面数拒收会把合法的板+阶梯回转+孔链+放样臂单实体判成 z 带堆叠（表现为少一行臂 + 一条 unresolved）；面积一致的层链够长才判堆叠，C01 坏例（16 层同轮廓）仍被拒。
-- `scripts/nxlib/structures.py` `revolved_profile` 的 `(t, r)` 轮廓接受表达式名（`_expr_number`：建体时求值，之后仍由表达式驱动）；未知名字报错，不猜 0。
-- `scripts/tests/49_structure_inference.py`：29 → 31 项（堆叠按面积判、少于阈值的薄带永不拒收）。
-- `scripts/nxlib/audit.py`：`locality` 返回 `coverage`（`designed_exprs`/`measured_exprs`/`partial`）与 `pass`——只测了一部分参数时 `partial=true` 且 `pass=false`，"测了 3 条全过"与"全表通过"不再长得一样；新增 `locality_screen(part, plan, structures)` 整件穿透筛查——逐条按固定小倍率改参数、记哪些站动过，一个站都没动即该参数 UNCOVERED（站表看不到它），只回答覆盖不回答归属，先于 `locality` 跑。
-- `scripts/tests/46_edit_envelope.py`：11 → 22 项（`partial` 声明、部分扫描不得报 pass、穿透筛查的未覆盖参数与 `pass` 联动；代表集未测项逐条进 `skipped`、预算耗尽记 `inconclusive` 且 `pass=false`、复用基线网格与新建网格同判、`section_iou_pre` 与 `section_iou` 逐位一致）。
-- `scripts/nxlib/audit.py` `locality_screen`：新增 `only=`（代表集，未列入项点名进 `skipped`）、`budget_s=`（超时记 `inconclusive`，`pass=false`）、`base_mesh=`（复用基线网格）、`precompute_outlines=`（基准侧截面按站只算一次；逐条单独调用会把这份预计算重做 N 次）；返回值补 `skipped`/`inconclusive`/`precompute_s`/`elapsed_s`。
-- `scripts/nxlib/measure.py` `section_iou_pre`：基准侧轮廓由调用方预给；`section_iou` 改为它的薄封装，等价性由构造保证（测试 46 断言逐位一致）。
-- `scripts/nxlib/audit.py` `budget`：`g9_structure` 已追加过的"空特征名/结构未映射"不再重复追加（`reasons` 曾出现同一条两次）。
-- `scripts/check_repo.py` WIKI 组：新增正文行数核对——wiki 正文里"`<模块>` 后 N 行"与文件实际行数不一致时判失败（名册表的行数列原本有校验，正文里写死的行数实测漂了 16 行仍全绿）。
-- `scripts/nxlib/structures.py` `sweep_trim` + `profile_uz_curves`：端壁按测量侧视轮廓沿 ±V 扫掠切，`profile_segs` 支持 `{"line":...}` / `{"arc":...}` 混合段——折线剖面会把一段弧切成几十个小平面（`added_types` 只剩 22），圆弧作为一条曲线进剖面才留下 type16 柱面。`checks` 记体数/去料体积/新增面型，布尔被拒时记原文。
-- `scripts/tests/47_structure_builders.py`：57 → 63 项（45° 斜切端壁只留一侧料且只多平面；带弧端壁新增一个柱面；去料体积与轮廓外体积对账）。
-- `scripts/nxlib/transitions.py`（新层）：过渡规划——参考圆角跑道 → 机制决策（`roll_edge`/`face_blend`/`roll_general`/`measured_section`，按支撑面构成路由）+ 逐跑道可达性（支撑面宽度 < 2R+0.5、二面角超出 20°–160°）+ `evidence`（只有不可达跑道才有）。`verify_parts(..., g7_transitions=True)` 让 G7 的 BLOCKED 只认这份逐跑道拓扑证据；宽度是包围盒上界（按法向去掉法向分量后取面内小跨度），斜置窄壁会算偏窄，判定边界处回 `structures.fillet_feasible` 按边几何复算。宽度不足与二面角越界分两档：参考件自己的圆角已经存在，所以"支撑比 2R 窄"证明的是复刻难而不是物理不可达，记 `build_obstacle`（构建阶段行动项）；只有二面角越界/退化跑道进 `evidence`（BLOCKED 依据）。
-- `scripts/tests/49_structure_inference.py`：24 → 29 项（机制路由、可达跑道不带证据、窄支撑给原因、证据必须点名跑道与支撑面、宽度不足只能记 `build_obstacle` 不得进 BLOCKED）。
-- `references/reverse-engineering.md` §9.1b：过渡规划的接口、机制路由判据、证据口径与两个读法要点。
-- `scripts/nxlib/structure_inference.py`：结构判定补三条——① 同一轴上的多个半径并成一条 `revolved_profile`（`group_coaxial` 按 (轴, 半径) 分桶，不按轴并的话台阶轴会变成多行 `cylinder`，而多行同轴 cylinder 正是 z 带堆叠的入场券），同轴凹面组不并入凸面行；② `_arc_fit` 用**等弧长重采样的局部圆拟合**提取边界圆弧并聚簇，给出瓣数/瓣半径/瓣心偏移（射线扇会把背后的整条臂算进半径，半径序列没有平台；局部圆拟合要按弧长重采样，否则样条陡段的近直三点拟合会给出半径任意的"圆"），参考点先判是否在料内、非星形截面另报；③ `_loft_structures` 沿板带行程取两张截面，面积比 >2% **且** 两截面形状不相似（`_sections_similar`：归一化到平均半径 1 后逐点比，拔模体是相似形、变截面臂不是）才判 `section_loft`。修 `_sampled_structures` 恒返回 `[]` 的交付漏洞（判据对、行被丢），行补齐 `id/build_order/frame`。
-- `scripts/tests/49_structure_inference.py`：20 → 24 项（同轴多半径并成一条 revolved 行、凹面不并入凸面、拔模相似形不判放样、变截面判放样）。
-- `scripts/nxlib/structures.py` 结构级 builder（第三批）：`section_loft`（结构分界截面 → 一张放样实体；截面基向量从首张取、逐张投影正交化，索引才连续；先查同点数是提交前条件；提交后查实体性与体积，因为对应关系扭曲时 `ThroughCurves` 会给出 `IsSolidBody=True`、体积 0 的自交实体）、`_resample_ring`（绕参考点等角 N 点；参考点在料外与环非星形分别报错，不静默填凹口）、`window_cut`（一平面轮廓 + 可选拔模拉伸的切除体，成功/被拒都逐刀记新增面型与去料体积，布尔被拒时用 undo mark 把刀具体一起回滚）；`plate_2p5d` 的拔模路径抽成 `_extrude_z` 供两者共用。
-- `scripts/tests/47_structure_builders.py`：38 → 57 项，新增变截面放样（17083.2680 对圆台 17132.1519、1 特征 50 面、段数不一致提交前拒绝）、等角重采样（方环落点、两次逐位一致、料外参考点/非星形两种报错分开、凸环保留）、拔模窗口（直壁 4000.0000 只新增平面；拔模 1531.2116 且四面墙偏离 uv 面 4.0000°——直边轮廓拔模出直纹面而非锥面，判据是法向倾角）、窗口落空（布尔原文进 checks、体数不变）。
-- `scripts/nxlib/structure_inference.py`（新层）：测量 → 结构表。`face_graph` 给每面角色（功能面/圆角面，按类型与 `fillet_radii`），`_planar_families`/`_bands` 按法向聚族并**按族法向**取有符号偏置（反向平行的两面属同族，板厚不丢），`_hole_chains` 把**同一轴线的凹面段**归成一条链（阶梯孔逐段保留半径/长度，凸台外圆不入链），`infer_structures` 出结构行（id/模板/证据面/design 与 data 分层/建件顺序/置信度）与 `unresolved`（附证据面与下一步探针），`plan_validation_stations` 把站按结构 id 归组并回写 `validation_stations`，`inference_report` 写确定性 JSON（两次逐字节相同）。缺口照实拒绝：同法向 ≥6 个偏置的平行面堆叠（层号表特征树的指纹）不出板行；需要面采样的眼/耳与纵剖面结构在没给 `part` 时进 `unresolved`，不猜模板。
-- `scripts/tests/49_structure_inference.py`（20 项）：上列判据的合成面表回归（含板厚方向取宽面、孔链按轴线归组、坏例拒绝、报告字节一致、缺站结构进 `missing`）；`RUN_TESTS.bat` 登记第 49 门，`check_repo.py` 计数 48/45 → 49/46。
-- `scripts/nxlib/__init__.py`：注册 `structure_inference`。
-- `scripts/nxlib/measure.py`：新增 G8 门（声明对账 + 命名表达式活性）并入 `verify_parts` 默认门表；`station_report` 给空站分类（`na_reason`：`coplanar_section`/`no_material`）并新返回 `unmeasured`/`instrument_errors`/`plan_noise`/`measured_count`/`plan_measured_complete`；`station_report_hybrid` 把仪器误差判失败、把站表噪声剔除并报告，B-rep 取代的站清掉 `na_reason`；G9 增加特征名映射（空名/默认名/未映射结构即 FAIL，结构数只能来自结构表）。
-- `scripts/nxlib/audit.py`：`g1full` 返回 `unmeasured`/`primary.unmeasured`/`plan_measured_complete`，没量到的主站不算通过、也不让 `plan_complete` 通过；新增 `plane_station_mode`/`brep_plane_count`/`stl_axis_count` 记录平面站口径。
-- `scripts/nxlib/measure.py`：判定口径切站 `cut_stations`/`cut_plan` + 常量 `SECTION_CUT_DEPTH`（13.7 µm）——平面站与轴站沿法向偏移，平面站的偏移方向优先取共面平面面的**外法向反向**（`offset_basis="face_normal"`；几何事实，旧实现只按截面积猜），面表缺失或源面方向冲突时退回原件截面积较大侧（`offset_basis="section_area"`）；每站带 `coplanar/offset_mm/offset_dir/offset_basis`，重造站表保留源站表的 `dropped`/`missing`；`station_report` 行增 `kind`/`section_mode`/`coplanar`/`offset_*` 证据字段。
-- `scripts/nxlib/structures.py` 结构级 builder（第二批）：`hole_chain`（同轴/异轴孔段逐段切除，圆柱两端外伸、圆锥只在出口按同一半角外伸，每刀回读新增面并按声明半径/半角对账）、`eye_2lobe`（平台轮廓 + 两个圆瓣圆柱合并，报 `tangency_gap_mm = |W_HALF − (h + R_EYE)|`，不静默建出台阶）、`clevis`（平台 + 开口槽，按声明槽宽复算两侧壁间距）、`trim_planes`（按实测平面裁料，逐刀记体数/体积，保留侧选反时把 NX 原文 `Target body completely inside tool body.` 记进 checks）、`fillet_feasible` + `fillet_run(radius_mm=...)`（边长/支撑面宽度/支撑半径/二面角前置判定，失败行把"半径或支撑不足"与"边已被消费"分开）、`face_signature`/`added_faces`（逐刀断言新增面，不读全量面表）。
-- `scripts/tests/48_audit_gates.py`（28 项）：把上列口径与审计层其余“失败要关门”负例钉成回归（空截面/空 primary 分母/未分配面/空特征名/默认名/站表缺覆盖/预算未映射/同名既 design 又 data）；`RUN_TESTS.bat` 登记第 48 门，`check_repo.py` 计数 47/44 → 48/45。
-- `references/reverse-engineering.md` §12.4：结构级 builder 的能力边界与缺口照实写（`hole_set` 只吃同向同直径同深度孔位表；眼/叉耳、同轴孔链、多分界截面放样、拔模窗口与斜切端壁目前只能用原语拼，并列出拼装四条自检）。
-- `scripts/nxlib/structures.py` 结构级 builder：`plate_2p5d`（轮廓+厚度+可选拔模）、`revolved_profile`（(t,r) 轮廓分段回转合并）、`drafted_bore`（锥孔）、`hole_set`（同向同直径同深度孔位表）、`pocket_intersect`（侧视 ∩ 俯视求差）、`fillet_run`（逐边失败原文账本）——一个结构一次调用，取代“一个结构一堆原语”。
-- `scripts/tests/47_structure_builders.py`（20 项）：六种 builder 全对解析体积（板 32000.0000/6 面、拔模 29282.0083、阶梯轴 21614.1575/2 段、锥孔 7023.9729、孔组 4712.3890、腔 16000.0000）；同一阶梯轴 z 带堆叠 131 面 vs 回转 5 面（26.2×）而体积一致；超半径倒圆留原文；`RUN_TESTS.bat` 登记第 47 门，`check_repo.py` 计数 46/43 → 47/44。
-- `references/reverse-engineering.md` §12.4：结构级 builder 清单与四条硬边界——分段回转替代 z 带堆叠、拔模必须有 `DraftOption` 且只能按锥台体积验、360° 回转只吃凸轮廓、圆角账本逐边一条且失败原文须来自半径本身。
-- `scripts/nxlib/audit.py` `edit_envelope`/`edit_envelope_summary`：逐参数按倍率递增测可用包络，折成 bounded/narrow/stuck 三档，把“超出物理范围”与“结构脆弱”分开。
-- `scripts/tests/46_edit_envelope.py`（11 项）：声明未建出→`missing` 而非 ratio 下降；公式内消费的参数仍 live；窄参数停在上界内并带 `Update undo happened.` 原文；还原逐位一致；`RUN_TESTS.bat` 登记第 46 门，`check_repo.py` 计数 45/42 → 46/43。
-- `references/reverse-engineering.md` §11.3：声明对账（`alive_ratio` 只含建出的量，`missing` 非空即不过）与可编辑性三层证据（对账 / +10% 普查 / 逐参数包络）；§12.5 补 `edit_envelope` 的读法。
-- `scripts/check_repo.py` 第 8 组 `WIKI`：维护者导览与代码同步的机器门——名册表（`<!-- roster: nxlib|scripts|references -->` 标记后紧邻表格的首列）必须列出每个模块/域文件/工具脚本，索引页必须链接每一页，用例/gate/子集计数与常量一致，禁用 `文件:行号` 锚点，被引用的符号与 §章节必须仍存在。组数 7 → 8，`SKILL.md` §7 第 11 条登记该义务。
-- `docs/wiki/`：维护者导览五页（架构 / 主执行流 / 模块 / 数据流 / 边界与风险）+ 索引页；锚点用符号名与 §章节（72 处 `文件:行号` 已换掉，行号随维护漂移会静默过期），不进入 agent 必读路径；`SKILL.md` §8 与两个 README 的目录结构同步登记。
-- `references/reverse-engineering.md` §12：测量编译 + 骨架/草图驱动 + 结构库 + 审计（大件/整件默认路线）——五张冻结表先于建模、design（可驱动）与 data（测量轮廓）分层、骨架帧与草图驱动探针后用、结构库 builder 只吃 frame/参数/数据、活性/局部性/预算/G1full 四项审计口径；§11.3 只留边界并指向 §12.2，§11.6 站表分母改为 `station_plan_full` + `station_partition`。
-- `references/modeling.md` §1.13：草图驱动轮廓配方（`make_sketch_dims` 改指命名表达式、AutoConstrain 先跑必空、links 与改指数对账）、骨架帧构造即正交校验、设计/数据分层、datum 不当可驱动件、预算 4N+12 先算。
-- `scripts/tests/42_reverse_tables.py`、`43_skeleton_layers.py`、`44_structures_library.py`、`45_audit_g1full.py`：17/12/10/8 项新层回归；`RUN_TESTS.bat` 登记四门（42 gate），`check_repo.py` 计数 41/38 → 45/42，`tests/README.md` 与 `SKILL.md`/`README.md`/`README.en.md` 的用例计数、模块清单同步。
-- `scripts/nxlib/reverse.py`：逆向测量编译层——候选结构目录、参数候选（design/data + 证据置信度）、全集站表与结构覆盖、接口表、圆角跑道表、`fillet_group_indexes`/`station_partition`（primary/fillet 分母开工前定）、结构表校验。
-- `scripts/nxlib/skeleton.py`：骨架层——方位帧（`from_azimuth`/`pt`/`vec`/`to_local`）、点线/圆弧/折线/闭环曲线、世界坐标系 datum 轴与面、正交校验与 `describe`。
-- `scripts/nxlib/structures.py`：结构构造层——布尔、棱柱/回转、圆柱/圆锥（直径与高度吃表达式）、边筛选与面环边、带 undo 保护的倒圆、孔与孔环、包络裁剪。
-- `scripts/nxlib/audit.py`：审计层——G8 活性（按结构核对声明参数，键名 `alive_ratio`）、局部性（对称差判形变、逐条还原、update 回滚记错误不中断）、预算、包盒、G1full 全集站表比对（平面站 0.5 mm 切、材料侧只看原件）。
-- `scripts/nxlib/__init__.py`：注册 `skeleton`/`structures`/`audit` 并补模块分工。
-- `references/reverse-engineering.md` §11.3/§11.4/§11.6：活参数全表普查（逐表达式 +10% → live/named ≥0.9、broken=0、派生量不进编辑集）、还原容差 1e-6 mm³、G1 逐站 IoU 留在模板路线硬门且站表取原件结构分界全集（自选站只作诊断）。
-- `references/modeling.md` §4.1b：编辑矩阵不能代替全表普查，派生量改 RHS 会破坏公式。
-- `scripts/nxlib/template.py`：参数化模板层——参数表/schema 读取、命名表达式与派生约束、告警原文读取、快照差异、`edit_check`/`edit_matrix`/`clean_cells` 局部编辑矩阵；docstring 记 NX12 边界（圆柱轴心字面值、边圆角拓扑引用会存盘告警）。
-- `scripts/tests/41_template.py`：18 项通用支架模板回归（全部尺寸命名表达式、派生量跟随父参数、板厚/板长局部性两条断言、4/4 编辑矩阵干净、未知结构与缺失参数报错）；`RUN_TESTS.bat` 登记 `TEST41_DONE`，`check_repo.py` 计数 40/37 → 41/38，`tests/README.md` 同步。
-- `references/reverse-engineering.md` §11：参数化模板逆向——何时用、参数表/schema/模板三件产物、每结构命名参数与引用稳定判据、局部编辑矩阵、NX12 三条边界、逐结构偏差报告替代面数覆盖、停止规则。
-- `references/modeling.md` §1.12/§4.1b：模板化建模配方（命名分层、派生约束写公式、无单位量 `Number` 表达式、轴心字面值陷阱、`nxlib.template` 入口）与参数表驱动/局部编辑检查配方。
-- `scripts/nxlib/rolling.py`：滚球角网标准层——边几何拟合、`±R` 偏置坍缩判类（`classify_corner`/`rim_from_face`）、锐边滚球中心圆（`rim_roll_center`）、解析环带（方截面环 + 4×FaceBlend + 面带分割，非喇叭/喇叭外侧两种）、直边刀与 `apply_roll_general` 统一入口。
-- `scripts/tests/40_rolling_network.py`：22 项滚球角网回归（直边 type16、Z/45° 轴/喇叭圆边的 type19 `rad_data=R`、分类反读）；`RUN_TESTS.bat` 登记 `TEST40_DONE`。
-- `references/reverse-engineering.md` §9：新增同半径延续判据（脊线共圆不是支撑面）、解析环带建在滚球中心圆上（含四象限试分与 Pappus 体积筛）、喇叭外侧环、§9.7 B 类角面管道重建。
-- `scripts/nxlib/measure.py`：新增 `fillet_run_samples`（同半径连通跑道 + UV 中心/3×3 样本）与 `fillet_coverage`（G7geo 分段不变覆盖）；`_face_samples` 走 `AskFaceUvMinmax`/`EvaluateFace`。
-- `scripts/nxlib/modeling.py`：新增 `face_blend`（`BlendTwoFace` 两支撑面）与 `face_blend_edge`（自动试四种法向组合、失败回滚、返回成功组合）。
-- `references/reverse-engineering.md` §9：重写为过渡账本 + 支撑面就绪判据（宽度 ≥2R、二面角 20°–160°）+ 机制路由（FaceBlend/逐段/滚圆刀回退）+ FaceBlend 报错判读 + G7 双轨。
-- `references/modeling.md` §2.4：新增两支撑面 FaceBlend 配方（曲面支撑、法向组合、窄支撑/相切缝失败判据、闭合窗口逐段、B 曲面伪过渡）。
-- `scripts/tests/39_reverse_route.py`：凸台顶缘改 `face_blend_edge`，新增跑道采样与自覆盖断言；18→21 项。
-- `references/reverse-engineering.md` §2.5/§4.2：口部圆角带改用 FaceBlend，新增支撑面窄/近相切缝/伪过渡/窗口角环面四条归因。
-- `scripts/nxlib/measure.py`：新增 `structure_directory`（同轴圆柱/圆锥组 + 环面组 + 平面族）与 `fillet_map`（按半径分桶、每面带支撑面）；配套 `group_coaxial` 的 `cluster_tol`、`torus_groups`、`plane_families`、`_bbox_union`。
-- `scripts/tests/39_reverse_route.py`：新增结构目录与圆角地图用例（9 项：结构分组、孔/锥/平面族参数、环面主半径、圆角支撑面、`rad_data` 口径、孔壁≠圆角的支撑面判别、单实体）；`RUN_TESTS.bat` 登记 `TEST39_DONE`。
-- `references/reverse-engineering.md` §1/§1.1：结构目录与圆角地图列为开工产物；结构表证据列增加支撑面类型对与圆角组。
-- `references/reverse-engineering.md` §2.3/§2.4/§2.5：新增斜置杆、双瓣眼、口部圆角带三条选择判据（纵剖面权威、瓣心圆拟合、锥壁+圆角带三件套）。
-- `references/reverse-engineering.md` §9：重写为圆角地图 + 三档成形（闭合链 `EdgeBlend` / 开放链圆角刀 / 端缘折面逐段滚）+ 刀具记账纪律 + 极值退缩 `R(2−√2)` 定量判据 + 覆盖率分母核对。
-- `references/reverse-engineering.md` §4.2：新增四条归因——端缘缺滚圆的定量判据、耳顶混合冠的 0.1–0.2 mm 残差、杆端方肩多料、口部圆角带半径/顺序。
-- `references/modeling.md` §2.4：新增开放链圆角刀配方（截面求滚心、沿边拉伸穿出、凸减凹加、undo mark 纪律、候选筛选、逐段记账、验收口径）。
-- `references/reverse-engineering.md` §2.5：口部是拔模棱柱不是直棱柱；口深 ≈ 两圆角半径之和时出现切向退化（壁厚→0、截面开链）及判据。
-- `references/reverse-engineering.md` §2.5：槽/叉口底部导入段的判据（最低三站量槽宽斜率），按等宽槽建会让最低站多料 20–30%。
-- `references/reverse-engineering.md` §9：实测角半径小于闭合链可提交值时不得放大半径凑闭合，改走圆角刀。
-- `scripts/nxlib/modeling.py`：新增 `roll_edge`/`apply_roll`/`edge_is_concave`——开放链圆角刀标准配方（精确圆弧截面、沿边拉伸、凸减凹加、undo mark 回滚）；凸凹按两邻面的相互侧判定，不用体积猜。
-- `scripts/tests/39_reverse_route.py`：滚圆刀覆盖凸边（体积退缩量 = `(R² − πR²/4)·L`、滚出面是半径 R 的圆柱）与凹边（unite、体积增量同式）；11→18 项。
-- `references/modeling.md` §2.4：开放链圆角刀配方改为调用 `nxlib.modeling.roll_edge/apply_roll`；记录折线截面的两个后果（滚出面变成十几张窄平面、切点弦切进面内留 0.2–0.5 mm 平台）与凸凹判定口径。
-- `references/reverse-engineering.md` §1.1：圆角行在结构表阶段登记（半径组/档位/滚圆子体）；二/三档滚圆在合并前完成。
-- `references/reverse-engineering.md` §4.2：新增两条归因——数百段闭合链 Blend 失败/降半径是采样折线轮廓的指纹；共面并集失败只局部加长，不整体缩放截面。
-- `references/reverse-engineering.md` §9：三档表指向 `nxlib.modeling.roll_edge/apply_roll`，补精确圆弧与凸凹判定口径。
-- `references/reverse-engineering.md` §9：圆角刀档只收两面平面；支撑面是柱/锥/环面时截面边界不是直线，配方不适用，按闭合链/轮廓带或分母证据处理。
-- `references/modeling.md` §2.4：滚圆刀拉伸语义修正为“终点穿出、起点与边端点平齐”（起点穿出会切掉顶点邻边的料）。
-- `references/reverse-engineering.md` §2.4：一件的多个臂/耳不是同一模式，逐臂按孔轴/瓣心/端面半径组成形。
-- `references/reverse-engineering.md` §4.2：凹半圆柱轴向长度≈壁厚且过轴截面有整圆内环 → 贯穿孔，按孔建刀，不按缺口切槽。
+- 逆向结构推断：从面表生成结构表（板、回转、孔链、放样、臂），未识别面进 `unresolved`；同轴多半径并成一条，拔模相似形不判放样。
+- 结构级 builder：板、回转、锥孔、孔组、腔、叉耳、双瓣耳、修边、倒圆、孔链、放样、拔模窗口；一个结构一次调用。
+- 过渡规划：按支撑面与二面角选择 FaceBlend、滚圆刀或测量截面，给逐跑道证据与构建障碍分级。
+- 参数化模板：参数表/schema、命名表达式、派生约束、局部编辑矩阵。
+- 审计：G8 活性、局部性、编辑包络（bounded/narrow/stuck）、预算、G1full 全集站表。
+- 测量：B-rep 精确截面、STL 双向偏差、功能孔分母、四视图 IoU、同轴分组与圆角地图。
 
 ### Changed
 
-- 圆角支撑面宽度判据统一为"至少两条支撑面各自 ≥ `R + 0.5 mm`"：`references/modeling.md` §2 与 `references/reverse-engineering.md` §4.1/§9.2/§9.3 的 `2R+0.5`（按最窄邻面判）改为与 `scripts/nxlib/transitions.py`、`structures.fillet_feasible` 一致的口径。`2R+0.5` 的误读把"每个面都要独立撑 2R"当成条件，实际一个滚球圆角只在两侧各吃掉一个 R。
-- `references/reverse-engineering.md` §9.5：删除"`ceiling <0.70` 时 G7 记 BLOCKED"的旧口径，与同文件 §4.1/§9.5 后段及 `measure.g7_reachability` 实现对齐——`ceiling` 只作诊断，BLOCKED 需逐跑道拓扑证据。
-- `docs/wiki/03-modules.md`/`docs/wiki/README.md`/`README.md`/`README.en.md`/`SKILL.md`/`scripts/tests/README.md`：模块数 13→14（补 `transitions`）、`nxlib` 公开 API 212/199→221、带判定用例 44/45→46、用例项数 38→32、48→34、49→34、`reverse-engineering.md` 行数 606→656。
-- `scripts/tests/47_structure_builders.py`：20 → 38 项，覆盖第二批 builder（孔链逐段体积与逐刀对账、锥口半角、故意错报声明值必须失败、双瓣耳相切与不共切上报、叉耳槽宽、平面修边体积与保留侧选反、倒圆前置判定）。
-- `scripts/check_repo.py`：第 2 组新增"每条 `call :gate` 的返回值必须紧跟 `if errorlevel 1 exit /b 1`"（`RUN_TESTS.bat` 里 48/49 两门漏了它，失败也被后面的 `ALL TESTS PASSED` 吞掉）；第 8 组新增"wiki 名录的行数列必须等于文件实际行数"。
-- `scripts/tests/RUN_TESTS.bat`：48/49 两门补上返回值检查。
-- `scripts/tests/49_structure_inference.py`：`parallel_stack` 调的是改名前的 `plane()`（NameError 让整门用例在第 20 项后崩掉），改 `plane_face`。
-- `scripts/nxlib/audit.py` `g1full` 与 `scripts/nxlib/measure.py` `verify_parts`：G1 判定口径默认改为 STL 切面 + `cut_plan` 偏移（`g1full(hybrid=False)`、`verify_parts(section_mode="stl")`），B-rep 平面站口径（`station_report_hybrid`）降为显式可选项并在 docstring 记明限制——`UF SectionFromPlanes` 把剖面按面边界切成开口段，导入体上端点本应重合却串不成环时逐站假失败；要用它必须先自比对证明该件可闭合。
-- `references/reverse-engineering.md` §4.1/§10.1/§12.5、`docs/wiki/04-data-flow.md`：G1 口径改述为“默认 STL 偏移（13.7 µm、材料侧取共面面外法向反向）+ 可选 B-rep 名义站”，并写清 B-rep 口径的闭合前提。
-- `references/reverse-engineering.md` §9.8/§10（测量截面重建）：补端点串环的前提——`JoinType=0` 的剖面段在切点/尖点处四点共点，必须按**切线连续性**选续接段（最大转向点积），贪心按键取段会把环串成开口或自回零面积环。
-- `references/reverse-engineering.md` §9.8/§9.5/§10/§10.1/§12.5/§4.2、`references/assembly.md` §A.1、`SKILL.md` 导入段：测量截面重建过渡长条、G7 建成侧计数先过支撑面分类、局部性仪器协议与三条排除、切割仪器自检与面内偏置读数、局部试件对齐后 IoU、装配加载方式与未加载判据、导入批处理四坑沉淀为通用判据。
-- `scripts/nxlib/measure.py`：G0 要求两侧均单实体且面表零失败；G1 空站表/开环截面判失败，`max_stations` 预算截断只报 `budget_skipped`/`plan_complete`（不判失败）；G2 分母改用 `hole_audit`（功能孔+锥孔+耳孔+锥口）并报 `missing_groups`，同半径面段按轴向覆盖合并后比（不比分段数）；G4/G7 增加 `BLOCKED` 证据；G4 的 R 默认取参考件主环面圆角半径并记 `corner_radius_basis`；`verify_parts` 每门带 `status` 与 `delivery_pass`。
-- `scripts/nxlib/measure.py`：`fillet_coverage` 半径容差 0.025、P95 按半径池；新增 `g7_reachability`（上限 = 参考圆角跑道数 / 参考圆角面数，半径组取环面 `rad_data` 或显式 `g7_radii`，纯圆柱半径组只进 `unjudged_radii`，建成体可滚边数只作诊断）、`g4_blocked_reason`（三面短边）、`g9_structure`（特征数/占比/深度/站栈；`verify_parts(g9=True)` 缺 `structure_count` 判 FAIL，不拿 `structure_directory` 逐面组数当分母）。
-- `scripts/nxlib/measure.py`：`expression_survey` 收集全部命名表达式，单条 broken 不中断，恢复失败抛错；`exact_section` 异常必回滚并支持 0.05 mm 回退；`view_iou` 支持 iso 且空输入 IoU=0；`brep_section_iou` 未闭合环默认失败。
-- `scripts/nxlib/rolling.py`：`apply_roll_general` 圆边默认走解析环带（`add=None` 也走）；`roll_rim` 切向用解析切向；带/刀体积验收改双边 65%–135%；喇叭环与多体拒绝；新建体仅在自有 FaceBlend 失败时删除。
-- `scripts/nxlib/modeling.py`：`apply_roll` 体积验收改双边 65%–135%。
-- `scripts/tests/39_reverse_route.py`：新增 6 项负向（`hole_audit` 分母、空站表、空视图 IoU=0、G7 强制 ceiling<0.7、G9 上限、`compare_parts` 参考组逆序）；21→27 项。
-- `scripts/tests/40_rolling_network.py`：新增 2 项保护（R25/80 mm 边被 4R 长度守卫拒绝、喇叭环 `roll_rim` 返回 None）；22→24 项。
-- `scripts/check_journal.py`：`ast.parse(feature_version=(3,6))`；5.11/5.14b/5.15 升为错误；占位符改 tokenize 注释；5.13 接受 `save_checked` 并要求保存后校验；删除 `ui.getui` 警告。
-- `scripts/check_repo.py`：断言 40 用例 / 37 gate / 3 探针，计数再漂移即失败。
-- `references/reverse-engineering.md` §4.1/§9.5/§10.1：G2 先跑 `hole_audit`；G7 先算 `ceiling`，<70% 记 BLOCKED；G4 三面锐角记 BLOCKED；G9 硬式；共面站保留并记 `coplanar/offset_mm`；新增 §9 配方（闭合环切向规则边、样条段合并、环形射线尖刺、放样首末站、径向裁剪、凹坑双 R、滚球中心半径 >0、三面锐角补角、底面 z=0 判据）。
-- `references/reverse-engineering.md` §4.2/§10.1：新增体积差 >1% 而 G2/G8 全过时按“凹口面积 × 长度”对账凸包填平；自检站表须取 `station_plan(orig)` 全集，建模站不得顶替。
-- `SKILL.md`/`README.md`/`README.en.md`/`scripts/tests/README.md`/`RUN_TESTS.bat`：用例计数 40、gate 37、nxlib 七模块；`CHANGELOG.md` 的 `§1.5` 引用改 `§1`。
-- `scripts/tests/01/02/03/04/05/06/22/39`：`save()` 后断言 PRT 存在且非空，满足 5.13。
-- `SKILL.md` §3 第 5 条 + `references/modeling.md` §2.4/§3.4：`ScCollector.ReplaceRules` 第二参由“必须 `False`、`True` 选 0 条”改为“2 参重载第二参是 `createRulesWoUpdate`、与选择集无关（True/False 选中对象相同）；排除实体走 3 参第 2 位 `negatedEntities`，要 `DisplayableObject` 列表，传 bool 报 `TypeError: No overload matches these arguments`”。
-- `scripts/check_journal.py`：规则库按 AST 精确判定——5.2 的 `.Units` 与文件名后缀挂 `FileNew` builder 变量、5.5/5.14b/5.15 的尺寸属性挂 builder 变量、5.7 `FeatureSigns`、5.13 `Save`/`SaveAs` 落盘校验、5.19 `UFDrf` 全部改 AST（注释/字符串里出现名字不再误报，也不会被别处的同名符号静音）；5.16 排除被本地重绑定的名字（`math`/`sys`）；删掉 `ReplaceRules` 第二参的旧判据，改为 3 参传 bool 才报；5.3 移到语法层并给 `TrueValue`/`FalseValue` 定点提示。
-- `scripts/tests/verify_check_rules.py`：反例覆盖 5.1–5.20 每条规则（报错级必须命中、提示级只断言输出提示且退出码仍 0），另加“看似该报、实际合法”的阴性样本；`scripts/tests/RUN_TESTS.bat` 的 `:ruleselftest` 注释同步。
-- `scripts/check_repo.py` 第 8 组：新增 wiki 散文里的模块数与公开 API 数常量核对（`EXPECTED_API_COUNT`），索引页链接判据改为比对链接目标文件名（`03-modules.md.bak` 这类坏链不再蒙过）。
-- `README.md`/`README.en.md`：九张图注改为“取自一次独立运行，与套件用例的网格/步长/件数不必一致”，逐处注明与 04/10、09、18、19 号的差异；用例段改“49 个用例文件 = 46 gate + 3 探针”，域表补 49 号。
+- 逆向交付路线改为结构特征优先：特征数与结构数同量级，结构语义与几何验收同时通过。
+- 截面验收收紧为每站 IoU ≥0.95、面积差 ≤5%。
+- G 编号退为机器键，验收表改用具体指标名（截面重合度、圆柱/锥面参数、体积差、包盒差、四视图 IoU、双向偏差、圆角覆盖、表达式活性、特征树结构）。
+- 圆角支撑面宽度统一为“两条支撑面各 ≥ R + 0.5 mm”。
 
 ### Fixed
 
-- `scripts/nxlib/reverse.py`：`fillet_group_indexes` 先把 `fillet_faces` 收成 int 集合（传 list 时 `set <= list` 抛 TypeError，分区调用直接失败）。
-- `scripts/nxlib/measure.py`：`compare_parts` 改按几何键匹配参考组，不以有序 face-tag 元组判 N/A；缺组进 `unmatched_a` 而非静默通过。
-- `scripts/nxlib/measure.py`：`group_coaxial` 改并查集，`hole_params`/`cone_params` 给逐段轴向区间；`structure_directory` 默认 `2R+2` 聚类。
-- `scripts/nxlib/measure.py`：`station_report` 空站表/丢弃站判失败（空站另有分类，见下）；`station_report_hybrid` 全程毫米网格；`verify_parts` G1 单位不一致时用原生 STL 并强制失败。
-- `scripts/nxlib/measure.py` `section_iou`：两侧截面皆空返回 `iou=None` 并带 `empty_a/empty_b/both_empty`（旧口径报 1.0，空截面直接过门）；`station_report` 的空站按 `na_reason` 分 `coplanar_section`（切平面与原件平面面共面，STL 看不到共面交线 → 仪器误差，判定口径不通过）与 `no_material`（原件在该站没有材料 → 站表噪声，从分母剔除并单列 `plan_noise`，否则任何自建件都过不去），`pass` 只回答“有读数的站有没有 FAIL”，覆盖完整性看 `plan_measured_complete`/`instrument_errors`；`station_report_hybrid` 与 `audit.g1full` 同口径（`ratio` 用有材料的站作分母，另给 `ratio_all_stations`）。
-- `scripts/nxlib/measure.py` `g7_reachability`：`ceiling`（跑道数/参考圆角面数）改诊断值并在 `ceiling_basis` 标明，判 BLOCKED 需逐跑道拓扑证据（`evidence` 非空），不再凭比例把门记 BLOCKED。
-- `scripts/nxlib/audit.py`：`liveness` 的 `pass` 合并 `missing`/dead/broken/skipped（声明未建出不再显示 `alive_ratio=1.0` 判定通过）；`edit_envelope` 记首次失败倍率 `failed_at` 与最后一次成功 `max_ok_factor`，还原按体积/体数/面数/告警逐位校验并在漂移时抛错；`locality` 默认 ×1.10 起自适应、剔除开口与近切站、区域取截面质心、返回 `inconclusive`；`envelope` 阈值统一走 `tol`（默认 0.05/0.05）。
-- `scripts/nxlib/reverse.py`：`station_plan_full` 按面归属判覆盖（每结构 ≥1 站、`missing` 非空即 `complete=False`、跨平面族另记 `families_ok`、每站带 `station_kind`/`primary_fillet_class`）；`param_candidates` 去重并加 `derived_from`；`validate_structure_table` 未分配面改 error（`allow_unassigned` 显式豁免）、新增 `validate_feature_mapping`。
-- `scripts/nxlib/template.py`：`param_table` 不把 data/derived 行当独立参数，`structure_params` 恒返回字典，新增 `structure_param_names`/`validate_schema`（重复 id、未定模板、design 与 data 混用、缺 `build_order` 即报错）。
-- `scripts/tests/38/39/42/45/46`：适配上列口径——38 增加 hybrid 自比对（判定口径必须量到每一站）与空站分类；39 的 G7 ceiling 只作诊断、G9 对无名特征判失败；42 未分配面严格模式；45/46 用新的返回结构。
-- `SKILL.md`/`README.md`/`README.en.md`/`docs/wiki`/`scripts/tests/README.md`：计数与模块行数同步（48 用例 / 45 gate、`check_journal` 20 组、`check_repo` 八组、nxlib 199 个公开 API），模块依赖表与用例域表补齐 46–48。
-- `scripts/nxlib/rolling.py`：`classify_corner` 精确管道要求 `rms≤1e-9`，0.005R–0.05R 记 `canal_approx`，更大记 `unknown`；`roll_rim_analytic` 多体拒绝且只删自建体。
-- `scripts/check_journal.py`/`verify_check_rules.py`：5.13 正则支持 `Part.Save()`；占位符负例改 `legitimate no-op`；反例覆盖 walrus、必设参数、保存校验。
-- `references/drafting.md` §B.1/§B.4：视图与局部放大比例改"绝对值"——`SetViewScale` 传目标值即绝对比例、不乘父比例；`AskViewScale` 按 UF 原型回读成 `(scale_tag, 比例)` 两元组，取第 2 项（第 1 项是 out 参数 tag，不是恒定值）。
-- `references/drafting.md` §B.1/§B.2/`drafting-annotation.md` §摆位：视图越界移动删"抛 `Cannot move view off of the drawing` 并回滚"，改"不报错、不自动回滚、须自查内容包盒"。
-- `references/drafting.md` §B.1：基准 Blank 口径改"建视图后 `Blank()`+`UpdateOneView` 同样生效"，`DraftingCurve.Blank()` 仍不生效。
-- `references/drafting.md` §B.1：全剖父视图由"必须是 ⊥ 视图"改为"切点须落在父视图投影平面内"。
-- `references/drafting.md` §B.2：删"不用 `sheet.Open()`"通则，改"UF 尺寸在非当前图纸须先 `sheet.Open()`（否则 `The input object view tag is invalid.`）；中心标记/表格/PDF 不 Open 也可，中心线/注释/引线标签无单独读数"。
-- `references/drafting.md` §B.3：`SetSheets` 改"一次出多页一份 PDF"（非每 sheet 一份），并写明外来图纸被静默接受且出空白页、须自查 `sheet.OwningPart`。
-- `references/drafting.md` §B.4：边界圆删数值规律，改"`AskViewBorders` 对 detail 返回选框而非圆、不能量圆，余量须在图上确认"。
-- `references/drafting.md` §B.4：局部放大有效性命据由"更新后 `vis>0`"限定为"仅在确有内容时"（框住空白区合法为 0）。
-- `references/drafting.md` §B.4：剖视朝向口径改准——默认建法会斜置；批处理可设 `svb.ViewOrientation.OrientationType = ViewOrientationBuilder.Orientation.UseParentOrientation` 得到与父视图同向的剖视，并记 `InheritOrientation`/`SectionExisting` 需再给 `SelectView`。
-- `references/drafting.md` §B.4：展开剖判据删"唯一差别是 PDF 字节数"，改"对象级读数与折叠态相同；两份出图字节数随视图名/视图数浮动，判据取两份出图不相同，不能用字节相等判开关失效"。
-- `references/drafting.md` §B.4 表：空 `SectionLine` 直接 Commit 改"静默返回 `None`"。
-- `references/drafting.md` §B.4/§B.5：补"建模型视图必须在任何 sheet/view 之前——`Views.SaveAs` 之后报 `Internal error`"。
-- `references/drafting-annotation.md` §1/§4/§9：删"缺 dwg 点界线画到错误视图（残影）"，改"按自身 origin 正常渲染、无残影"；`AssocDwgPos` 仍须恰 2 个 double。
-- `references/drafting-annotation.md` §2/§5/§8：默认字高改"注释 5.0、公差 2.0"（原 6.5/2.5），尺寸 3.5 不变。
-- `references/drafting-annotation.md` §4b：`dim_diameter` 由"不支持附加文本"改为"可带数量前缀（tag 定位后 `AppendedText.SetBeforeText`）"。
-- `references/drafting-annotation.md` §5：侧立圆 assoc 由"锚点飞出图框"改为"锚点不落在该圆上、引线横跨到相邻视图"。
-- `references/drafting-annotation.md` §6：`norm()` 口径改"本版返回裸 `int`/`str`（单版单轮探针），断言不得依赖 `norm()`"；`EnableAutomaticUpdate` 由 0 参改 1 参（bool）。
-- `references/drafting-annotation.md` §6：行高自适应改"请求的行高被自适应改写"；明细栏由"自下而上（row0 在底部）"改为"row0 在顶部、自上而下"，BOM 居中公式随生长方向重写。
-- `references/drafting-annotation.md` §6b/§7/§9：IdSymbol origin 由"只被图框钳位"改为"无钳位、越界静默不渲染"；中心标记由"一个 builder 一个 location"改为"一个 builder 上限 2 个、第 3 个起被拒（码两来源不一致，只断'≥3 被拒'）"。
-- `references/drafting-annotation.md` §7：`.NET 不需 sheet.Open()` 补条件"但 UF 尺寸（§4）须先 Open"。
-- `scripts/gb_drawing.py`：`DETAIL_CIRCLE_FACTOR=0.83` 注明来源不可复现（启发式）；`detail_rect` docstring 改口径、删"measured"。
-- `scripts/gb_drawing.py` `pin_view` docstring：删"越界移动被回滚"，改"不报错、不回滚，调用方须自查"。
-- `scripts/gb_drawing.py` `export_pdf`：加 sheet 属主校验（外来图纸会静默出空白页）；docstring 注明一次 `SetSheets` 一份多页 PDF。
-- `scripts/gb_drawing.py` `save_model_view` docstring：注明须在任何 sheet/view 之前（之后 `Views.SaveAs` 报 `Internal error`）。
-- `scripts/gb_drawing.py` 模块/`quantity_label` docstring：删"UF 直径尺寸写不进数量前缀"，改"可用 `AppendedText.SetBeforeText`"；`CreateLabel` 字高默认改 5.0。
-- `scripts/gb_drawing.py` `standard_views`：删"`DrawingSheet` 在 NX12 无 Width/Height"，改"`DrawingSheet` 有 `Height`/`Length`（无 `Width`）"，`size=` 参数保留但不再以"读不到"为由。
-- `scripts/tests/20_drafting_views.py`：局部放大比例断言由"乘父比例"改为"第 2 项 = 请求值"，加负例（父 UF 0.5 + 请求 3.0 读 3.0），删"multiplies the parent scale"注释。
-- `scripts/tests/README.md`：20 号行改"绝对值 + 负例"，31 号行改"展开剖靠两份出图不相同区分"，33 号行删"越界回滚"与"无 `Width`/`Height`"。
-- `docs/wiki/03-modules.md`：`drafting.md` 行数 212 → 214。
-- `references/assembly.md` §A.1：`AddComponent` 实参语义改准（第 2 位=引用集名、第 3 位=组件名）；示例保留仓库现有写法 `("1","MODEL")` 并注明 `"1"` 当引用集被静默回退成 MODEL、`"MODEL"` 落到组件名，删掉未实测的"姿态/层"注。
-- `references/assembly.md` §A.1：矩阵按行组写由"镜像角位"改为"同一坐标系内的反向旋转"；新增红线"姿态/方向阵必须显式赋值，`NXOpen.Matrix3x3()` 无参为全零阵、漏置对角静默退化"。
-- `references/assembly.md` §A.1：`MoveComponent` 由"不可靠 → Remove+AddComponent"改为可用——平移是装配系增量、逐次累加，`Fix` 不阻止；旋转枢轴是全局原点且传入矩阵被取转置，回读矩阵角度判不出方向。
-- `references/assembly.md` §A.1：删"会话内改 `ComponentLoadMethod` 不写回 def"，改为会写回（`LoadOptions_LoadOption` 记三种取值）。
-- `references/assembly.md` §A.2：`Distance` 偏置改为"`con.Expression.RightHandSide` 可用"，`OffsetRightHandSide` 只报不实现/类型错。
-- `references/assembly.md` §A.2：DOF 条目改为"读数可能陈旧、不能当约束生效的互证工具"，删"未 DoUpdate/Apply 才陈旧"的归因（该归因被本轮读数否定，真实机制未定论）。
-- `references/assembly.md` §A.2：用错原型面由"报 not in the same file as the Targetset"改为"不报错、解算时静默 `CannotSolve`"，该报错文本归 CAE 目标集。
-- `references/assembly.md` §A.2：约束类型段补可用性结论（逐类型实测可赋/抛错计数、装配层无球铰圆柱铰铰链滑块原语、硬凑 `Fit`/`Bond` 会让件甩飞）；"同样适用于 Ball/Cylindrical/Hinge"限定为"Motion 域只验证过 Revolute/Slider"。
-- `references/assembly.md` §A.2 求解路线：`Distance` 回退由"显式坐标"改为 `con.Expression.RightHandSide`。
-- `references/assembly.md` §A.3：`AssembliesUtils` 补真名 `NXOpen.AssembliesUtils`（`NXOpen.Assemblies.AssembliesUtils` 不存在）。
-- `references/assembly.md` §A.5：拖动配方注明 `NonMovingGroupGrounded` 默认 False，并写明置 True 的效果随几何而异（一套几何整体不动、另一套 Fit 拖动仍转），不是"拖不动"的开关。
-- `references/assembly.md` §A.5：拖动枢轴由"该件自身原点"改为"约束铰轴线"（与 `MoveComponent` 绕全局原点不是同一 API）；谁动由约束连通性决定、不由移动组名单决定。
-- `references/assembly.md` §A.5：`AlignLock` 由"建不出来（`FindOccurrence` 返回 None）"改为"能建但解算 `CannotSolve`"；`Fit` 等半径补"硬几何前提"。
-- `references/assembly.md` §A.5：`hole_top_edge`"两顶点重合"筛法补"依赖几何构造方式，换几何须先验证"。
-- `references/assembly.md` §A.5：删"长连杆灵敏度极低"（本轮单铰几何上请求角精确交付，未复现该告诫）。
-- `references/motion.md` §M.2：删"`Ixx`/`Iyy`=0 → 面外反力伪尖峰"（本轮两种设置反力一致）。
-- `references/motion.md` §M.3：`jd.Name` 由"必填"改为"可省（NX 自动命名）"。
-- `references/motion.md` §M.3：Slider 由"缺第二组报 `A NULL value was encountered`"改为"缺第二组也能提交并求解"；`Perpendicular`/`Atpoint`/`Cylindrical`/`Planar`/`Spherical`/`Universal` 一句恢复并标"本轮未全验"；`A NULL` 限定为关节定义里 `FirstMatrix` 那一支（衬套 `Orientation` 另有一处）。
-- `references/motion.md` §M.4：删"相对角有相位伪偏差"，改为"相位偏移是常数、在摆角/速率差分中完全抵消"。
-- `references/motion.md` §M.4a：齿轮耦合由"`RatioExpression` 与半径比不一致时未验证"改为"半径比为准、`RatioExpression` 被忽略"。
-- `references/motion.md` §M.5a：弹簧 `AttachmentType` 由"赋值/读取均报错"改为"只赋值报错、读取正常"；阻尼 `CoefficientType` 由"必需项"改为"可省"并补真失败条件（Action/Reaction 两点重合）；`BushingDefineOrientationTypes` 由"只列 value"改为 `Csys`/`Vector`。
-- `references/motion.md` §M.5b：后处理所有者由 `mm.PostProcess` 改为 `theSession.MotionSession.PostProcess`，并写明 `CreateSequence`/`CreateEnvelope` 不能当配方用。
-- `references/motion.md` §M.6/§M.7：越界帧由"末帧副本/归零值"改为"设计态/单位阵"；`AskLinkTransfromForGivenFrame` 删"3 参回退"（只有 2 参）；`r[10]`/`Tz` 自检限定为绕 Z 的平面机构。
-- `references/motion.md` §M.7：`AskVelocity/AccelerationResults` 由"恒 0.0（静默失败）"改为"对 Link/Joint 都返回逐帧值、接地件与驱动关节为 0 属物理正确、四实参缺一 AttributeError"，中心差分降为可选校验；删"先 T₀ 求逆引入铰点偏差"；铰点共点自检阈值改为随步长定。
-- `references/motion.md` §M.8：删"步长加密后尖峰位置与幅值不变 → 判为伪影"（三步加密实测位置与幅值都变，按它判会误判）。
-- `references/motion.md` §M.9：`cmd //c` 传尾参改为正常执行；坑更正为"单斜杠 `cmd /c`（不加 `MSYS_NO_PATHCONV=1`）"与"加该变量后必须传 `C:\...` 形式路径"。
-- `references/motion.md` §M.10：18 号反向验证由"速率/摆角/换向 FAIL"改为"摆角/换向 FAIL、速率 PASS"；12/13/14 偏差由"14 mm 级"改为"该连杆设计原点距量级"。
-- `scripts/tests/18_motion_sim.py`：头注 `AskLinkTransfromForGivenFrame` 改"只有 2 参"、`AskVelocity/AccelerationResults` 改为可用口径（四实参）；正文删已证伪的 3 参回退分支。
-- `scripts/nxlib/assembly.py`：`Distance` 偏置已知限制改为 `con.Expression.RightHandSide`；`add_component` docstring 写明 `AddComponent` 第 2/3 位语义与现有 `("1","MODEL")` 写法的实际行为。
-- `docs/wiki/03-modules.md`：行数同步（`assembly` 模块、`assembly.md`、`motion.md`）。
-- `references/assembly.md`、`references/motion.md`：本轮新增/改写的行一律按结论口径写（不出现 `实测`/`本轮` 等过程词），过 `check_repo.py` 第 6 组。
-- `references/modeling.md` §1.7：图层类入口改 `wp.LayerCategories.CreateCategory`（`wp.Layers` 无此方法）；`SetState` 传 `[5]`/`"[5]"` 由"`0xC0000374` 堆崩"改为"`TypeError: No overload matches these arguments`、进程存活"。
-- `references/modeling.md` §1.14：矩形截面拔模验收式由相似截面棱台 `h/3·(A₀+A₁+√(A₀A₁))` 改为等距偏置矩形式 `V = abh − (a+b)h²tanα + (4/3)h³tan²α`（等价 `h/6(A₀+4A_mid+A₁)`），并注明 h/3 式只对相似截面锥台成立。
-- `references/modeling.md` §1.14：拔模验收读数的角度标签由"−5°"改为 **+5°**（按 §3.4 的带符号约定，固定面在拔模方向一端），并写明写成 −5° 得 313849.8991、与 NX 263456.4290 不符。
-- `references/modeling.md` §1.14/§2.3/§3.3：删"带台阶/凹陷整条轮廓必须分段、否则报 `Cannot create Swept geometry`"，改为"单调带台阶/凹陷的整条轮廓可直接 360° 回转；自交或越轴剖面才失败"（三处）。
-- `references/modeling.md` §2.1：点明 `SetBooleanOperationAndTarget` 是 `BlockFeatureBuilder` 的方法，`BooleanBuilder` 没有。
-- `references/modeling.md` §2.2：删"截面必须在新建件里建、打开件 `AddToSection` 报 `Internal error`"，改为"打开的原件同样能建截面并拉伸；保存/重开后旧 tag 不可解析"（该报错场景无证据，如实标注）。
-- `references/modeling.md` §2.2：内环留 0.03 mm 缝由"该环被静默丢弃、孔变实心"改为"孔不出现、缝隙环另生一张片体、体数变 2（体数断言可发现）"。
-- `references/modeling.md` §2.2：拔模"先设类型再设角度、两步缺一不可"改为"两个都要设但先后顺序无关"（保留"只设角度不设类型=静默无效"）；`helpPoint` 由"曲线上不可用"改为"曲线上/料外也能提交"。
-- `references/modeling.md` §2.2b：删"面积突变≈3 倍必报 `Cannot create B-surface`"，改为实测可提交（体数 1、体积 5731.8240 非退化）。
-- `references/modeling.md` §2.2b/§2.5：删"`BooleanBuilder.Target/Tool/Tools` 静默不执行、共面接触被拒、面/点/线接触静默留两个体"，改为 `Target`/`Tool`/`Operation` 生效、共面 Unite 可合体、Subtract 报 `Tool body completely outside target body`、`zero wall thickness` 属相切工具体。
-- `references/modeling.md` §2.3："孔位贴边=零壁厚"改为"孔壁与轮廓相切才报"，并写明孔心落在轮廓边/半出界可提交。
-- `references/modeling.md` §2.3：删"`HolePackageBuilder` 刀具在孔位前固定延伸约 2 mm"，改为实测入口延伸随孔位在 0.000–5.000 mm 间变。
-- `references/modeling.md` §2.4/§3.4：`ScCollector.ReplaceRules` 第二参括注由"必须 `False`、`True` 选 0 条"改为"是 `createRulesWoUpdate`、与选择集无关"（三处）。
-- `references/modeling.md` §2.4：删"同一顶点相邻边必须放进同一 ChainSet"，改为"逐条独立与同一 ChainSet 都成功；`Unable to terminate` 由半径大于支撑面宽触发"，并把该条的"见下条"改为指向 FaceBlend 前置检查。
-- `references/modeling.md` §2.4：FaceBlend 前置检查由"支撑面各自 ≥ `R + 0.5`"改为"≥ R"（支撑宽 1.6/R=1.6 可倒、1.5/R=1.6 报 `Radius is too large for the faces selected`）；`Unable to terminate` 明确为 EdgeBlend 文案、FaceBlend 不抛；注明 `transitions.py`/`reverse-engineering.md` 的 `R + 0.5` 口径待统一。
-- `references/modeling.md` §2.4：FaceBlend 示例半径删英制换算值 `1.5875`（25.4/16），改命名参数 `R_BLEND`。
-- `references/modeling.md` §2.4：删"开放链 `EdgeBlend` 必留 `Unable to terminate` 且无 API 能清"，改为"开放链不必然失败；滚圆刀的理由是逐段独立提交/回滚"。
-- `references/modeling.md` §2.5：布尔路线按 `BooleanBuilder`（`Target`/`Tool`/`Operation`）与 `BlockFeatureBuilder`（`SetBooleanOperationAndTarget`）分开写；删"`part.Bodies` 每次返回新包装对象、`is` 比较会选错体"（实测同一批对象）。
-- `references/modeling.md` §3.1b：`RotationAxis` 留空由"不报错但无副本"改为"更新报告记 `Instance[i] Error: Parent features failed to update`"。
-- `references/modeling.md` §3.5：测量容差由"必须是数组 `[0.99]`"改为"标量 0.99 同样被接受、读数逐位相同"。
-- `references/modeling.md` §3.7 + `scripts/nxlib/modeling.py` `involute_gear`：齿数灵敏度由"~5%/齿"改为"约 14%/齿"（z=20→21 实测 +14.013%），验收口径写明是扣孔体积对解析值的 ±2%。
-- `references/modeling.md` §4.1b：局部性判据由"1e-6 相对 / 1e-5 mm"改为库内实际口径（`audit.locality` 的 `area_tol=1.0`/`rel_tol=0.005`、`template.diff_snapshot` 体积严格不等 + 包盒 1e-4），并点明 `template.edit_check` 的 1e-6 是还原体积的绝对判据。
-- `references/modeling.md` §4.2b：删"草图点不可标注、NXOpen 无参数化点特征"，改为"单点 AutoDimension 出 2 个驱动尺寸、dof 2→0；`BaseFeatures.CreatePointFeatureBuilder` 可建且 `Point` 只收 `NXOpen.Point`"，并标注"能否表达式驱动未测"。
-- `references/modeling.md` §4.3：共面堆叠起点由"写 0 会整体回滚"改为"`0`/`T_PLATE`/`T_PLATE-15.875` 三种写法改厚都 `errs=0`、不回滚（真实后果是脱开/吞并的体积变化）"，示例起点去英寸常数改 `T_PLATE - T_RIB`。
-- `references/modeling.md` §4.3：删"同一个 `FileNew` 只能建一个零件"，改为"实测连续 4 次 `FileNew` 均成功；一进程一案例的理由是崩溃类用例带走进程"。
-- `references/modeling.md` §4.4：孔直径/深度由"写 float 只会静默固化成字面值"改为"字段不可写（`AttributeError`）、`RHS` 只收 str（传 float 报 `TypeError`）"。
-- `scripts/nxlib/modeling.py` `body_box`：docstring 注明是 `AskFaceData` **控制点盒**、不能当精确/G4 包盒，STL 口径指向 `audit.envelope` 默认 / `measure.mesh_bbox`（不写成不存在的 `audit.stl_bbox`）。
-- `scripts/nxlib/modeling.py` `face_blend`：docstring 窄条判据由"宽度小于 2R"改为"支撑面宽 < R"（附 1.6/1.6 可倒、1.5/1.6 报错的读数）。
-- `scripts/nxlib/modeling.py` `roll_edge`：docstring 删"EdgeBlend 在开放链上必留清不掉的诊断"，改为"开放链不必然失败，用刀的理由是每段可独立提交/回滚"。
-- `scripts/nxlib/modeling.py` `boolean`：docstring 点明 `BooleanBuilder` 没有 `SetBooleanOperationAndTarget`（属 `BlockFeatureBuilder`），两条路分工指向 `modeling.md` §2.5。
-- `scripts/nxlib/modeling.py` `revolve_rect_uf`：docstring"只吃凸轮廓、凹轮廓失败"改为"360° 可用（含落在轴上的边）；自交或越轴剖面才报 `Cannot create Swept geometry`"。
-- `scripts/nxlib/transitions.py` 模块 docstring：支撑面宽度门槛 `2R + 0.5` → `R + 0.5`（与代码 `need = r + SUPPORT_WIDTH_MARGIN` 一致）；删零引用的 `MIN_RUN_FACTOR` 与“跑道长度 < 0.5R”条目并把跑道长度指向 `structures.fillet_feasible`，拓扑证据筛由 `dihedral or length` 收到 `dihedral`。
-- `scripts/nxlib/transitions.py` `_face_width` docstring：由“包围盒上界”改为“面盒估计”，写明斜置窄壁会低估、只作粗筛。
-- `scripts/nxlib/structure_inference.py` 模块 docstring：堆叠判据改为“偏置 ≥ `STACK_OFFSETS` 且构成一条面积与节距同时一致的连续链（链长达该常量）”，与 `_explained_offsets` 对齐（阈值语义不变）。
-- `scripts/nxlib/audit.py` `_expr_map`：改用 `measure._is_auto_expression` 过滤自动量（`p#`/`PI`），与 `expression_survey` 同口径——NX 为绑定表达式生成的别名不再被判 `non-numeric rhs` → `stuck`。
-- `scripts/nxlib/audit.py` `edit_envelope_summary`：narrow 档带失败原文 `failure`；RHS 非数值的公式/派生量进 `skipped`（不再算 `stuck`）；新增 `measured`，一条可扫表达式都没有时 `pass=False`。
-- `scripts/nxlib/audit.py` `envelope`：包盒默认改导出 STL 三角顶点（`source="stl_triangle_bbox"`），`box=` 显式传时按调用方口径标 `kernel_exact_bbox`/`face_control_box`，不再把面表控制点盒标成 `brep_body_box`；`summary` 注明 `bbox` 是控制点盒并给 `bbox_source`。
-- `scripts/nxlib/measure.py` `g4_blocked_reason`：`corner_radius` 默认 `3.175` → `None`（R 未知不猜）；`verify_parts` 无参考环面且未给 `g4_corner_radius` 时 `corner_radius_mm=None`、G4 按 0.05 mm 判 FAIL，不升级 BLOCKED。
-- `references/reverse-engineering.md` §1：新增第 0 步“先落命名设计表达式再动手建”；§4.1 G8 补“链路/冒烟档最低线 `named ≥ 1` 且 `alive_ratio = 1.0`”。
-- `references/reverse-engineering.md` §4.1（G4/G7/G9）与 §12.5：G4 的 R 未知不猜常数与包盒口径；G7 `ceiling ≤ 1`（单面单跑道组为 1.0）；G9 默认名条件（全件默认名且特征数 ≥8）；`g1full` 只由 `instrument_errors` 阻塞、`plan_noise` 剔出分母；`edit_envelope` 默认口径与空扫描不通过。
-- `references/reverse-engineering.md` §9.1b/§9.3/§4.2：宽度改“面盒估计（斜置窄壁低估）”、删“跑道长度不足”、`1.2R` 粗筛标注“流程判据、nxlib 无对应谓词”；FaceBlend 失败模式的宽度判据改 `width < R`（`2R` 与 `R+0.5` 两处口径都不对），`R + 0.5` 只作建面自留余量。
-- `references/reverse-engineering.md` §12.2：新增“位置类量（孔心距/铰点）怎么进表达式”——`Point3d` 字面量做不成驱动表达式、归 data 层并披露；要可编辑走草图驱动尺寸，或相切/位置关系绑定（后者须按 §11.3 验后才可宣称）。
-- `references/fea.md` §2/§3a：`CreatePhysicalPropertyTable` 的 `label` 由 `2` 改 `0`（自动取号）并写明“同一 .fem 内必须唯一，否则第二张表报 `Fifth parameter is invalid`”；材料力学属性名改注“在 `GetPropTable()` 材料表上设”（PSOLID 表无材料力学量）。
-- `references/fea.md` §3a/§3a-2：壳厚不写的失败模式改 `USER FATAL MESSAGE 4298`、零结果（`.log` 仍 `EXIT(0)`）；CQUAD4 算例按网格分开写（粗网格只有挠度过得了，根部应力要 2 mm 级网格）。
-- `references/fea.md` §5/§6/§6a/§7：静态可建描述符改 8 约束 + 4 载荷（附名表）；`-777777` 补“放自由后成机构 FATAL 9137”；求解完成判据由 `.log` 的 `EXIT(0)` 改为 `.f06` FATAL 计数 + 后处理能取到结果；`GetResultFile` 的 rd 空串分支改注为防御性写法。
-- `references/fea.md` 新增 §7a“读数从哪儿取”：既有用例 `.f06` 无结果表；三条途径（后处理结果对象／自加 `PRINT` 请求后重跑／解析 `.op2` 的 `OUG`·`OES`·`OQG`）各出什么量。
-- `references/fea.md` §7/§9：删“中文工作目录后处理不可用”（与 f06 无表自相矛盾）；op2“空”改“非空但无结果块”；§9 清单给 `0.9~1.4` 标判别力弱并强制配独立判据，求解判据改 f06/post，网格项注明粗网格只信位移。
-- `references/gb-drawing.md` §最小调用骨架/调用顺序：骨架补 `body = list(part.Bodies)[0]` 与 `standard_views(..., size="A4")`（原骨架照抄抛 `standard_views: pass size=`），调用顺序注明该参数必需。
-- `references/gb-drawing.md` §国标条款表 GB/T 14691 行/§中文字体：字体由“中文必须调 `set_cjk_font`、默认 blockfont 出空框”改为条件句——general/appended 默认即 `chinesef_fs`（中文直接出），只有尺寸/公差文字默认 `blockfont`；四类字型默认 id 一并写明。
-- `references/gb-drawing.md` §中文字体：UF 字体结构名 `Drf.Lettering_Struct` 改为 `ufs.Drf.Lettering`（附实测字段表）；`Arial Unicode MS` 由“已加载但不渲染”改为“不在 NX 字体表（`AddFont` 报 Font name was not found）”。
-- `references/gb-drawing.md` §中文字体/§模块路线约束：ASCII 字宽由“约 2.1mm、10 字符恰好占满 21mm”改为随字型两档实测（默认 `chinesef_fs` 2.16mm/字符→21mm 列溢出；`set_cjk_font` 后 `chinesef` 1.88mm/字符→可容），补 `#` 个数 = `floor(列宽/字宽)`、标题栏 25mm 列不溢出。
-- `references/gb-drawing.md` §模块路线约束：新增 `standard_views` 摆位实测——原生 `FrontTopRight` 把 `RIGHT` 放 FRONT 左侧（x 67 vs 198），本模块钉到右侧（x 195 vs 93），布局方向与图幅第一角角标不一致。
-- `references/gb-drawing.md` §模块路线约束：`Cannot move view off of the drawing` 由“回滚已成功移动、不得出图幅”改为实测条件句——参考点 (350,155)/(93,-40)/(-40,-30) 内容整块出纸仍不报错，仅 (-500,-500) 才抛且该次自身不生效，从不回滚；布局须自查 `content_bbox`。
-- `references/gb-drawing.md` §模块路线约束补充：`model_bbox` 回退由“静默回退直边”改为“先打印 `WARN model_bbox: ...using linear edges` 再回退（非静默），纯回转体无直边直接抛错”。
-- `references/gb-drawing.md` §非轴对齐零件出图：`TransformEntities` 由“对实体静默不生效、保存后才报 Update undo happened”改为“有效、16 浮点矩阵、效果在 update 后可见（未 update 回读陈旧易被误判）、保存不报该串”；模型视图路线改述为其替代做法。
-- `references/gb-drawing.md` §视图级简化：`AskVisibleObjects()` 由“返回 `DraftingCurve` 列表”改为“混合列表（Body+DraftingCurve），须先筛出 `DraftingCurve`”（对 Body 调 `GetDraftingCurveInfo()` 报 AttributeError）；交线筛除写法改为 `edge.SolidEdgeType == NXOpen.Edge.EdgeType.Intersection`（`Edge.SolidEdgeType` 无枚举成员）。
-- `references/gb-drawing.md` §文字控制字符：标题与各行改为按“表格单元 / Note”分别给症状——`×`/拉丁补充区在单元照样报错而 Note 静默丢字，`~` 两侧都渲染成空格；`%` 行原写“可用”，改为给触发条件与做法（`%` 本身可用，单元文字装不下才把每个字符替成 `#`；建表前显式 `SetDefaultCellPrefs` 定字高并留余量，不按 `AskDefaultCellPrefs` 的读数估字高）。
-- `references/gb-drawing.md` §标注配方：`dim_text_box` 注明只有三行算术、不查字体度量，是保守上界（33 号图上字串实测 3.7–5.5mm、行距 5.25mm），判重叠后须在图上确认；`dim_diameter` 由“无数量前缀”改为“默认不带，但可用 `AppendedText.SetBeforeText` 加前缀”；删“`dim_diameter` 前导 mark 残留别视图”（未复现）。
-- `references/gb-drawing.md` §未覆盖范围：局部放大 `detail_rect` 删“半径 ≈ 半对角 × 0.83”的数值规律，改“外扩系数是启发式、来源不可复现，边界圆须目视确认”。
-- `scripts/gb_drawing.py` `set_cjk_font`/`save_model_view` docstring 与 `TB_COLS` 注释：删“默认 blockfont 出空框/`Arial Unicode MS` 已加载但不渲染”“UF transform 静默不生效”“2.5 字高字宽约 2.1mm、21mm 只容 10 字符”三处与本次定论冲突的旧说法（仅注释，无行为变更）。
-- `docs/wiki/03-modules.md`：`gb-drawing.md` 行数由 187 改为 189（本轮重算）。
-- `references/reverse-engineering.md` §6：删“不要旋转实体（`UF_MODL_transform_entities` 静默不生效）”，改为“可旋转实体（16 浮点矩阵、效果在下一次 update 后可见）/ 也可走自定义模型视图”，与 `gb-drawing.md` §非轴对齐零件出图同一判据。
-- `scripts/check_journal.py` docstring + `SKILL.md` §4 第 5 条 + `docs/wiki/02-execution-flow.md`：豁免说明按实现改写——`expected-raise` 只对按行定位的 AST 规则生效；5.2 与 5.7 两种标记都不放行、照样报错，只有 5.11/5.13/5.14b/5.15/5.19 随 `allow-probes` 跳过（原文把这几条 AST 判定叫“整文件级的文本规则”，并把 5.2/5.7 说成“只能整文件豁免”）。
-- `SKILL.md` §1 第 5 条注释与 `check_journal.py` 的 5.11 文案：STEP 落盘延迟由“约 3 秒”改为逐秒轮询的 T+5s。
-- `SKILL.md` §3 `x_t` 注释：Parasolid 文件头由“首 24 字节含 `**PARASOLID`”改为“首 48 字节是 `**A..Z` 校验串、`PARASOLID` 在偏移 84”。
-- `SKILL.md` §6 输出令牌段：补 `TEST46_STOP failed=[...]`（token 内没有 `_FAIL`，只靠缺 `TEST46_DONE` 抓）与 34/35/37 走 `check_finish` 的 `TESTxx_FAIL checks=...` 两种失败形态。
-- `scripts/tests/README.md`：`checks=` 形态那句由“同样不含 `_FAIL`”改为“整个 token 含 `_FAIL`、走 `:gate` 的 `_FAIL` 路径（与 46 相反）”；`stages=` 形态的编号由（17/19/20/21/31/32）补齐为 06/07/17/19/20/21/31/32/33。
-- `docs/wiki/01-architecture.md`：架构图里的标准层模块数 12 → 14。
-- `scripts/nxlib/audit.py`、`scripts/tests/47_structure_builders.py`、`scripts/tests/49_structure_inference.py`：删掉四处未使用的局部变量绑定（`errs`/`frame`/`n0`/`obs`），`ruff --select F` 归零；`docs/wiki/03-modules.md` 的 `audit` 行数 824 → 823。
-- `SKILL.md` §1 第 6 条 + `docs/wiki/05-boundaries.md`：参数类型不符的后果由“传错参数类型会损坏原生堆、进程直接死且无 traceback”改为“抛 `TypeError: No overload matches these arguments` / `AttributeError ... is not writable`、进程存活且带 traceback；`Internal error: memory access violation` 只来自已知坑位的特定调用”（禁止“猜签名逐个试”的结论不变）。
-- `SKILL.md` §7 第 10 条：`CHANGELOG.md` 补注“是人类文档，不参与 CONCISE/ROUTE 扫描，这条约定靠人工守，没有机器门”。
-- `LICENSE`：版权署名由占位串 `nxopen-journal contributors` 改为 `EVOL233awa`。
-- `README.md`/`README.en.md` 已知限制：补“装配层只有定位类约束，球铰/圆柱铰/铰链/滑块在 NX 12 建不出来（赋类型直接抛错），真空间机构用装配层定位后到 Motion 域建运动副，硬凑 `Fit`/`Bond` 会让解算把件甩飞”；逆向重建那条去掉“盲测”用词。
-- `references/fea.md` §7a：删掉溯源用的审计路径与读数，改为按表头解析的规则（四面体应力表 `CENTER`/`X` 行末列是 von Mises 且单位 kPa、`Y`/`Z` 续行末列是方向余弦；位移表用 `D I S P L A C E M E N T   V E C T O R` 表头）。
-- `references/drafting.md` §B.4 剖视朝向：删掉探针路径与日志名，只留结论与读数。
-- `references/assembly.md` §A.2：约束类型可用性结论去掉“盲测”用词。
+- `compare_parts` 按几何键匹配参考组，不以有序 face-tag 元组判 N/A。
+- `section_iou` 空截面不再报 1.0；空站按 `coplanar_section`/`no_material` 分类。
+- `g7_reachability` 的 `ceiling` 只作诊断，BLOCKED 需逐跑道证据。
+- `liveness` 合并 `missing`、dead、broken；编辑包络还原逐位校验。
+- `station_plan_full` 按面归属判覆盖；未分配面改 error。
+- `param_table` 不把 data/derived 行当独立参数；schema 校验补重复 id、未定模板、design/data 混用、缺 `build_order`。
 
 ## [1.3.0] - 2026-10-26
 
+测量与比对门落地。
+
 ### Added
 
-- `scripts/nxlib/measure.py`：只读测量模块——面表/同轴分组/孔锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
-- `scripts/nxlib/measure.py`：`expression_survey` 批量可编辑性检查——逐条命名表达式 ×1.1、DoUpdate、量体积、还原复核，返回 named/live/dead/broken/skipped/alerts/alive_ratio/pass，不保存。
-- `scripts/tests/38_measure.py`：新增 `REG_EXPRESSION_SURVEY`（23→24 项）。
-- `scripts/tests/38_measure.py`：新增 `REG_UNITS` 并扩展测站自比对（24→25 项）。
-- `scripts/nxlib/measure.py`：新增 `functional_hole_groups`（轴向截面内环筛功能孔），`verify_parts` 未给 `ref_a` 时用它作 G2 分母，圆角/凸台/外轮廓转角不计入。
-- `scripts/nxlib/measure.py`：`exact_section` 用完按 undo mark 回滚截面特征与临时平面，避免把临时截面留在内存部件里；`scripts/tests/38_measure.py` 新增 `REG_SECTION_CLEANUP`（26→27 项）。
-- `scripts/nxlib/measure.py`：`compare_parts` 增加 `applicable`/`verdict`，原件无功能孔时 G2 记 N/A；`scripts/tests/38_measure.py` 新增 `REG_COMPARE_NA`（25→26 项）。
-- `scripts/nxlib/measure.py`：新增 `brep_section_iou`/`station_report_hybrid`，`verify_parts` 的面表平面站改用 B-rep 精确截面、轴站仍用 STL，阈值不变；`references/reverse-engineering.md` §4.1/§10.1 同步为“STL 共面切面不作形状判据”。
-- `scripts/nxlib/measure.py`：`part_length_scale` 改用 `NXOpen.BasePart.Units`（原 `NXOpen.Part.Units` 与运行时类型不等，曾把所有部件判为 unknown）。
-- `scripts/nxlib/measure.py`：`exact_section` 每个环给 `gap`，未闭环缺口汇总为 `open_gaps`，用于区分真实开口与拟合误差。
-- `scripts/nxlib/measure.py`：`station_report` 每站增加 `area_inter/area_union/only_a/only_b`，自检可按缺料/多料定位结构。
-- `scripts/nxlib/measure.py`：`mesh_bbox` 给 STL 包盒；`compare_parts` 按包盒中心（垂直轴）匹配、逐 pair 判 G2 阈值，`ref_a`/`ref_b` 接原件功能清单。
-- `scripts/nxlib/measure.py`：`view_iou` 给 top/front/side/任意法向的轮廓 IoU（三角面投影并集），用于 G5 自检。
-- `references/reverse-engineering.md` §2.3：开链缺口大于 2×tolerance 是真实开口，禁止放宽容差闭合；叉/耳双圆柱是两块耳板，不得整宽桥接；低 z 内环高 z 消失的窗口单独切除。
-- `references/reverse-engineering.md` §4.2：G2 半径/孔心/轴全对而长度差过渡段时按同轴半径分桶逐段建孔，不用总深单孔。
-- `references/reverse-engineering.md` §10.1：自检未过不得交付；按 only_a/only_b 排序修结构，G6 大偏差先修结构再补圆角。
-- `references/reverse-engineering.md` §1：结构清单纳入叉/clevis 开口，截面两条平行壁夹开口即按槽建切除体。
-- `references/reverse-engineering.md` §1.1：新增结构表模板（证据/成形方式/特征名/自检站）与基体→臂耳叉→孔系→圆角的阶段关卡。
-- `references/reverse-engineering.md` §1：校核顺序改为结构表→分区形状→双向偏差→体积/包盒；体积分多料与缺料两份。
-- `references/reverse-engineering.md` §2.2：放样限定为变截面头部（5–6 张结构站）；整件剪影闭合旋转会把环/腔/槽填实，回转体只旋转功能回转体。
-- `references/reverse-engineering.md` §2.2：孔把截面切成两瓣的站按形心射线合成外包裹并取凸包（跳站会削掉凸台外侧瓣，自交截面让放样静默失效）；塔体截面取实测外环，不用整环凸包。
-- `references/reverse-engineering.md` §2.2：凸台端面垂直于斜孔轴时，水平截面族收不出端面，按端面截面沿轴拉伸有界棱柱再并。
-- `references/reverse-engineering.md` §4.2：沉孔底面是锥面时改“浅孔 + 45° 锥刀”，加实心锥会封孔并零壁厚回滚。
-- `references/reverse-engineering.md` §4.2：孔内浮环在大孔径下脱离孔壁致 `Update undo`，改三段同轴孔并绑定主径表达式。
-- `references/reverse-engineering.md` §4.2：修边盒按“区域”给大盒会切掉环/肋/根部凸台，只覆盖要修的 0.1–0.2 mm。
-- `references/reverse-engineering.md` §4.2：相邻两段放样首末截面来源不同会在接缝报 intersecting faces，同 z 带只用一套来源。
-- `references/reverse-engineering.md` §4.2：命名尺寸改后部分特征回滚说明该尺寸未被所有相关面引用，同轴/相邻面一律写成它的表达式。
-- `references/reverse-engineering.md` §4.2：底板低 z 站面积偏大归因于板底拔模，按底站/z4 外环放样并另切窗口。
-- `references/reverse-engineering.md` §4.2：更新失败定位用 Suppress/Accept 模式 + `ErrorList`（`Length`/`GetErrorInfo`）+ 被抑制特征给出失败点；`FailureOption` 枚举含 Accept。
-- `references/reverse-engineering.md` §4.2：孔底锥口切除必须先于底部凹槽环切，扩径后锥体悬空会致父径更新回滚；通孔下延是几何要求，不是回滚解药。
-- `references/reverse-engineering.md` §4.2：面表圆柱 `point` 是轴上锚点、`center` 只是 bbox 中心，孔轴按"过 point 沿 dir"建。
-- `references/reverse-engineering.md` §4.2：外缘圆柱 `concave=true` 且截面叠图全空是缺口不是凸台，勿建 unite。
-- `references/modeling.md` §2.2：拉伸拔模必须先设 `DraftOption`（`SimpleDraft.SimpleDraftType`）再设角度，只设角度静默无效；受控实验修正"批处理下拔模无效"的错误归因。
-- `references/reverse-engineering.md` §4.2：面簇 bbox 中心/采样质心不是轴线，轴向以面表 point 或横截面圆拟合为准。
-- `references/reverse-engineering.md` §4.2：薄壁贯通切除会静默切成多体（Subtract 成功、体数 2），刀具沿壁留皮保单实体，布尔后校验体数。
-- `references/reverse-engineering.md` §4.2：斜结构轮廓以沿特征轴纵剖面 z(r) 为权威，水平站表达不了斜下缘。
-- `references/reverse-engineering.md` §7：孔深落进后续锥面切削区时表达式必死，该深度用字面值。
-- `references/reverse-engineering.md` §10.1：局部差异先做角度-半径剖面定位方位；测站避开台阶高度伪影，层叠结构按层取截面。
-- `references/reverse-engineering.md` §10.1：面表每张平面（含斜平面）的法向站按原件 point/normal 原样复算，不得按台阶伪影剔除或偏移；斜面轮廓端点用相邻平面交线解析求，STL 采样会让位置差远小于 G4 容差却使整面站归零。
-- `references/reverse-engineering.md` §4.2：斜轴凸台的轴法向截面偏窄归因于水平截面放样，凸台按孔轴单独成形。
-- `references/reverse-engineering.md` §4.2：锥面孔心/长度偏差归因于凸台沿孔轴的厚度与端面。
-- `references/reverse-engineering.md` §4.2：包盒极值在臂端时按竖直平面切尖头，不用圆头。
-- `references/reverse-engineering.md` §7：倒角刀在扩径超过倒角径向宽度、完全落入孔内时回滚（×1.1 不是固定阈值）；改用随边更新的边倒角或把倒角切在孔前。
-- `references/reverse-engineering.md` §2.2：端部最高点取端部截面族最外站，不取中间站。
-- `references/reverse-engineering.md` §4.2：孔口/孔底倒角切在孔特征之前，避免倒角刀被扩大后的孔吞掉。
-- `references/reverse-engineering.md` §4.2：表达式表里“改了体积不变”的参数是死参数，接上驱动尺寸或删除，否则可编辑性检查判失败。
-- `references/reverse-engineering.md` §4.2：水平截面全对、竖直截面在臂端仍缺料 2–4 mm 是放样面尖角下垂，加密截面无效，按垂直臂长的截面沿臂宽拉伸成棱柱再并。
-- `references/reverse-engineering.md` §4.2：锥孔孔心/轴取面表 `point/dir`，不从截面圆拟合。
-- `references/reverse-engineering.md` §7：G8 存活检查先 ×1.1，抛 `Update undo` 即 broken；参数留 10% 余量，命名不以 `p` 开头。
-- `references/reverse-engineering.md` §10.1：自检测站取原件结构分界全集；G5 用 `view_iou`。
-- `references/reverse-engineering.md` §1：动手前先出结构清单（原件功能组为建模与自检分母），结构尺寸先建命名表达式再绑定。
-- `references/reverse-engineering.md` §10.1：自检分母用原件、功能清单筛 `ref_a`、匹配成功不等于合格、G4 用 STL 包盒。
-- `references/reverse-engineering.md` §2.2：有孔分瓣截面凸包只补孔内桥接，外边界取两瓣外包络。
-- `references/reverse-engineering.md` §2.2：重采样点数按弦高定（`N ≥ π·sqrt(r_max/(2·tol))`）；端部收口沿用末站量得轮廓，不缩放极值截面。
-- `references/reverse-engineering.md` §4.2：俯视 `only_b` 偏大归因于开口被单环放样/凸包填实；包盒偏短归因于收口缩放或末站内移。
-- `references/reverse-engineering.md` §10.1：自检结论取整链布尔值（`pass` 且 `unmatched_a` 为空），`pairs` 数不作通过证据。
-- `references/reverse-engineering.md` §4.2：低 z 多料→底部让位结构或外圆锥形过渡。
-- `references/reverse-engineering.md` §7/§9：尺寸参数化属于交付件；圆角是交付前固定阶段。
-- `scripts/tests/38_measure.py`：受控实体测量用例（`TEST38_DONE`）；`RUN_TESTS.bat` 与 `tests/README.md` 登记。
-- `references/reverse-engineering.md` §10.1：无外部检查包时的自检闭环（量原件→建→量自建件→比），含面表→结构假设与截面站选择。
-- `references/reverse-engineering.md` §2.2/§4.2：腰形凹腔按截面放样切除、端盖 B 曲面按 z 窗口收口，以及耳座圆柱/孔长/锥面/底板/clevis/端盖的症状→动作。
-- `references/reverse-engineering.md` §8：孔包入口固定延伸改独立圆柱、锪面孔深校验、入口锥与孔壁分开建。
-- `references/modeling.md` §2.1b/§2.3：独立圆柱凸台用 `Origin`+`Direction`、斜耳座绕孔轴回转、孔包延伸与锪面深度。
-- `references/modeling.md` §4.2：AutoDimension 不出尺寸的判据改为 AutoConstrain 抢占；`GetStatus()` 只读 dof。
-- `references/modeling.md` §4.2b：新增自动尺寸接命名参数配方（`GetAllExpressions` 按 RHS 匹配后改指）。
-- `references/modeling.md` §4.3：新增共面堆叠特征表达式起点、倒圆边归属、一进程一次 `FileNew` 三条约束。
-- `references/reverse-engineering.md` §4.1：新增 G8 还原残差判据（新会话 ×1.5 复核）。
-- `scripts/nxlib/modeling.py`：新增 `make_sketch_dims`；`make_sketch` 注释标注其 AutoDimension 不产尺寸。
-- `scripts/tests/37_sketch_autodim_param.py`：新增自动尺寸→命名参数用例（`TEST37_DONE`）；`RUN_TESTS.bat`、`tests/README.md` 登记。
-- `references/reverse-engineering.md` §2.1：从 B-rep 批量取精确截面的配方——`SectionFromPlanes`/`SectionFromParallelPlanes`、端点参数用 `AskCurveProps(ct, 0/1)`、闭环用 `JoinType=0` 原始段按端点聚类自建、圆弧只读 `Eval.AskArc`。
-- `references/reverse-engineering.md` §2.2：多截面放样路线——重采样参数化（弧长等分/绕形心等角）的选择、放样后体积校验、定位截面、端部收口、拓扑突变与凸台孔闭合的处理。
-- `references/reverse-engineering.md` §3：分层路线定位改为“只作测量与核验，不作交付”，交付件走结构特征路线。
-- `references/reverse-engineering.md` §4：逆向重建验收项与失败归因——逐站截面 IoU/面积差、孔系半径/孔心/轴向/半角/长度、体积与包围盒、四视图、双向偏差、圆角面数覆盖、单实体/告警/表达式存活、结构语义；验收结果必须由独立脚本从交付件复算。
-- `references/reverse-engineering.md` §8：组件闭合与切除边界规则——端部形状进末截面、切除边界取实测面、孔独立切除体、堆叠层各用各的截面、切除刀具穿过目标面、布尔顺序。
-- `references/reverse-engineering.md` §9：圆角阶段——圆角地图（半径组→边链→预期面数）、按组选边（exact/ring）、主组覆盖 ≥70%。
-- `references/reverse-engineering.md` §10：测量链——一次探针取全量事实、按结构分界布置测站、特征分组、确定性序列化、边界目录。
-- `references/modeling.md` §1.11：会话/部件设置入口（`NXOpen.Preferences` 子模块、`session.Preferences.Modeling.BodyType`）。
-- `references/modeling.md` §2.1b/§2.2b：斜轴圆柱/锥孔切除与多截面放样配方。
-- `references/modeling.md` §2.5：切孔按面表验收（核对新增面的半径/半角/孔心），失败布尔用 undo mark 回滚。
-- `references/modeling.md` §6：特征按结构划分，不按层划分。
-- `references/modeling.md` §4.3：非 XY 草图平面只能靠 `Sketch.Reattach`（`PlaneReference` 在 NX12 批处理里被忽略，`AttachPlane` 仍是 XY）；任意法向/过任意点的基准面用 `DatumPlaneBuilder.SetPointAndDirection`，参考轴用 `FixedType.Z`。
-- `references/modeling.md` §4.2/§4.3：实测轮廓只加 `CreateFixedConstraint`（`CreateFullyFixedConstraints` 静默无效）；AutoConstrain/AutoDimension 会挪动几何（小 R3 弧被拉到自交，2 507→956 671 mm³）。
-- `references/modeling.md` §4.3：`RevolveBuilder` 对草图截面报 `memory access violation`，改用 UF `Modl.CreateRevolved`。
-- `references/modeling.md` §4.4：沉孔 HolePackage 配方（`GeneralHoleForm=HoleForms.Counterbored` + `GeneralCounterboreHole*` + `GeneralCounterbore*`），受控实验与解析值一致；直径/深度可传表达式名。
-- `SKILL.md` §3：`SaveAs` 到已存在路径报 `File already exists`，阶段件写新路径或先删目标。
-- `references/reverse-engineering.md` §2.2：等截面判据量化（底/中/顶三站面积差 ≤2% 且轮廓重合），面积随站位单调变化即按底站与中站分段成形，不用中间轮廓拉整厚。
-- `references/reverse-engineering.md` §4.1：阶段门与自检站是阻塞条件，低于阈值不进下一阶段、不带低站交付。
-- `references/reverse-engineering.md` §4.2：包盒单方向大 0.3–1 mm 且极值在凸角归因于未建倒圆/倒角，补局部倒角而非整件倒圆。
-- `references/reverse-engineering.md` §7：公式型表达式被逐项改数值的存活检查跳过、存活率到不了 1.0，交付件命名表达式一律写数值。
-- `references/reverse-engineering.md` §8：孔壁长度比原件长 0.5–1 mm 的整倍数归因于入口倒角未切，先建倒角再复测，不缩孔深。
-- `references/reverse-engineering.md` §2：解析边界（圆角/圆孔/圆弧外缘）用精确圆弧 + 直线建截面，不按采样点逐段建线；判据是面类型直方图里圆柱/圆锥/B 曲面占圆弧边界。
-- `references/reverse-engineering.md` §10.1：交付前数拓扑（曲线数、面类型直方图、面数比原件），构造线删掉或隐藏；平面占八成即折线化。
-- `references/modeling.md` §2.2b：N 点折线是放样输入不是交付边界，放样后按面表半径重建解析圆弧。
-- `references/reverse-engineering.md` §2：裸曲线轮廓的长/宽/圆角是静默死参数，改草图 + 驱动尺寸或特征化几何；拉伸后不删父曲线。
-- `references/reverse-engineering.md` §4.2：圆角/切角参数用体积 + 角部圆柱/环面半径复核，不用包盒。
-- `references/reverse-engineering.md` §7：表达式名禁用 `p`/`P` 前缀（大小写都算），与自动表达式 `p0`/`p1` 同前缀会被可编辑性检查一并过滤。
-- `references/reverse-engineering.md` §10.1：圆锥组按 (轴, 半角) 分桶，圆截面放样把一个锥面拆成多组同轴锥；先改单段直线剖面回转或单个圆锥体再比孔锥参数。
-- `references/reverse-engineering.md` §10.1：站表从面表生成（水平平面族、孔轴端点/中点/法向站、臂轴 0/0.5/1），只取 z 站的子集自检与整门结论相反。
-- `references/reverse-engineering.md` §10.1：每类失败只重建一次，非功能多出面不计缺陷，几何与结构门做齐后再评估圆角；`THRU_CURVE` 告警同样算 G8 失败。
-- `references/modeling.md` §1.7：参数命名不用 `p`/`P` 前缀，判据交叉引用 `reverse-engineering.md` §7。
-- `references/reverse-engineering.md` §9：交界交线平均段长 <1 mm 时 `EdgeBlend` 三种失败（终止/应用/滚过尖边）；根部 flare 放进末截面或先合并切向面。
-- `references/reverse-engineering.md` §2：耳/眼端部按双瓣截形建——矩形块 + 两肩倒 `R_EYE`、平台半宽 `W_HALF = H_LOBE + R_EYE`、端面整圈 `R_END` 得环面。
-- `references/reverse-engineering.md` §2：锥孔收敛方向按沿孔轴 ≥3 站的半径 `r(s)` 符号定，起刀面取外端面、轴向起止取面表区间两端。
-- `references/reverse-engineering.md` §2：拔模窗口起剖面取中面外偏 `h/2·tanθ`；口部圆角在减料后加，先下口后上口。
-- `references/reverse-engineering.md` §2：重复结构先在规范坐标系建一件，其余方位按量得旋转角与平移量复制同一特征。
-- `references/reverse-engineering.md` §2：扇环窗口端壁按两端角弧中心连线建，两端角弧半径可不同。
-- `references/reverse-engineering.md` §2.2：耳座由“绕耳孔轴回转圆柱”改为“双瓣截形”；孔座圆柱只代表孔口包络。
-- `references/reverse-engineering.md` §4.2：新增四条症状→动作——端壁差 0.5–1 mm、中截面系统偏小、锥孔方向反、重复结构仅一个方位对上。
-- `references/reverse-engineering.md` §7：公式型表达式保留为系统式，每个结构尺寸另给数值参数入口；新增按体拆名、×1.1 面数不变、位置量不列表达式三条。
-- `references/reverse-engineering.md` §10：B 曲面（类型 43）的 `AskFaceData` 参考点恒为 (0,0,0)，区域筛选用 `box` 与邻接边。
-- `references/reverse-engineering.md` §10.1：标题改为“测量与比对”，闭环措辞改为核验/比对，去掉“无外部检查包”前提。
-- `references/reverse-engineering.md` §2.1/§2.2/§4.1/§4.2/§8/§9：去掉过程读数与零件量值，保留判据、配方与症状→动作。
-- `references/reverse-engineering.md` §4.1：单轮验收的过程叙述改写为门判据与阻塞规则。
-- `references/modeling.md` §1.7：一个表达式只驱动一个结构/一个体，多个体共用同一名字时按体拆名。
-- `references/modeling.md` §2.2：新增拔模拉伸的起剖面偏置 `h/2·tanθ`，中面截面作验收站。
-- `references/modeling.md` §2.4：新增双瓣耳（块 + 两肩倒圆）与口部圆角先下口后上口的顺序。
-- `references/modeling.md` §4.2b：新增系统式保留、位置量用字面值两条。
-- `references/modeling.md` §2.1b/§2.2b/§4.2：受控实验措辞改验收值，删放样读数。
-
-- `references/reverse-engineering.md` 文件头：新增按阶段跳转的索引（结构表/测量/成形/归因/收尾分别读哪节）。
-- `references/reverse-engineering.md` §2：双瓣耳与拔模窗口改为逆向判据 + `modeling.md` 指针；锥孔方向并入带拔模拉伸。
-- `references/reverse-engineering.md` §2.1：删与精确截面重建重复的平滑重建条。
-- `references/reverse-engineering.md` §2.2：剪影/等截面、外环/凸包、端部收口、多闭环、端部截面族、截面叠图各并为一条；放样提交校验指向 `modeling.md` §2.2b；门站条归 §4.2。
-- `references/reverse-engineering.md` §3：约束由 8 条压到 4 条，Tag 识别移 `modeling.md` §2.5。
-- `references/reverse-engineering.md` §4.1：门阻塞与冻结阈值并为一条，证明路线与 G9 并为一条。
-- `references/reverse-engineering.md` §4.2：按基体/臂耳/孔系/圆角参数四组归并，40 条压到 24 条。
-- `references/reverse-engineering.md` §7：按体拆名、位置量、共面堆叠三条归 `modeling.md`，公式型表达式改为交付判据。
-- `references/reverse-engineering.md` §8：组件门站/region、孔包入口/入口锥、孔表/独立切除体各并为一条。
-- `references/reverse-engineering.md` §10.1：分母/功能清单、匹配/整链布尔、截面站/站表各并为一条，删重复的验收条。
-- `references/modeling.md` §2.2：接收拔模 `MultiDraft` 配方。
-- `references/modeling.md` §2.2b：合并重叠/体数断言并入合并条，补 intersection gaps 折线减点与封口面错开 0.1 mm。
-- `references/modeling.md` §2.3：新增锥底沉孔 45° 锥刀配方。
-- `references/modeling.md` §2.5：新增布尔目标/刀具按 Tag 识别。
-- `SKILL.md` 路由表：逆向重建描述改为“结构表→测量链→按结构建特征→验收门”，构造配方指向 `modeling.md`。
-- `references/reverse-engineering.md` §1.1：清单与站表互查（每张站写出负责结构，写不出即补结构行）；同阶段主结构先建全再逐个修门。
-- `references/reverse-engineering.md` §4.1：验收基准为原件本身（站表按 §10.1 生成、阈值取默认档），任务无容差时按默认档执行；交付说明逐门列 PASS/FAIL，缺结构补建。
-- `references/reverse-engineering.md` §4/§4.2/§10：删“阈值按任务确定”“铸件放宽 5%”“阈值与零件类型不匹配即改阈值”三处自定口径，结果不符先查测量口径与站表。
-- `references/reverse-engineering.md` §10.1：站表按每个结构自身轴取根/中/端、开口/槽取槽底与两端，不按全局三轴枚举。
-- `references/reverse-engineering.md` §10.1：一次性重建限缩为数值项，结构缺失回清单补建。
-- `scripts/nxlib/measure.py`：`mesh_deviation` 给双向面积加权点—面 RMS/P95（精确点到三角面距离、均匀网格索引、固定 seed）；`station_plan`/`station_report` 从面表平面族与圆柱/圆锥轴生成测站并逐站复算；`verify_parts` 汇总 G0–G6；`measure_part`/`compare_parts` 增加单位与毫米换算。
-- `scripts/nxlib/measure.py`：新增 `exact_section` 从 B-rep 取截面曲线并按端点串成闭环；`station_plan` 的预算改为先保留平面族、再按半径保留轴中点/端点，`dropped`/`complete` 明示未测边界；`compare_parts.pass` 只要求原件功能组全匹配，`strict_pass` 才要求双向全匹配。
-- `scripts/tests/38_measure.py`：新增 B-rep 截面面积与测站预算断言（21→23 项）。
-- `scripts/tests/38_measure.py`：新增采样复现、已知 2 mm 平移偏差、偏差自比对、自动测站自比对与 `verify_parts` 自比对 5 项断言（15→21 项）。
-- `references/reverse-engineering.md` §10.1：新增 `verify_parts` 通用几何门汇总与 `mesh_deviation`/`station_plan` 用法。
-- `references/reverse-engineering.md` §4.1：G6 由相对比例改为双向 RMS ≤0.8 mm、P95 ≤1.8 mm。
+- 只读测量模块：面表、同轴分组、孔/锥参数、STL 截面面积与 IoU、件间比对；打开部件不保存。
+- B-rep 精确截面与测站报告：每站给 `area_inter/area_union/only_a/only_b`，支持按缺料/多料定位结构。
+- 可编辑性普查：逐条命名表达式 ×1.1，返回 named/live/dead/broken/alive_ratio/pass。
+- 逆向验收链：结构清单 → 结构表 → 测站 → 几何门 G0–G6 → 交付。
+- 测量配方与归因：孔轴取面表 `point/dir`、沉孔锥底、拔模 `DraftOption`、薄壁切除保体数、斜结构按纵剖面等。
 
 ### Changed
 
-- 用例计数 37→38、gate 34→35、`nxlib` 五域→六域（`SKILL.md`/`README.md`/`tests/README.md` 同步）。
-- 逆向重建交付路线改为结构特征优先：组件按自然成形方式建（回转/拉伸/放样/布尔/阵列），特征数与结构数同量级；验收新增结构语义（无逐层拉伸堆栈、每个结构可单独修改），与几何验收同时通过。
-- 截面验收由“覆盖组件与平面族”收紧为“每站 IoU ≥0.95、面积差 ≤5%”。
-- `references/reverse-engineering.md` §4.1/§10.1、`references/modeling.md`：G 编号退为机器键，验收表与正文改用具体指标名（单实体可读、截面轮廓重合度、圆柱/锥面参数一致性、体积相对差、包盒位置与尺寸差、四视图投影重合度、双向表面偏差、圆角覆盖、表达式可编辑性、特征树结构）；§4.1 的 G5 原写“同站截面”，与 `verify_parts`/冻结 QA 的四视图 G5 不一致，改为“四视图投影重合度”（top/front/side/iso 轮廓 IoU ≥0.99），逐站截面仍由“截面轮廓重合度”把关。
-- `references/reverse-engineering.md` §4.1：增加指标适用条件——原件无功能圆柱/锥面或圆角时，圆柱/锥面参数一致性与圆角覆盖记 N/A，不记失败；补充包盒位置与尺寸差（整件全局包盒）和双向表面偏差（缺料/多料双向 RMS/P95）的说明。
-- `SKILL.md` 路由表中的逆向重建描述改为“原件+一句重建要求→测量链→截面/放样→切除→验收项”。
-- FEA/Motion/Drafting/GB 文档删除零件专属实验读数与视图编号/比例系数个例，保留判据、阈值与校准常数。
+- 逆向交付路线改为结构特征优先，验收新增结构语义（无逐层拉伸堆栈、每结构可单独修改）。
+- 截面验收：每站 IoU ≥0.95、面积差 ≤5%。
+- G 编号退为机器键，正文改用指标名。
+- FEA/Motion/Drafting/GB 文档删除零件专属读数，保留判据与阈值。
 
 ### Fixed
 
-- `references/modeling.md` §4.4：HolePackage 类型属性是 `Type`（可写），`Types` 只读；孔向默认 `FaceNormal`，接缝处需显式切 `ProjectDirectionMethod=ProjectionOptionsDirectionType.Vector`。
-- 截面端点参数与闭环提取：端点用 `AskCurveProps(ct, 0/1)`，闭环用 `JoinType=0` 原始段按端点聚类自建。
+- `HolePackage` 类型属性是 `Type`，`Types` 只读；接缝处显式设 `ProjectDirectionMethod`。
+- 截面端点用 `AskCurveProps(ct, 0/1)`，闭环按端点聚类自建。
 - 布尔顺序：切除刀具穿过目标面，补孔排在整圆盘并集之后。
 - 圆角选边改用 exact，避免 ring 带入曲面缝边。
-- 孔轴判读、堆叠层截面、凸台顶面与板顶面的区分。
-- `references/assembly.md` §A.2/§A.5：`Concentric` 孔口圆边的静态 DOF 读数不可靠，转动副改以拖动后的几何与沿轴滑动行为判定。
-- `references/motion.md` §M.8：四杆静不定计数由 `6×5−5×4` 改为 `6×3−5×4`。
-- `references/drafting.md`：视图判据改为 `AskVisibleObjects()>0`，比例核对统一用 `AskViewScale`；删除与 §B.1 重复的空视图说明和不可复现的比例系数。
-- `references/drafting-annotation.md`：字号断言示例改为非默认值 4.0；删除重复且含未定义变量的完整表格代码块。
-- `scripts/gb_drawing.py`：`model_bbox` 返回值说明改为嵌套 tuple；删除 `detail_rect` 冗余 import。
-- `scripts/nxlib/drafting.py`：`sxline_legs` 报错文案改为与实际字段数条件一致。
-- `scripts/nxlib/__init__.py`：补 `__all__`，模块引导行数说明与示例一致。
-- 测试代码：删除未使用的 import/局部变量与重复 `sys` 导入，`ruff --select F` 归零。
+- 孔轴、堆叠层截面、凸台顶面与板顶面的区分。
+- `Concentric` 孔口圆边的静态 DOF 读数不可靠，转动副改用拖动后的几何判定。
 
 ## [1.2.0] - 2026-10-20
 
+逆向重建域与 GB 出图配方。
+
 ### Added
 
-- `references/reverse-engineering.md`：新增逆向重建域——自然坐标系与截面策略、逐层闭合草图拉伸、孔系/凹槽后置切除、双向点-三角面偏差校核与验收阈值、重建件后续修改。
-- `references/reverse-engineering.md` §2.1：从 B-rep 批量取截面曲线的 UF 配方（`SectionFromPlanes`/`SectionFromParallelPlanes`、PascalCase 结构体、平行面等距语义、`ModlGeneral.AskCurveProps` 采样）。
-- `gb_drawing.save_model_view/base_view/set_cjk_font`：命名模型视图、从模型视图建基本视图（落在图纸原点，定位由调用方完成）、中文字体一键设置。
-- `gb_drawing.dim_text_box` / `box_overlap`：尺寸文字框估算与重叠判定（标注布点）。
-- `references/gb-drawing.md`：非轴对齐零件的出图配方（自定义模型视图 + `BaseViewBuilder.SelectModelView`，含第一角三视图矩阵）与中文字体 `chinesef` 加载配方（`FontCollection.AddFont` + `Lettering.Cfw.Font`）。
-- `references/gb-drawing.md`：视图样式 builder（隐藏线/虚拟交线/平滑边默认值）与 Tabnot 行数 = `len(row_heights)` 的事实。
-- `references/gb-drawing.md`：图框与自定义表格线可用 `part.Curves.CreateLine`（`sheet.Open()` 后）。
-- `references/gb-drawing.md`：最小调用骨架补 `set_cjk_font`，调用顺序同步更新。
-- `references/drafting-annotation.md` §6：最小 2×2 表格配方（默认 5×5 清空、行列重建、逐格关自适应、回读）。
-- `references/drafting-annotation.md` §6b：球标（`CreateIdSymbol`）完整配方——第 7 参为 `NXOpen.UF.Drf.Object` 结构体、PascalCase 字段、枚举传成员、入口是 `ufs.Drf`。
-- `references/drafting-annotation.md`：尺寸不走 .NET 的判据（`part.Dimensions.Create*Dimension` 无头崩溃、.NET builder 报 `Unable to infer a dimension type`）；FCF/粗糙度/孔表 builder 入口存在但配方未打通。
-- `SKILL.md` §3：批量导出 STEP 写出 0 实体时的 Parasolid 回退（`ufs.Ps.ExportData`，`.x_t` 回读验证）。
-- `references/fea.md` §0a：`.fem`/`.sim`/理想化件的显式保存配方（`fem.Save`、`fem.IdealizedPart.Save`、`sim.Save`）与显示部件陷阱。
-- `references/assembly.md` §A.2：`Fix` 约束创建配方（引用对象为组件自身，DOF 读回 `0T+0R`）。
-- `references/drafting.md` §B.4：视图自动命名规则（`Right@1`/`ORTHO@4`/`SX@5`/`DETAIL@7`）与 `SetName` 改名/查找方式。
-- `scripts/check_repo.py`：新增第 7 组 ROUTE 检查——域文件禁新开坑位清单/坑位表，负面断言必须带做法，跨域高发陷阱限 `SKILL.md` §1。
-- `scripts/check_repo.py`：CONCISE 词表补充过程叙述与历史指代类词汇。
+- `references/reverse-engineering.md`：逆向重建域——坐标系与截面策略、逐层闭合草图拉伸、孔系/凹槽后置切除、双向点-三角面偏差校核、验收阈值、重建件后续修改。
+- B-rep 批量取截面配方（`SectionFromPlanes`/`SectionFromParallelPlanes`、`AskCurveProps` 采样）。
+- GB 出图：命名模型视图、从模型视图建基本视图、中文字体、尺寸文字框/重叠判定、非轴对齐零件出图、视图样式。
+- 标注：2×2 表格、球标完整配方、尺寸不走 .NET 的判据。
+- STEP 0 实体时的 Parasolid 回退；FEA `.fem`/`.sim` 保存配方；装配 `Fix` 约束；视图自动命名。
+- 文档治理：ROUTE/CONCISE 组；`assembly-drafting.md` 拆为 `assembly.md` 与 `drafting.md`。
 
 ### Changed
 
-- 工程图三文件按权威分工去重：标注规则（道位/字高/`<O>`/中心线/球标/表格）统一到 `references/drafting-annotation.md`，`references/drafting.md` 只留视图/PDF 与坐标映射，`references/gb-drawing.md` 只留模块专用行为与 GB 条款映射。
-- `SKILL.md` 路由表增加逆向重建域；`references/assembly-drafting.md` 按域拆为 `references/assembly.md`（§A 装配）与 `references/drafting.md`（§B 工程图），域文件计数改为八个；节号保持 §A.x/§B.x，交叉引用同步更新。
-- 文档治理：`SKILL.md` §1 声明为唯一跨域高发陷阱清单，§3「通用坑位」改名「通用 API 路线约束」，§7 落位规则与增长纪律改为「负面事实内联、不新开坑位清单」。
-- 坑位表按路线内联：`references/modeling.md` §4.3 草图 API 不可用项、`references/motion.md` 坑位对照、`references/drafting-annotation.md` §9 对照表并入对应路线；`references/drafting-annotation.md` §8 反模式清单改为正向出图验收清单。
-- `scripts/tests/README.md`：删除「已知限制」与「新增坑位」两节，改为「配方归属」指针，配方权威统一到 `references/*.md`。
-- `references/modeling.md`：删除 §7 整机示例沉淀，章节范围改为 §2-§6。
-- 全仓 agent 文档与脚本注释去除日期戳与历史指代（`scripts/tests/*.py`、`nxlib`、`render`、`gb_drawing.py` docstring）；脚本注释保留 API 失败原文。
-- `references/gb-drawing.md`：标注文字必须落在轮廓外的空白图纸上，补 `dim_text_box`/`box_overlap` 布点与渲染复核配方；注明 `dim_diameter` 的 `text` 形参不生效；成图前把未请求的 `CenterMark` 全部隐藏。
-- `references/gb-drawing.md`：视图级简化配方（`AskVisibleObjects` + `DraftingCurve.GetDraftingCurveInfo().GetParents()` + `DependentDisplay.Erase`），并记录按 `Intersection` 全删会断开轮廓的判据。
-- `references/fea.md` §8：峰值应力落在孔口/锐边时补 3~5 个测点作强度判据，峰值只列出不判定。
-- `references/motion.md` M.9：明确 `run_journal.exe` 只接收 `.bat` 传入的 journal 路径，不转发额外参数。
-- `references/drafting-annotation.md` §5：删除与代码块内注释重复的 `NumberOfLeaders` 前置告警。
+- 工程图三文件按权威分工去重：标注规则统一到 `drafting-annotation.md`，`drafting.md` 只留视图/PDF，`gb-drawing.md` 只留模块专用行为。
+- 坑位表按路线内联；`SKILL.md` §1 为唯一跨域高发陷阱清单。
+- 文档与脚本注释去除日期戳与历史指代。
 
 ### Fixed
 
-- `references/gb-drawing.md`：补充文字控制字符坑位（`×` U+00D7 触发 locale 报错、`~` 被当控制符、`Ø` 写 `<O>`）与标题栏日期列溢出处理。
-- `references/modeling.md` §4.2：自动标注 API 名更正为 `NXOpen.Sketch.AutoDimensioningRule` 与 `NXOpen.SketchAutoDimensionBuilder.DimType`（原写法 `AutoDimensionRule` / `Sketch.AutoDimensionBuilder.DimensionType` 在 NX12 Python 封装中不存在）。
-- `scripts/render/condition.py`：比例尺按裁剪后的缩放因子计算（原式用裁剪宽/原画布宽，比例尺偏短）。
-- `scripts/tests/README.md`：14 号体积期望改为 `120000−20³`（112000），与用例一致。
-- `scripts/tests/verify_check_rules.py`：每条反例除退出码外还断言输出命中对应规则痕迹，防止被另一条规则误拦截而静默通过。
-- `scripts/check_journal.py`：重复的规则编号 5.19 改为 5.20；修正 `ENUM_ACCESSOR_PROPS` 拼写与 `HoleDepthOptions` 的文件指向。
-- `scripts/check_repo.py`：PY36 组覆盖 `scripts/render/export_stl.py`；`.github/workflows/ci.yml` 增加 `verify_check_rules.py`。
-- `scripts/run_journal_batch.bat`：workdir 传入文件时显式报错退出，不再静默回落到调用者 CWD。
-- `gb_drawing.standard_views`：`size` 必须显式传入，避免 A3 图纸按 A4 排版；`model_bbox` 回退直边时打印警告。
-- 文档一致性：`SKILL.md` 的 gate token/崩溃探针顺序/文件清单、README 的坑位表表述、`gb-drawing.md` 的未覆盖范围与 API 签名、`drafting*.md` 的视图落位偏差表述、`motion.md` 的交叉引用。
-- `references/reverse-engineering.md` §2.1：结构体名经 NX12 批处理探针复核（`NXOpen.UF.Curve.SectionGeneralData` / `SectionPlanesData` / `SectionParallelData`、`NXOpen.UF.ModlCurveFitData_Struct`）。
-- `references/drafting.md`：球标示例的 `AssocDwgPos` 改为 2 个 double；该字段运行期对长度 3 报 `Array length mismatch`。
-- `references/modeling.md` §5：`AskFaceData` 返回字段更正为 `(type, point, dir, box, radius, rad_data, norm_dir)`。
-- `scripts/check_journal.py`：`CylinderBuilder.Diameter/Height` 的修复提示改为 Expression 通道（NX12 无 `SetDiameter`/`SetHeight`）。
+- GB 文字控制字符：`×` 触发 locale 报错、`~` 被当控制符、`Ø` 写 `<O>`；标题栏日期列溢出。
+- 自动标注 API 名更正为 `AutoDimensioningRule` 与 `SketchAutoDimensionBuilder.DimType`。
+- 比例尺按裁剪后的缩放因子计算。
+- `check_journal.py` 重复规则编号 5.19 改 5.20；修正枚举属性名与文件指向。
+- `run_journal_batch.bat` workdir 传入文件时显式报错，不再回落到调用者 CWD。
 
 ## [1.1.0] - 2026-10-19
 
+Motion 滑动副与齿轮连接件。
+
 ### Added
 
-- Motion 滑动副配方（`JointDefine.Type.Slider`，两组几何、关节局部 z 轴）与 36 号回归用例（偏置曲柄滑块，解析偏差 0.0013 mm）。
-- Motion 齿轮连接件配方（`Couplers.CreateCouplerGearBuilder`，60 r/min 输入 → −30 r/min 输出）。
-- `nxlib.modeling.involute_gear` 增加可选轮毂参数 `hub_d` / `hub_len` / `z_offset`，34 号用例覆盖体积增量。
-- `gb_drawing.assembly_bbox(bodies)` 多组件包盒；`tech_note(..., base_y=)` 避开明细栏。
-- `check_journal.py` 规则 5.19（`NXOpen.UF.UFDrf` 伪容器）与 `from math import dist` 形式的 Python 3.6 检测。
-- `nxlib.testing.write_log()`：用例日志落盘（18/36 号此前日志恒为空）。
+- Motion 滑动副配方（`JointDefine.Type.Slider`，两组几何、关节局部 z 轴）。
+- Motion 齿轮连接件配方（60 r/min 输入 → −30 r/min 输出）。
+- 渐开线齿轮轮毂参数 `hub_d`/`hub_len`/`z_offset`。
+- `gb_drawing.assembly_bbox` 多组件包盒；`tech_note(..., base_y=)` 避开明细栏。
+- `check_journal.py` 规则 5.19（`NXOpen.UF.UFDrf` 伪容器）与 Py3.6 `math.dist` 检测。
 
 ### Changed
 
-- `references/motion.md`：补齐公共导入与 `set_expr`/`VC`/`RF` 约定；M.6 修正为 0 基帧模型（帧 0 = t=0），删除"首帧非 t=0 / 末帧重复或归零"的误判；M.7 按旋转轴给角度元素表并补线速度配方；M.5c 明确 `MotionTranslationZ` 沿关节局部 z 轴、正速度沿 −z。
-- `references/motion.md`：澄清 Euler 驱动正值绕 +Z 为顺时针、`frame k ↔ t=k·T/nstep`、`atan2(R[1,0],R[0,0])` 只给相对设计位姿角（绝对角走 §M.4）、journal 内无 numpy（差分与 unwrap 手写）。
-- 文档精简：`SKILL.md`、六个域文件与 `scripts/tests/README.md` 删除验证过程、日期、历史沿革和重复解释，只保留结论、配方与判据；`README.md` / `README.en.md` 去掉会随文档变动的实测计数，改为稳定的能力描述。
-- `README.md` / `README.en.md`：孔包覆盖改为三种非螺纹孔型（螺纹用底孔+标注）；Motion 覆盖补滑动副与齿轮连接件；前置条件中的用例数改为 33 个带判定的用例。
-- README 运动图按 0 基帧模型重新生成（720 步、721 帧；摆角跨度与解析解相差 0.0014°，换向 2 次）。
-- 维护规则：新知识按“结论/做法”模板入库，禁止日期与过程叙述；`check_repo.py` 新增 CONCISE 组自动拦截，并保留“先合并后追加”的增长纪律（不设体积硬上限）。
-- `references/assembly-drafting.md`：移动副改用两组平面 `Touch`；补轴环 + `Touch` 去轴向滑动；约束枚举补全并标注 `ValueOf` 非成员；`Matrix3x3` 字段组语义明确为局部轴分量。
-- `references/gb-drawing.md`：导入骨架改为绝对路径插入 `sys.path`；装配图尺寸增加 PDF 文本层数值复核硬步骤。
-- `references/reverse-engineering.md` §2.2：端部耳座沿臂轴先鼓后收，等分站插值会削平鼓包（150 站少 27%）并被孔座圆柱顶替；耳座按孔轴截面族放样，孔座圆柱只代表孔口包络。
-- `references/reverse-engineering.md` §4.2：自检站 IoU < 0.5 归因为结构缺失（端部/耳座/槽/孔），按结构补建而不是调截面。
-- `references/reverse-engineering.md` §10.1：交付前逐组件比轴向投影极值，差 >1 mm 即端部缺失或外推。
-- `references/reverse-engineering.md` §2.1：重建轮廓直接取 B-rep 精确截面段（线/弧判定、样条拟合到 0.02 mm、圆心投影保证端点相接），不从 STL 重采样。
-- `references/reverse-engineering.md` §2.1：批处理打开刚生成的 prt 报 `File already exists`，改从另一目录打开副本或先开原件。
-- `references/modeling.md`：补相切工具体布尔失败；新增 §3.7 渐开线齿轮标准层入口。
-- `references/drafting-annotation.md`：剖视图 placement origin 与内容中心的偏移说明。
-- `nxlib.modeling.expressions` 增加 `unit_name` 参数，角度表达式可传 `"Angle"`（默认仍为 `"Length"`）。
+- Motion 文档改为 0 基帧模型（帧 0 = t=0）；补角度元素表与线速度配方；明确 `MotionTranslationZ` 沿关节局部 z 轴、正速度沿 −z。
+- 文档精简：删除验证过程、日期、历史沿革；README 去掉会随文档变动的计数。
+- 孔包覆盖改为三种非螺纹孔型；Motion 覆盖补滑动副与齿轮连接件。
 
 ### Fixed
 
-- `RUN_TESTS.bat` 第 102 行 `exit /b 1call :gate 34...` 拼接，导致 34 号从未执行却仍打印 `ALL TESTS PASSED`。
-- `check_repo.py` 覆盖正则未锚定行首，把上述畸形行误算为已覆盖。
-- `gb_drawing.map_point` 在 `MapModelToDrawing` 失败时静默返回 `ref + xyz`，忽略投影与比例，导致尺寸/包盒静默错位。
-- 球标 `CreateIdSymbol` 第 7 参必须为 `NXOpen.UF.Drf.Object` 结构体；文档原写法直接传 Edge 必失败。
-- 装配实例边 + 剖视图上的线性尺寸可能静默读错（200→200.2、140→136.3），已写入复核要求。
-- Motion 帧索引口径：`AskLinkTransfromForGivenFrame` 为 0 基（0..nfr-1，帧 0 = t=0）；修正 18/36 号用例与文档中"首帧是 t=dt、末帧重复"的误判（此前按 1..nfr 遍历，越界索引返回值被误读）。18 号用例的 CSV 同步改为 0 基并增加 `time_s` 列。
+- `gb_drawing.map_point` 投影失败时静默返回错误坐标。
+- 球标 `CreateIdSymbol` 第 7 参必须是 `NXOpen.UF.Drf.Object` 结构体。
+- 装配实例边 + 剖视图线性尺寸静默读错。
+- Motion 帧索引误判：`AskLinkTransfromForGivenFrame` 为 0 基。
+
+[1.1.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.1.0
+[1.2.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.2.0
+[1.3.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.3.0
+[1.4.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.4.0
+[1.5.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.5.0
+[1.6.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.6.0
+[1.7.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.7.0
