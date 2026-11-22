@@ -19,7 +19,8 @@
 - GB 出图线宽统一：图框、标题栏、明细栏 0.7→1.4（PDF 0.25→0.5 mm），内框 0.25 mm；尺寸线、箭头、尺寸界线、序号球线宽统一 0.25 mm。
 - GB 出图偏好设置清空剖视标注的 `SECTION` 前缀，出图标注为 `A-A`。
 - 展示图迁出本仓库，移交 `nxopen-journal-toolkit` 的 `docs/images/`；本仓库删除 `images/`，README 只保留入口。
-- MCP 文档：语义检索走外部嵌入服务（本机硅基流动 `bge-m3` + `bge-reranker-v2-m3`，约 1 s/次、依赖网络）；失败时按名核实。补中文夹英文查询写法与 `get_class` 分页说明。
+- MCP 文档：语义检索改为外部嵌入服务（`bge-m3` + `bge-reranker-v2-m3`），依赖网络；服务不可用时按名核实。
+- MCP 文档：补中文夹英文查询写法与 `get_class` 分页说明。
 
 ## [1.6.0] - 2026-11-17
 
@@ -39,7 +40,7 @@
 
 ### Fixed
 
-- 中心标记改用面心，不再用圆周参考点。
+- 中心标记改用面心。
 - `DragByTranslation` + `Solve` 不回收越界位移，改用 `MoveComponent` + 重建网络求解；滑块路线补 `Fix(导轨)` 前提。
 - 批处理包装器隔离 `run_journal` 的 stdin，DEX 转换失败时不再永久挂死。
 - 修复 `import_step` 在部分安装上返回 0 实体工作件。
@@ -59,7 +60,7 @@
 - 判决三态 `PASS`/`FAIL`/`NO_SIGNAL`；PDF 文本层默认阈值 20→3 词。
 - STEP 导出配方：`InputFile` + `ObjectTypes.Solids=True` + `ProcessHoldFlag`；AP214 用 `ugstep214.def`，AP242 不设 def。
 - 支撑面宽度门槛统一为 `R + 0.5`；开环截面判 FAIL。
-- 文档与域文件计数同步：域文件 8→9，`nxlib` 增 `exchange`。
+- 内部：文档与域文件计数同步，域文件 8→9，`nxlib` 增 `exchange`。
 
 ### Removed
 
@@ -120,7 +121,7 @@
 - 逆向交付路线改为结构特征优先，验收新增结构语义（无逐层拉伸堆栈、每结构可单独修改）。
 - 截面验收：每站 IoU ≥0.95、面积差 ≤5%。
 - G 编号退为机器键，正文改用指标名。
-- FEA/Motion/Drafting/GB 文档删除零件专属读数，保留判据与阈值。
+- 内部：FEA/Motion/Drafting/GB 文档删除零件专属读数，保留判据与阈值。
 
 ### Fixed
 
@@ -142,13 +143,13 @@
 - GB 出图：命名模型视图、从模型视图建基本视图、中文字体、尺寸文字框/重叠判定、非轴对齐零件出图、视图样式。
 - 标注：2×2 表格、球标完整配方、尺寸不走 .NET 的判据。
 - STEP 0 实体时的 Parasolid 回退；FEA `.fem`/`.sim` 保存配方；装配 `Fix` 约束；视图自动命名。
-- 文档治理：ROUTE/CONCISE 组；`assembly-drafting.md` 拆为 `assembly.md` 与 `drafting.md`。
+- 内部：文档治理，ROUTE/CONCISE 组，`assembly-drafting.md` 拆为 `assembly.md` 与 `drafting.md`。
 
 ### Changed
 
 - 工程图三文件按权威分工去重：标注规则统一到 `drafting-annotation.md`，`drafting.md` 只留视图/PDF，`gb-drawing.md` 只留模块专用行为。
-- 坑位表按路线内联；`SKILL.md` §1 为唯一跨域高发陷阱清单。
-- 文档与脚本注释去除日期戳与历史指代。
+- 内部：坑位表按路线内联，`SKILL.md` §1 为唯一跨域高发陷阱清单。
+- 内部：文档与脚本注释去除日期戳与历史指代。
 
 ### Fixed
 
@@ -173,7 +174,7 @@ Motion 滑动副与齿轮连接件。
 ### Changed
 
 - Motion 文档改为 0 基帧模型（帧 0 = t=0）；补角度元素表与线速度配方；明确 `MotionTranslationZ` 沿关节局部 z 轴、正速度沿 −z。
-- 文档精简：删除验证过程、日期、历史沿革；README 去掉会随文档变动的计数。
+- 内部：文档精简，删除验证过程、日期、历史沿革，README 去掉会随文档变动的计数。
 - 孔包覆盖改为三种非螺纹孔型；Motion 覆盖补滑动副与齿轮连接件。
 
 ### Fixed
