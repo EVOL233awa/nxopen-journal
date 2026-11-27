@@ -5,6 +5,20 @@
 格式遵循 [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 记录从 1.1.0 起；1.0.0 见 `git tag v1.0.0` 与对应 GitHub Release。
 
+## [Unreleased]
+
+### Changed
+
+- 内部：`verify_check_rules.py` 补 5.9 布尔设置反例与形状 `Type`、`BooleanType.Create` 阴性对照。
+
+### Fixed
+
+- `check_journal.py` 5.9：`BlockFeatureBuilder` 的形状 `.Type` 不再误报。
+- `check_journal.py` 5.9：新增 `BooleanOption.SetBooleanOperationAndBody` 检测。
+- `check_journal.py` 5.9：去掉命中后的 `break`，后续布尔误用不再被前面的形状 `Type` 掩盖。
+- `check_journal.py` 5.9：builder 识别改为按词法作用域，同名变量不再跨函数误判。
+- `check_journal.py` 5.9：`BooleanOption.Type = ...BooleanType.Create` 不再误报。
+
 ## [1.7.0] - 2026-11-19
 
 装配图补齐 GB 序号、剖视与标题栏。

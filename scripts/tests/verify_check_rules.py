@@ -103,6 +103,20 @@ COUNTER_EXAMPLES = [
     ("5.9 Block builder 的 BooleanOption", "BooleanOption",
      _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
            "    blk.BooleanOption = 1\n", 1),
+    ("5.9 Block 布尔 Type", "设置 Type",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.Type = NXOpen.Features.Feature.BooleanType.Subtract\n", 1),
+    ("5.9 BooleanOption.Type", "BooleanOption.Type",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.BooleanOption.Type = NXOpen.Features.Feature.BooleanType.Subtract\n", 1),
+    ("5.9 形状 Type 不掩盖 BooleanOption", "BooleanOption",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.Type = NXOpen.Features.BlockFeatureBuilder.Types.OriginAndEdgeLengths\n"
+           "    blk.BooleanOption = 1\n", 1),
+    ("5.9 BooleanOption.SetBooleanOperationAndBody", "SetBooleanOperationAndBody",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.BooleanOption.SetBooleanOperationAndBody("
+           "NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Subtract, b)\n", 1),
     ("5.10 NX12 无螺纹特征 builder", "CreateThreadBuilder",
      _WP + "    th = wp.Features.CreateThreadBuilder(NXOpen.Features.Feature.Null)\n", 1),
     ("5.10 Features.Thread.Null", "Features.Thread",
@@ -352,6 +366,23 @@ EXTRA_CLEAN = [
            "    assert os.path.exists('a.prt') and os.path.getsize('a.prt') > 0\n"
            "    wp.SaveAs('b.prt')\n"
            "    assert os.path.exists('b.prt') and os.path.getsize('b.prt') > 0\n"),
+    ("Block 形状 Type 不误报",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.Type = NXOpen.Features.BlockFeatureBuilder.Types.OriginAndEdgeLengths\n"
+           "    blk.SetOriginAndLengths(NXOpen.Point3d(0.0, 0.0, 0.0), "
+           "'100', '60', '20')\n"),
+    ("Block 形状 Type 别名不误报",
+     _WP + "    BT = NXOpen.Features.BlockFeatureBuilder.Types\n"
+           "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.Type = BT.OriginAndEdgeLengths\n"),
+    ("Cylinder 的 BooleanOption.SetBooleanOperationAndBody 不误报",
+     _WP + "    cb = wp.Features.CreateCylinderBuilder(NXOpen.Features.Feature.Null)\n"
+           "    cb.BooleanOption.SetBooleanOperationAndBody("
+           "NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Subtract, b)\n"),
+    ("Block 布尔 Create 不误报",
+     _WP + "    blk = wp.Features.CreateBlockFeatureBuilder(NXOpen.Features.Feature.Null)\n"
+           "    blk.BooleanOption.Type = "
+           "NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create\n"),
 ]
 
 

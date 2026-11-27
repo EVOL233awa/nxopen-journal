@@ -33,7 +33,8 @@
           (UF struct 按所属组查: NXOpen.UF.<组>.<名>, 如 Curve.SectionGeneralData;
            运动模块部分为顶层 NXOpen.UF.<名>_Struct, 如 MotionInterference_Struct)
      5.8  ComponentAssembly.Components 不存在 -> 用 RootComponent.GetChildren()
-     5.9  BlockFeatureBuilder.BooleanOption 被静默忽略 -> 用 SetBooleanOperationAndTarget
+     5.9  BlockFeatureBuilder.BooleanOption 或布尔 .Type 被静默忽略
+          -> 用 SetBooleanOperationAndTarget; 方块形状 .Type 不误报
      5.10 NX12 无 Features.Thread / CreateThreadBuilder -> 用 HolePackage 螺纹选项
      5.11 StepCreator 未设 ProcessHoldFlag -> Commit 返回时文件尚未落盘(约 5 秒后才有)
      5.12 RemoveParametersBuilder -> 销毁特征树, 违背历史模式铁律
@@ -302,6 +303,71 @@ def _local_bindings(tree: ast.Module) -> tuple[set[str], list[tuple[int, int, se
                 bound.update(_target_names(gen.target))
             ranges.append((node.lineno, node.end_lineno or node.lineno, bound))
     return module_names, ranges
+
+
+def _scope_builder_names(body: list[ast.AST], create_method: str) -> set[str]:
+    """同一词法作用域内由某 builder 创建方法绑定的名字 (不进嵌套函数/类)."""
+    names: set[str] = set()
+    stack: list[ast.AST] = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            if node.value is not None:
+                targets = (node.targets if isinstance(node, ast.Assign)
+                           else [node.target])
+                for tgt in targets:
+                    names.update(_bound_names(node.value, tgt, create_method))
+        elif isinstance(node, ast.withitem):
+            if node.optional_vars is not None:
+                names.update(_bound_names(node.context_expr, node.optional_vars,
+                                          create_method))
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            if any(_is_create_call(value, create_method)
+                   for value in _iter_payloads(node.iter)):
+                names.update(_target_names(node.target))
+        stack.extend(ast.iter_child_nodes(node))
+    return names
+
+
+def _builder_scope_table(tree: ast.AST,
+                         create_method: str) -> list[tuple[int, int, set[str], set[str]]]:
+    """各作用域的行区间、局部绑定名、其中的 builder 名。
+
+    同名变量在不同函数里可以分别指方块和圆柱 builder；规则 5.9 必须按
+    "使用点所在的最内层作用域"判断，不能把全文件同名变量合成一个集合。
+    """
+    table: list[tuple[int, int, set[str], set[str]]] = []
+    table.append((0, 10 ** 9, _scope_names(tree.body),
+                  _scope_builder_names(tree.body, create_method)))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            args = node.args
+            bound = {a.arg for a in args.args}
+            bound.update(a.arg for a in getattr(args, "posonlyargs", []))
+            bound.update(a.arg for a in args.kwonlyargs)
+            if args.vararg:
+                bound.add(args.vararg.arg)
+            if args.kwarg:
+                bound.add(args.kwarg.arg)
+            body = node.body if isinstance(node.body, list) else [node.body]
+            bound |= _scope_names(body)
+            table.append((node.lineno, node.end_lineno or node.lineno,
+                          bound, _scope_builder_names(body, create_method)))
+    return table
+
+
+def _is_block_builder_at(name: str, lineno: int,
+                         table: list[tuple[int, int, set[str], set[str]]]) -> bool:
+    """名字在 lineno 处是否仍解析为方块 builder（最内层绑定优先）。"""
+    containing = [row for row in table if row[0] <= lineno <= row[1]]
+    containing.sort(key=lambda row: row[1] - row[0])
+    for _start, _end, bound, builders in containing:
+        if name in bound:
+            return name in builders
+    return False
 
 
 def _is_none_literal(node: ast.AST) -> bool:
@@ -848,32 +914,80 @@ def check(path: Path) -> int:
         )
 
     # 5.9  BlockFeatureBuilder 的 BooleanOption 被静默忽略（AST 精确判定：
-    #     只在该 builder 的变量本身被赋 .BooleanOption 时报错，避免与 Boolean 特征误报）
-    block_vars = _builder_vars(tree, "CreateBlockFeatureBuilder")
+    #     .BooleanOption / .BooleanOption.Type 一定是布尔设置；.Type 也可能是
+    #     方块形状枚举（OriginAndEdgeLengths），只在 RHS 解析到 BooleanType
+    #     时报错。命中后不 break，避免前面的形状 Type 掩盖后面的布尔设置。
+    block_scopes = _builder_scope_table(tree, "CreateBlockFeatureBuilder")
+
+    def _is_boolean_enum(value: ast.AST | None) -> bool:
+        if value is None:
+            return False
+        full = _full_name(value, aliases)
+        return "BooleanType" in full.split(".")
+
+    def _is_boolean_create(value: ast.AST | None) -> bool:
+        if value is None:
+            return False
+        parts = _full_name(value, aliases).split(".")
+        return len(parts) >= 2 and parts[-1] == "Create" \
+            and "BooleanType" in parts
+
     if not allow_probes:
-        for lineno, tgt in _attr_assign_targets(tree):
-            if _waived(comments, lineno):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                value = node.value
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                value = node.value
+                targets = [node.target]
+            else:
                 continue
-            if tgt.attr in ("BooleanOption", "Type", "SetTargetBodies"):
+            for tgt in targets:
+                if not isinstance(tgt, ast.Attribute):
+                    continue
+                if tgt.attr not in ("BooleanOption", "Type"):
+                    continue
                 root_id = _root_name(tgt)
-                if root_id and root_id in block_vars:
-                    issues.append(
-                        f"第 {lineno} 行: BlockFeatureBuilder({root_id}) 设置 "
-                        f"{tgt.attr} 在 NX12 会被静默忽略 (求差不生效且无异常, 体数 +1); "
-                        f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
+                if not root_id or not _is_block_builder_at(
+                        root_id, node.lineno, block_scopes):
+                    continue
+                if _waived(comments, node.lineno):
+                    continue
+                if tgt.attr == "Type":
+                    parent = tgt.value
+                    is_option_type = (
+                        isinstance(parent, ast.Attribute)
+                        and parent.attr == "BooleanOption"
                     )
-                    break
+                    if not is_option_type and not _is_boolean_enum(value):
+                        continue
+                if _is_boolean_create(value):
+                    continue
+                label = tgt.attr
+                if (tgt.attr == "Type"
+                        and isinstance(tgt.value, ast.Attribute)
+                        and tgt.value.attr == "BooleanOption"):
+                    label = "BooleanOption.Type"
+                issues.append(
+                    f"第 {node.lineno} 行: BlockFeatureBuilder({root_id}) 设置 "
+                    f"{label} 在 NX12 会被静默忽略 (求差不生效且无异常, 体数 +1); "
+                    f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
+                )
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                if node.func.attr == "SetTargetBodies" and not _waived(comments, node.lineno):
-                    root_id = _root_name(node.func.value)
-                    if root_id and root_id in block_vars:
-                        issues.append(
-                            f"第 {node.lineno} 行: BlockFeatureBuilder({root_id})."
-                            f"SetTargetBodies 在 NX12 不生效 (求差不生效且无异常, 体数 +1); "
-                            f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
-                        )
-                        break
+                method = node.func.attr
+                if method not in ("SetTargetBodies", "SetBooleanOperationAndBody"):
+                    continue
+                if _waived(comments, node.lineno):
+                    continue
+                root_id = _root_name(node.func.value)
+                if root_id and _is_block_builder_at(
+                        root_id, node.lineno, block_scopes):
+                    issues.append(
+                        f"第 {node.lineno} 行: BlockFeatureBuilder({root_id})."
+                        f"{method} 在 NX12 不生效 (求差不生效且无异常, 体数 +1); "
+                        f"改用 SetBooleanOperationAndTarget(BooleanType.Subtract, target)"
+                    )
 
     # 5.10  NX12 无螺纹特征 builder (AST 判定: 注释/字符串里出现该名不算)
     if not allow_probes:
