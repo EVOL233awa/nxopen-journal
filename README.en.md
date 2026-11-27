@@ -4,7 +4,7 @@
 
 Let an agent write NX 12 journals from natural language and replay them in batch to produce models and drawings.
 
-`NX 12 (12.0.0.27)` · `NX Python 3.6.1` · `Host Python 3.11+` · `v1.7.0` · `MIT`
+`NX 12 (12.0.0.27)` · `NX Python 3.6.1` · `Host Python 3.11+` · `v1.7.1` · `MIT`
 
 ## Contents
 

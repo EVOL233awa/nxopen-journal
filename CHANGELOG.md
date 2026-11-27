@@ -5,7 +5,9 @@
 格式遵循 [Keep a Changelog 2.0.0](https://keepachangelog.com/en/2.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 记录从 1.1.0 起；1.0.0 见 `git tag v1.0.0` 与对应 GitHub Release。
 
-## [Unreleased]
+## [1.7.1] - 2026-11-28
+
+修复 5.9 规则对形状与布尔设置的误报。
 
 ### Changed
 
@@ -205,4 +207,5 @@ Motion 滑动副与齿轮连接件。
 [1.4.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.4.0
 [1.5.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.5.0
 [1.6.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.6.0
+[1.7.1]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.7.1
 [1.7.0]: https://github.com/EVOL233awa/nxopen-journal/releases/tag/v1.7.0

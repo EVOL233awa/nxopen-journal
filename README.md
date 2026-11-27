@@ -4,7 +4,7 @@
 
 让 agent 用自然语言写 NX 12 journal，批处理生成模型与图纸。
 
-`NX 12 (12.0.0.27)` · `NX Python 3.6.1` · `Host Python 3.11+` · `v1.7.0` · `MIT`
+`NX 12 (12.0.0.27)` · `NX Python 3.6.1` · `Host Python 3.11+` · `v1.7.1` · `MIT`
 
 ## 目录
 
