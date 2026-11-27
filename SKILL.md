@@ -288,6 +288,8 @@ scripts\tests\RUN_TESTS.bat
 nxopen-journal/
 ├── SKILL.md                        ← 本文件（入口层：铁律/环境/骨架/通用部件操作/日志导出/工作流/路由）
 ├── LICENSE                         ← MIT 许可证
+├── NOTICE                          ← 署名请求与 MIT 边界说明
+├── TRADEMARK.md                    ← 名称归属、允许的引用方式与 fork 改名要求
 ├── README.md                       ← 对外说明（中文，主文档）：定位 / 前置条件 / 安装与使用 / 实跑产物 / 覆盖范围 / 回归用例 / 已知限制 / 目录结构
 ├── README.en.md                    ← 同一份说明的英文落地页，与 README.md 顶部互链
 ├── CHANGELOG.md                    ← 版本变更记录（Keep a Changelog，当前 1.7.0）
