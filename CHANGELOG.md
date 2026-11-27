@@ -10,6 +10,7 @@
 ### Changed
 
 - 内部：`verify_check_rules.py` 补 5.9 布尔设置反例与形状 `Type`、`BooleanType.Create` 阴性对照。
+- 许可：`LICENSE` 版权行补仓库地址，新增 `NOTICE` 与 `TRADEMARK.md`（MIT 条款不变）。
 
 ### Fixed
 
